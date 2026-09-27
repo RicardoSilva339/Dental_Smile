@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'simulation_detail_screen.dart';
+import 'package:open_file/open_file.dart';
 
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
@@ -20,7 +22,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final simulacoes = box.toMap();
+    final simulacoes = box.toMap().entries.toList()
+      ..sort((a, b) => (b.value['date'] ?? '').compareTo(a.value['date'] ?? ''));
 
     return Scaffold(
       appBar: AppBar(
@@ -61,7 +64,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
             : ListView.builder(
           itemCount: simulacoes.length,
           itemBuilder: (context, index) {
-            final entry = simulacoes.entries.elementAt(index);
+            final entry = simulacoes[index];
             final data = entry.value as Map;
 
             return Card(
@@ -74,25 +77,43 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   fit: BoxFit.cover,
                 )
                     : const Icon(Icons.image_not_supported),
-                title: Text("Simulação em ${data['date']}"),
+                title: Text("Simulação em ${data['date'] ?? 'Data não informada'}"),
                 subtitle: Text(
                   "Cor: ${data['color']} | Formato: ${data['shape']} | Tamanho: ${data['size']}\n"
-                      "Obs: ${data['note']}",
+                      "Obs: ${data['note'] ?? ''}",
                 ),
-                trailing: IconButton(
-                  icon: const Icon(Icons.delete),
-                  tooltip: 'Remover esta simulação',
-                  onPressed: () {
-                    setState(() {
-                      box.delete(entry.key);
-                    });
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Simulação removida!')),
-                    );
-                  },
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (data['pdfPath'] != null)
+                      IconButton(
+                        icon: const Icon(Icons.picture_as_pdf, color: Colors.red),
+                        tooltip: 'Abrir Relatório PDF',
+                        onPressed: () {
+                          OpenFile.open(data['pdfPath']);
+                        },
+                      ),
+                    IconButton(
+                      icon: const Icon(Icons.delete),
+                      tooltip: 'Remover esta simulação',
+                      onPressed: () {
+                        setState(() {
+                          box.delete(entry.key);
+                        });
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Simulação removida!')),
+                        );
+                      },
+                    ),
+                  ],
                 ),
                 onTap: () {
-                  // Aqui você pode abrir detalhes ou gerar PDF novamente
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => SimulationDetailScreen(data: data),
+                    ),
+                  );
                 },
               ),
             );

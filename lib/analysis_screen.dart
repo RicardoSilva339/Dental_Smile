@@ -23,18 +23,9 @@ class AnalysisScreen extends StatelessWidget {
     }
 
     final imageFile = File(imagePath);
-    final bool hasSmile = _detectSmile(imageFile); // simulação da IA
 
-    // Se detectar sorriso, navega automaticamente para ajuste
-    if (hasSmile) {
-      Future.microtask(() {
-        Navigator.pushReplacementNamed(
-          context,
-          '/adjust',
-          arguments: {'image': imageFile.path},
-        );
-      });
-    }
+    // Simulação da IA: detecta sorriso e retorna coordenadas
+    final Map<String, dynamic>? detectionResult = _detectTeethRegion(imageFile);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Análise com IA')),
@@ -54,7 +45,7 @@ class AnalysisScreen extends StatelessWidget {
               Image.file(imageFile, height: 300, fit: BoxFit.cover),
               const SizedBox(height: 30),
 
-              if (!hasSmile) ...[
+              if (detectionResult == null) ...[
                 const Text(
                   'Não foi detectado sorriso na foto.',
                   style: TextStyle(
@@ -68,7 +59,7 @@ class AnalysisScreen extends StatelessWidget {
                 ElevatedButton.icon(
                   icon: const Icon(Icons.camera_alt),
                   label: const Text(
-                    'Favor bater nova foto – sorriso não detectado',
+                    'Tentar novamente',
                     style: TextStyle(fontWeight: FontWeight.bold),
                   ),
                   style: ElevatedButton.styleFrom(
@@ -91,6 +82,30 @@ class AnalysisScreen extends StatelessWidget {
                   ),
                   textAlign: TextAlign.center,
                 ),
+                const SizedBox(height: 20),
+                ElevatedButton.icon(
+                  icon: const Icon(Icons.arrow_forward),
+                  label: const Text(
+                    'Seguir para Ajustes',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    minimumSize: const Size(double.infinity, 60),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(30),
+                    ),
+                  ),
+                  onPressed: () {
+                    Navigator.pushReplacementNamed(
+                      context,
+                      '/adjust',
+                      arguments: {
+                        'image': imageFile.path,
+                        'region': detectionResult, // coordenadas dos dentes
+                      },
+                    );
+                  },
+                ),
               ],
             ],
           ),
@@ -99,10 +114,18 @@ class AnalysisScreen extends StatelessWidget {
     );
   }
 
-  /// Função simulada para detectar sorriso
-  bool _detectSmile(File image) {
-    // Aqui você integraria a IA real.
-    // Por enquanto, vamos simular sempre "true".
-    return true;
+  /// Função simulada para detectar região dos dentes
+  Map<String, dynamic>? _detectTeethRegion(File image) {
+    // Aqui você integraria ML Kit ou TensorFlow Lite.
+    // Por enquanto, vamos simular coordenadas fixas.
+    // Se não detectar nada, retorna null.
+
+    // Exemplo de coordenadas simuladas (bounding box dos dentes)
+    return {
+      'left': 100,
+      'top': 200,
+      'right': 300,
+      'bottom': 280,
+    };
   }
 }

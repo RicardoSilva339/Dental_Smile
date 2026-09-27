@@ -40,19 +40,19 @@ class MyApp extends StatelessWidget {
         '/': (context) => const HomeScreen(),
 
         // 2. Histórico
-        '/history': (context) => HistoryScreen(),
+        '/history': (context) => const HistoryScreen(),
 
         // 3. Captura de Foto
         '/capture': (context) => const CaptureScreen(),
 
         // 4. Sobre o Tratamento
-        '/about': (context) => const AboutScreen(),
+        '/about': (context) => AboutScreen(), // ❌ sem const
 
         // 5. Meus Relatórios
-        '/relatorios': (context) => MeusRelatoriosScreen(),
+        '/relatorios': (context) => const MeusRelatoriosScreen(),
 
         // 6. Análise com IA
-        '/analysis': (context) => AnalysisScreen(),
+        '/analysis': (context) => const AnalysisScreen(),
 
         // 7. Ajustes de Sorriso
         '/adjust': (context) {

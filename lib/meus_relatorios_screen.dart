@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:open_file/open_file.dart'; // para abrir PDF
+import 'package:hive_flutter/hive_flutter.dart';
+import 'package:open_file/open_file.dart';
 
 class MeusRelatoriosScreen extends StatefulWidget {
   const MeusRelatoriosScreen({super.key});
@@ -11,46 +11,45 @@ class MeusRelatoriosScreen extends StatefulWidget {
 }
 
 class _MeusRelatoriosScreenState extends State<MeusRelatoriosScreen> {
-  List<FileSystemEntity> arquivos = [];
+  late Box box;
 
   @override
   void initState() {
     super.initState();
-    _carregarRelatorios();
-  }
-
-  Future<void> _carregarRelatorios() async {
-    final dir = await getApplicationDocumentsDirectory();
-    final pasta = Directory(dir.path);
-    final lista = pasta.listSync().where((f) => f.path.endsWith('.pdf')).toList();
-
-    setState(() {
-      arquivos = lista;
-    });
+    box = Hive.box('simulacoes');
   }
 
   @override
   Widget build(BuildContext context) {
+    final relatorios = box.toMap().entries
+        .where((entry) => (entry.value as Map)['pdfPath'] != null)
+        .toList()
+      ..sort((a, b) => (b.value['date'] ?? '').compareTo(a.value['date'] ?? ''));
+
     return Scaffold(
       appBar: AppBar(title: const Text('Meus Relatórios')),
-      body: arquivos.isEmpty
+      body: relatorios.isEmpty
           ? const Center(child: Text('Nenhum relatório encontrado'))
           : ListView.builder(
-        itemCount: arquivos.length,
+        itemCount: relatorios.length,
         itemBuilder: (context, index) {
-          final arquivo = arquivos[index];
-          final nome = arquivo.path.split('/').last;
+          final entry = relatorios[index];
+          final data = entry.value as Map;
+          final nomeArquivo = data['pdfPath'].toString().split('/').last;
 
           return Card(
             margin: const EdgeInsets.all(8),
             child: ListTile(
               leading: const Icon(Icons.picture_as_pdf, color: Colors.red),
-              title: Text(nome),
-              subtitle: Text('Caminho: ${arquivo.path}'),
+              title: Text("Relatório: $nomeArquivo"),
+              subtitle: Text(
+                "Cor: ${data['color']} | Formato: ${data['shape']} | Tamanho: ${data['size']}\n"
+                    "Obs: ${data['note'] ?? ''}",
+              ),
               trailing: IconButton(
                 icon: const Icon(Icons.open_in_new),
                 onPressed: () {
-                  OpenFile.open(arquivo.path);
+                  OpenFile.open(data['pdfPath']);
                 },
               ),
             ),

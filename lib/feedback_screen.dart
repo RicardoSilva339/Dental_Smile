@@ -23,11 +23,34 @@ class FeedbackScreen extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
+            // Pré-visualização das imagens
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                if (originalImage != null)
+                  Column(
+                    children: [
+                      const Text("Original", style: TextStyle(fontWeight: FontWeight.bold)),
+                      Image.file(File(originalImage), height: 150, fit: BoxFit.cover),
+                    ],
+                  ),
+                if (adjustedImage != null)
+                  Column(
+                    children: [
+                      const Text("Ajustada", style: TextStyle(fontWeight: FontWeight.bold)),
+                      Image.file(File(adjustedImage), height: 150, fit: BoxFit.cover),
+                    ],
+                  ),
+              ],
+            ),
+            const SizedBox(height: 20),
+
             // Campo de texto para observações
             TextField(
               controller: noteController,
               decoration: const InputDecoration(
                 labelText: 'Observações do dentista',
+                border: OutlineInputBorder(),
               ),
               maxLines: 3,
               maxLength: 500,
@@ -49,8 +72,7 @@ class FeedbackScreen extends StatelessWidget {
                       const SnackBar(content: Text('Feedback salvo no histórico!')),
                     );
 
-                    Navigator.pushNamedAndRemoveUntil(
-                        context, '/', (route) => false);
+                    Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
                   },
                   child: const Text('Salvar Feedback'),
                 ),
@@ -64,8 +86,7 @@ class FeedbackScreen extends StatelessWidget {
                       existingItem,
                     );
 
-                    Navigator.pushNamedAndRemoveUntil(
-                        context, '/', (route) => false);
+                    Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
                   },
                   child: const Text('Gerar Relatório PDF'),
                 ),
@@ -86,29 +107,78 @@ class FeedbackScreen extends StatelessWidget {
       ) async {
     final pdf = pw.Document();
 
-    pdf.addPage(
-      pw.Page(
-        build: (pw.Context ctx) => pw.Column(
-          crossAxisAlignment: pw.CrossAxisAlignment.start,
+    // Página com atributos + observações + imagens
+    final List<pw.Widget> content = [
+      pw.Text('Relatório de Simulação de Sorriso',
+          style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold)),
+      pw.SizedBox(height: 20),
+      pw.Text('Cor: ${item['color']}'),
+      pw.Text('Formato: ${item['shape']}'),
+      pw.Text('Tamanho: ${item['size']}'),
+      pw.SizedBox(height: 20),
+      pw.Text('Observações: $note'),
+      pw.SizedBox(height: 20),
+    ];
+
+    if (original != null && adjusted != null) {
+      final beforeImage = pw.MemoryImage(await File(original).readAsBytes());
+      final afterImage = pw.MemoryImage(await File(adjusted).readAsBytes());
+
+      content.add(
+        pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.spaceEvenly,
           children: [
-            pw.Text('Relatório de Simulação de Sorriso',
-                style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold)),
-            pw.SizedBox(height: 20),
-            pw.Text('Cor: ${item['color']}'),
-            pw.Text('Formato: ${item['shape']}'),
-            pw.Text('Tamanho: ${item['size']}'),
-            pw.SizedBox(height: 20),
-            pw.Text('Observações: $note'),
+            pw.Column(
+              children: [
+                pw.Text("Original"),
+                pw.Image(beforeImage, width: 200, height: 200),
+              ],
+            ),
+            pw.Column(
+              children: [
+                pw.Text("Ajustada"),
+                pw.Image(afterImage, width: 200, height: 200),
+              ],
+            ),
           ],
         ),
-      ),
-    );
+      );
+    }
+
+    // Assinatura ou carimbo da clínica
+    final signaturePath = item['signaturePath']; // caminho da imagem de assinatura
+    if (signaturePath != null) {
+      final signatureImage = pw.MemoryImage(await File(signaturePath).readAsBytes());
+      content.add(pw.SizedBox(height: 30));
+      content.add(
+        pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.center,
+          children: [
+            pw.Text("Assinatura / Carimbo da Clínica"),
+            pw.Image(signatureImage, width: 150, height: 80),
+          ],
+        ),
+      );
+    }
+
+    pdf.addPage(pw.Page(build: (ctx) => pw.Column(children: content)));
 
     final dir = await getApplicationDocumentsDirectory();
-    final file = File('${dir.path}/relatorio_sorriso.pdf');
+    final file = File('${dir.path}/relatorio_${DateTime.now().millisecondsSinceEpoch}.pdf');
     await file.writeAsBytes(await pdf.save());
 
-    await Printing.sharePdf(bytes: await pdf.save(), filename: 'relatorio_sorriso.pdf');
+    // Salva no Hive
+    var box = Hive.box('simulacoes');
+    box.put(DateTime.now().toIso8601String(), {
+      ...item,
+      'note': note,
+      'originalImage': original,
+      'adjustedImage': adjusted,
+      'pdfPath': file.path,
+      'signaturePath': signaturePath,
+    });
+
+    await Printing.sharePdf(bytes: await pdf.save(), filename: file.path.split('/').last);
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Relatório salvo em ${file.path} e pronto para compartilhar!')),
