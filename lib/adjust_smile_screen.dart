@@ -40,12 +40,15 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
     // Desenha imagem original
     canvas.drawImage(original, Offset.zero, paint);
 
-    // Recupera coordenadas da região dos dentes
+    // Recupera coordenadas da região dos dentes ou centraliza se não houver
     final region = widget.region ?? {};
-    final left = (region['left'] ?? 100).toDouble();
-    final top = (region['top'] ?? 200).toDouble();
-    final right = (region['right'] ?? 300).toDouble();
-    final bottom = (region['bottom'] ?? 280).toDouble();
+    final imageWidth = original.width.toDouble();
+    final imageHeight = original.height.toDouble();
+
+    final left = (region['left'] ?? imageWidth * 0.3).toDouble();
+    final top = (region['top'] ?? imageHeight * 0.6).toDouble();
+    final right = (region['right'] ?? imageWidth * 0.7).toDouble();
+    final bottom = (region['bottom'] ?? imageHeight * 0.8).toDouble();
     final rect = Rect.fromLTRB(left, top, right, bottom);
 
     // Clareamento conforme cor escolhida
@@ -81,7 +84,6 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
   }
 
   void _applyAdjustments() async {
-    // Usa a última prévia como versão ajustada
     final adjustedFile = _previewFile ?? widget.image;
 
     Navigator.pushNamed(
@@ -155,34 +157,50 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
 
             const SizedBox(height: 20),
 
-            // Pré-visualização da foto com filtros
+            // Pré-visualização da foto com filtros + zoom + overlay dinâmico
             Expanded(
               child: Center(
-                child: Stack(
-                  alignment: Alignment.bottomCenter,
-                  children: [
-                    _previewFile != null
-                        ? Image.file(_previewFile!, height: 300, fit: BoxFit.cover)
-                        : Image.file(widget.image, height: 300, fit: BoxFit.cover),
-                    Container(
-                      width: double.infinity,
-                      color: Colors.black54,
-                      padding: const EdgeInsets.all(8),
-                      child: Text(
-                        "Cor: $_selectedColor | Formato: $_selectedShape | Tamanho: $_selectedSize",
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
+                child: InteractiveViewer(
+                  minScale: 1.0,
+                  maxScale: 4.0,
+                  child: Stack(
+                    children: [
+                      _previewFile != null
+                          ? Image.file(_previewFile!, fit: BoxFit.contain)
+                          : Image.file(widget.image, fit: BoxFit.contain),
+
+                      if (widget.region != null)
+                        Positioned(
+                          left: widget.region!['left']?.toDouble() ?? 100,
+                          top: widget.region!['top']?.toDouble() ?? 200,
+                          child: GestureDetector(
+                            onPanUpdate: (details) {
+                              setState(() {
+                                widget.region!['left'] =
+                                    (widget.region!['left'] ?? 100) + details.delta.dx;
+                                widget.region!['top'] =
+                                    (widget.region!['top'] ?? 200) + details.delta.dy;
+                              });
+                              _applyPreviewFilters();
+                            },
+                            child: Container(
+                              width: (widget.region!['right'] ?? 300).toDouble() -
+                                  (widget.region!['left'] ?? 100).toDouble(),
+                              height: (widget.region!['bottom'] ?? 280).toDouble() -
+                                  (widget.region!['top'] ?? 200).toDouble(),
+                              decoration: BoxDecoration(
+                                border: Border.all(color: Colors.red, width: 2),
+                                color: Colors.red.withOpacity(0.2),
+                              ),
+                            ),
+                          ),
                         ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
 
-            // Botão aplicar
             ElevatedButton(
               onPressed: _applyAdjustments,
               style: ElevatedButton.styleFrom(
