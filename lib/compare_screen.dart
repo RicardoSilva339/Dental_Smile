@@ -1,14 +1,14 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:path_provider/path_provider.dart';
-import 'dart:ui' as ui;
 
 class CompareScreen extends StatefulWidget {
   final String originalImage;
-  final String adjustedImage;
+  final String adjustedImage; // agora recebemos direto da tela anterior
   final Map existingItem;
 
   const CompareScreen({
@@ -23,74 +23,25 @@ class CompareScreen extends StatefulWidget {
 }
 
 class _CompareScreenState extends State<CompareScreen> {
-File? filteredFile;
+Uint8List? processedImage;
 
 @override
 void initState() {
 super.initState();
-_applyFilters(File(widget.adjustedImage)).then((file) {
+_loadAdjustedImage();
+}
+
+Future<void> _loadAdjustedImage() async {
+final file = File(widget.adjustedImage);
+final bytes = await file.readAsBytes();
 setState(() {
-filteredFile = file;
+processedImage = bytes;
 });
-});
-}
-/// Função para aplicar filtros estéticos reais
-Future<File> _applyFilters(File image) async {
-final bytes = await image.readAsBytes();
-final codec = await ui.instantiateImageCodec(bytes);
-final frame = await codec.getNextFrame();
-final original = frame.image;
-
-final recorder = ui.PictureRecorder();
-final canvas = Canvas(recorder);
-final paint = Paint();
-
-// 1. Desenha imagem original
-canvas.drawImage(original, Offset.zero, paint);
-
-// 2. Clareamento com ColorMatrix (dentes mais brancos)
-final brighten = Paint()
-..colorFilter = const ColorFilter.matrix([
-1.2, 0,   0,   0, 20,
-0,   1.2, 0,   0, 20,
-0,   0,   1.2, 0, 20,
-0,   0,   0,   1, 0,
-]);
-canvas.drawImage(original, Offset.zero, brighten);
-
-// 3. Suavização da gengiva (blur leve)
-final blurPaint = Paint()
-..imageFilter = ui.ImageFilter.blur(sigmaX: 2, sigmaY: 2);
-canvas.drawImage(original, Offset.zero, blurPaint);
-
-// 4. Overlay transparente (usando coordenadas se existirem)
-if (widget.existingItem.containsKey('region') &&
-widget.existingItem['region'] is Map) {
-final region = widget.existingItem['region'] as Map;
-
-final left = (region['left'] is num) ? (region['left'] as num).toDouble() : 100.0;
-final top = (region['top'] is num) ? (region['top'] as num).toDouble() : 200.0;
-final right = (region['right'] is num) ? (region['right'] as num).toDouble() : 300.0;
-final bottom = (region['bottom'] is num) ? (region['bottom'] as num).toDouble() : 280.0;
-
-final overlayPaint = Paint()..color = Colors.white.withOpacity(0.1);
-canvas.drawRect(Rect.fromLTRB(left, top, right, bottom), overlayPaint);
-}
-
-final picture = recorder.endRecording();
-final filteredImage = await picture.toImage(original.width, original.height);
-final byteData = await filteredImage.toByteData(format: ui.ImageByteFormat.png);
-
-final dir = await getTemporaryDirectory();
-final filteredFile = File('${dir.path}/filtered_${DateTime.now().millisecondsSinceEpoch}.png');
-await filteredFile.writeAsBytes(byteData!.buffer.asUint8List());
-
-return filteredFile;
 }
 Future<void> _gerarRelatorio(BuildContext context) async {
 final pdf = pw.Document();
 
-// Página com atributos
+// Página com atributos escolhidos
 pdf.addPage(
 pw.Page(
 build: (ctx) => pw.Column(
@@ -111,9 +62,9 @@ pw.Text('Observações: ${widget.existingItem['note'] ?? ''}'),
 
 // Página com imagens antes/depois
 final originalBytes = await File(widget.originalImage).readAsBytes();
-final adjustedBytes = await filteredFile!.readAsBytes();
-
 final originalImg = pw.MemoryImage(originalBytes);
+
+final adjustedBytes = await File(widget.adjustedImage).readAsBytes();
 final adjustedImg = pw.MemoryImage(adjustedBytes);
 
 pdf.addPage(
@@ -129,7 +80,7 @@ pw.Image(originalImg, width: 200, height: 200),
 ),
 pw.Column(
 children: [
-pw.Text("Ajustada"),
+pw.Text("Ajustada pela IA"),
 pw.Image(adjustedImg, width: 200, height: 200),
 ],
 ),
@@ -147,7 +98,7 @@ var box = Hive.box('simulacoes');
 box.put(DateTime.now().toIso8601String(), {
 ...widget.existingItem,
 'originalImage': widget.originalImage,
-'adjustedImage': filteredFile!.path,
+'adjustedImage': widget.adjustedImage,
 'pdfPath': file.path,
 });
 
@@ -157,16 +108,65 @@ ScaffoldMessenger.of(context).showSnackBar(
 SnackBar(content: Text('Relatório salvo em ${file.path} e pronto para compartilhar!')),
 );
 }
+Widget _buildActionButtons(BuildContext context) {
+return Column(
+children: [
+Row(
+children: [
+Expanded(
+child: ElevatedButton(
+onPressed: () {
+Navigator.pop(context); // volta para ajustes
+},
+style: ElevatedButton.styleFrom(
+minimumSize: const Size(double.infinity, 50),
+backgroundColor: Colors.grey,
+),
+child: const Text("Voltar para Ajustes"),
+),
+),
+const SizedBox(width: 10),
+Expanded(
+child: ElevatedButton(
+onPressed: () {
+Navigator.pushNamed(
+context,
+'/feedback',
+arguments: {
+...widget.existingItem,
+'originalImage': widget.originalImage,
+'adjustedImage': widget.adjustedImage,
+},
+);
+},
+style: ElevatedButton.styleFrom(
+minimumSize: const Size(double.infinity, 50),
+),
+child: const Text(
+"Confirmar Alteração",
+style: TextStyle(fontWeight: FontWeight.bold),
+),
+),
+),
+],
+),
+const SizedBox(height: 20),
+ElevatedButton.icon(
+icon: const Icon(Icons.picture_as_pdf),
+label: const Text("Gerar Relatório PDF"),
+style: ElevatedButton.styleFrom(
+minimumSize: const Size(double.infinity, 60),
+shape: RoundedRectangleBorder(
+borderRadius: BorderRadius.circular(30),
+),
+),
+onPressed: () => _gerarRelatorio(context),
+),
+],
+);
+}
 @override
 Widget build(BuildContext context) {
-  if (filteredFile == null) {
-    return const Scaffold(
-      body: Center(child: CircularProgressIndicator()),
-    );
-  }
-
-  double sliderValue = MediaQuery.of(context).size.width / 2;
-
   return Scaffold(
     appBar: AppBar(title: const Text('Comparação Antes/Depois')),
     body: Padding(
@@ -174,51 +174,46 @@ Widget build(BuildContext context) {
       child: Column(
         children: [
           const Text(
-            "Veja o resultado da simulação",
+            "Veja o resultado da simulação com IA",
             style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 20),
 
-          // Comparação com Slider + Zoom com os dedos
+          // Comparação lado a lado
           Expanded(
-            child: InteractiveViewer(
-              minScale: 1.0,
-              maxScale: 4.0,
-              child: Stack(
-                children: [
-                  // Imagem original
-                  Image.file(File(widget.originalImage),
-                      width: double.infinity, fit: BoxFit.cover),
-
-                  // Imagem ajustada revelada pelo ClipRect
-                  ClipRect(
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      widthFactor: sliderValue /
-                          MediaQuery.of(context).size.width,
-                      child: Image.file(filteredFile!,
-                          width: double.infinity, fit: BoxFit.cover),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                Column(
+                  children: [
+                    const Text("Antes"),
+                    Image.file(
+                      File(widget.originalImage),
+                      width: 150,
+                      height: 150,
+                      fit: BoxFit.cover,
                     ),
-                  ),
-
-                  // Slider para controlar a comparação
-                  Positioned(
-                    bottom: 10,
-                    left: 0,
-                    right: 0,
-                    child: Slider(
-                      value: sliderValue,
-                      min: 0,
-                      max: MediaQuery.of(context).size.width,
-                      onChanged: (value) {
-                        setState(() {
-                          sliderValue = value;
-                        });
-                      },
+                  ],
+                ),
+                Column(
+                  children: [
+                    const Text("Depois (IA)"),
+                    processedImage != null
+                        ? Image.memory(
+                      processedImage!,
+                      width: 150,
+                      height: 150,
+                      fit: BoxFit.cover,
+                    )
+                        : Image.file(
+                      File(widget.adjustedImage),
+                      width: 150,
+                      height: 150,
+                      fit: BoxFit.cover,
                     ),
-                  ),
-                ],
-              ),
+                  ],
+                ),
+              ],
             ),
           ),
 
@@ -231,62 +226,8 @@ Widget build(BuildContext context) {
 
           const Spacer(),
 
-          // Botões de ação
-          Column(
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () {
-                        Navigator.pop(context); // volta para ajustes
-                      },
-                      style: ElevatedButton.styleFrom(
-                        minimumSize: const Size(double.infinity, 50),
-                        backgroundColor: Colors.grey,
-                      ),
-                      child: const Text("Voltar para Ajustes"),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () {
-                        Navigator.pushNamed(
-                          context,
-                          '/feedback',
-                          arguments: {
-                            ...widget.existingItem,
-                            'originalImage': widget.originalImage,
-                            'adjustedImage': filteredFile!.path,
-                          },
-                        );
-                      },
-                      style: ElevatedButton.styleFrom(
-                        minimumSize: const Size(double.infinity, 50),
-                      ),
-                      child: const Text(
-                        "Confirmar Alteração",
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              ElevatedButton.icon(
-                icon: const Icon(Icons.picture_as_pdf),
-                label: const Text("Gerar Relatório PDF"),
-                style: ElevatedButton.styleFrom(
-                  minimumSize: const Size(double.infinity, 60),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(30),
-                  ),
-                ),
-                onPressed: () => _gerarRelatorio(context),
-              ),
-            ],
-          ),
+          // Botões de ação (Parte 3)
+          _buildActionButtons(context),
         ],
       ),
     ),

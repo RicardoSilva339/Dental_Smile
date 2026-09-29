@@ -11,7 +11,6 @@ import 'meus_relatorios_screen.dart';
 import 'feedback_screen.dart';
 import 'adjust_smile_screen.dart';
 import 'compare_screen.dart';
-import 'analysis_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -46,32 +45,29 @@ class MyApp extends StatelessWidget {
         '/capture': (context) => const CaptureScreen(),
 
         // 4. Sobre o Tratamento
-        '/about': (context) => AboutScreen(), // ❌ sem const
+        '/about': (context) => AboutScreen(), // sem const
 
         // 5. Meus Relatórios
         '/relatorios': (context) => const MeusRelatoriosScreen(),
 
-        // 6. Análise com IA
-        '/analysis': (context) => const AnalysisScreen(),
-
-        // 7. Ajustes de Sorriso
+        // 6. Ajustes de Sorriso
         '/adjust': (context) {
           final args = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>;
           return AdjustSmileScreen(image: File(args['image']));
         },
 
-        // 8. Comparar Antes/Depois
+        // 7. Comparar Antes/Depois
         '/compare': (context) {
           final args = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>;
           return CompareScreen(
             originalImage: args['originalImage'],
-            adjustedImage: args['adjustedImage'],
+            adjustedImage: args['adjustedImage'], // ✅ obrigatório
             existingItem: args['existingItem'],
           );
         },
       },
       onGenerateRoute: (settings) {
-        // 9. Feedback do Dentista
+        // 8. Feedback do Dentista
         if (settings.name == '/feedback') {
           final args = settings.arguments as Map<String, dynamic>?;
           return MaterialPageRoute(

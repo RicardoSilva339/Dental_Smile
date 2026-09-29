@@ -21,11 +21,11 @@ class _CaptureScreenState extends State<CaptureScreen> {
     }
   }
 
-  void _goToAnalysis() {
+  void _goToAdjust() {
     if (_image != null) {
       Navigator.pushNamed(
         context,
-        '/analysis',
+        '/adjust',
         arguments: {'image': _image!.path},
       );
     } else {
@@ -74,7 +74,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
                     icon: const Icon(Icons.photo),
                     label: const Text('Galeria'),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blue[300], // azul clarinho bonito
+                      backgroundColor: Colors.blue[300],
                       foregroundColor: Colors.white,
                       minimumSize: const Size(160, 50),
                       textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
@@ -89,7 +89,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
                     icon: const Icon(Icons.camera_alt),
                     label: const Text('Câmera'),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.indigo[300], // azul médio elegante
+                      backgroundColor: Colors.indigo[300],
                       foregroundColor: Colors.white,
                       minimumSize: const Size(160, 50),
                       textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
@@ -123,7 +123,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
         child: ElevatedButton.icon(
           icon: const Icon(Icons.arrow_forward),
           label: const Text(
-            'Seguir para Análise',
+            'Seguir para Ajustes',
             style: TextStyle(
               fontWeight: FontWeight.bold,
               fontSize: 18,
@@ -131,13 +131,13 @@ class _CaptureScreenState extends State<CaptureScreen> {
           ),
           style: ElevatedButton.styleFrom(
             minimumSize: const Size(double.infinity, 60),
-            backgroundColor: Colors.blue[400], // azul médio bonito
+            backgroundColor: Colors.blue[400],
             foregroundColor: Colors.white,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(30),
             ),
           ),
-          onPressed: _goToAnalysis,
+          onPressed: _goToAdjust,
         ),
       ),
     );
