@@ -1,21 +1,17 @@
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
-import 'package:path_provider/path_provider.dart';
 
 class CompareScreen extends StatefulWidget {
   final String originalImage;
-  final String adjustedImage; // agora recebemos direto da tela anterior
-  final Map existingItem;
+  final String adjustedImage;
+  final Map<String, dynamic>? existingItem;
 
   const CompareScreen({
     super.key,
     required this.originalImage,
     required this.adjustedImage,
-    required this.existingItem,
+    this.existingItem,
   });
 
   @override
@@ -23,214 +19,134 @@ class CompareScreen extends StatefulWidget {
 }
 
 class _CompareScreenState extends State<CompareScreen> {
-Uint8List? processedImage;
+  final TextEditingController _noteController = TextEditingController();
+  bool _isSaving = false;
 
-@override
-void initState() {
-super.initState();
-_loadAdjustedImage();
-}
+  @override
+  void initState() {
+    super.initState();
+    if (widget.existingItem != null && widget.existingItem!['note'] != null) {
+      _noteController.text = widget.existingItem!['note'];
+    }
+  }
 
-Future<void> _loadAdjustedImage() async {
-final file = File(widget.adjustedImage);
-final bytes = await file.readAsBytes();
-setState(() {
-processedImage = bytes;
-});
-}
-Future<void> _gerarRelatorio(BuildContext context) async {
-final pdf = pw.Document();
+  Future<void> _saveSimulation() async {
+    setState(() {
+      _isSaving = true;
+    });
 
-// Página com atributos escolhidos
-pdf.addPage(
-pw.Page(
-build: (ctx) => pw.Column(
-crossAxisAlignment: pw.CrossAxisAlignment.start,
-children: [
-pw.Text('Relatório de Simulação de Sorriso',
-style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold)),
-pw.SizedBox(height: 20),
-pw.Text('Cor: ${widget.existingItem['color'] ?? ''}'),
-pw.Text('Formato: ${widget.existingItem['shape'] ?? ''}'),
-pw.Text('Tamanho: ${widget.existingItem['size'] ?? ''}'),
-pw.SizedBox(height: 20),
-pw.Text('Observações: ${widget.existingItem['note'] ?? ''}'),
-],
-),
-),
-);
+    try {
+      final box = Hive.box('simulacoes');
 
-// Página com imagens antes/depois
-final originalBytes = await File(widget.originalImage).readAsBytes();
-final originalImg = pw.MemoryImage(originalBytes);
+      final Map<String, dynamic> simulationData = {
+        'originalImage': widget.originalImage,
+        'adjustedImage': widget.adjustedImage,
+        'color': widget.existingItem?['color'] ?? 'A1',
+        'shape': widget.existingItem?['shape'] ?? 'Natural',
+        'size': widget.existingItem?['size'] ?? 'Médio',
+        'note': _noteController.text,
+        'date': widget.existingItem?['date'] ?? DateTime.now().toString().split('.')[0],
+      };
 
-final adjustedBytes = await File(widget.adjustedImage).readAsBytes();
-final adjustedImg = pw.MemoryImage(adjustedBytes);
+      // Salva no Hive usando um timestamp único como chave
+      final key = DateTime.now().millisecondsSinceEpoch.toString();
+      await box.put(key, simulationData);
 
-pdf.addPage(
-pw.Page(
-build: (ctx) => pw.Row(
-mainAxisAlignment: pw.MainAxisAlignment.spaceEvenly,
-children: [
-pw.Column(
-children: [
-pw.Text("Original"),
-pw.Image(originalImg, width: 200, height: 200),
-],
-),
-pw.Column(
-children: [
-pw.Text("Ajustada pela IA"),
-pw.Image(adjustedImg, width: 200, height: 200),
-],
-),
-],
-),
-),
-);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Simulação salva com sucesso no histórico!')),
+        );
 
-final dir = await getApplicationDocumentsDirectory();
-final file = File('${dir.path}/relatorio_${DateTime.now().millisecondsSinceEpoch}.pdf');
-await file.writeAsBytes(await pdf.save());
+        // Volta para a Tela Inicial (HomeScreen) e limpa a pilha de telas
+        Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro ao salvar simulação: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+        });
+      }
+    }
+  }
 
-// Salva no Hive
-var box = Hive.box('simulacoes');
-box.put(DateTime.now().toIso8601String(), {
-...widget.existingItem,
-'originalImage': widget.originalImage,
-'adjustedImage': widget.adjustedImage,
-'pdfPath': file.path,
-});
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Comparativo Antes / Depois'),
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            const Text(
+              'Resultado da Simulação',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 16),
 
-await Printing.sharePdf(bytes: await pdf.save(), filename: file.path.split('/').last);
-
-ScaffoldMessenger.of(context).showSnackBar(
-SnackBar(content: Text('Relatório salvo em ${file.path} e pronto para compartilhar!')),
-);
-}
-Widget _buildActionButtons(BuildContext context) {
-return Column(
-children: [
-Row(
-children: [
-Expanded(
-child: ElevatedButton(
-onPressed: () {
-Navigator.pop(context); // volta para ajustes
-},
-style: ElevatedButton.styleFrom(
-minimumSize: const Size(double.infinity, 50),
-backgroundColor: Colors.grey,
-),
-child: const Text("Voltar para Ajustes"),
-),
-),
-const SizedBox(width: 10),
-Expanded(
-child: ElevatedButton(
-onPressed: () {
-Navigator.pushNamed(
-context,
-'/feedback',
-arguments: {
-...widget.existingItem,
-'originalImage': widget.originalImage,
-'adjustedImage': widget.adjustedImage,
-},
-);
-},
-style: ElevatedButton.styleFrom(
-minimumSize: const Size(double.infinity, 50),
-),
-child: const Text(
-"Confirmar Alteração",
-style: TextStyle(fontWeight: FontWeight.bold),
-),
-),
-),
-],
-),
-const SizedBox(height: 20),
-ElevatedButton.icon(
-icon: const Icon(Icons.picture_as_pdf),
-label: const Text("Gerar Relatório PDF"),
-style: ElevatedButton.styleFrom(
-minimumSize: const Size(double.infinity, 60),
-shape: RoundedRectangleBorder(
-borderRadius: BorderRadius.circular(30),
-),
-),
-onPressed: () => _gerarRelatorio(context),
-),
-],
-);
-}
-@override
-Widget build(BuildContext context) {
-  return Scaffold(
-    appBar: AppBar(title: const Text('Comparação Antes/Depois')),
-    body: Padding(
-      padding: const EdgeInsets.all(24.0),
-      child: Column(
-        children: [
-          const Text(
-            "Veja o resultado da simulação com IA",
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 20),
-
-          // Comparação lado a lado
-          Expanded(
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            // Exibição Lado a Lado
+            Row(
               children: [
-                Column(
-                  children: [
-                    const Text("Antes"),
-                    Image.file(
-                      File(widget.originalImage),
-                      width: 150,
-                      height: 150,
-                      fit: BoxFit.cover,
-                    ),
-                  ],
+                Expanded(
+                  child: Column(
+                    children: [
+                      const Text('Antes', style: TextStyle(fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 8),
+                      Image.file(File(widget.originalImage), height: 180, fit: BoxFit.cover),
+                    ],
+                  ),
                 ),
-                Column(
-                  children: [
-                    const Text("Depois (IA)"),
-                    processedImage != null
-                        ? Image.memory(
-                      processedImage!,
-                      width: 150,
-                      height: 150,
-                      fit: BoxFit.cover,
-                    )
-                        : Image.file(
-                      File(widget.adjustedImage),
-                      width: 150,
-                      height: 150,
-                      fit: BoxFit.cover,
-                    ),
-                  ],
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    children: [
+                      const Text('Depois', style: TextStyle(fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 8),
+                      Image.file(File(widget.adjustedImage), height: 180, fit: BoxFit.cover),
+                    ],
+                  ),
                 ),
               ],
             ),
-          ),
+            const SizedBox(height: 24),
 
-          const SizedBox(height: 20),
+            // Campo de Observações
+            TextField(
+              controller: _noteController,
+              decoration: const InputDecoration(
+                labelText: 'Observações / Anotações do Tratamento',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 3,
+            ),
+            const SizedBox(height: 24),
 
-          // Atributos escolhidos
-          Text("Cor: ${widget.existingItem['color'] ?? ''}"),
-          Text("Formato: ${widget.existingItem['shape'] ?? ''}"),
-          Text("Tamanho: ${widget.existingItem['size'] ?? ''}"),
-
-          const Spacer(),
-
-          // Botões de ação (Parte 3)
-          _buildActionButtons(context),
-        ],
+            // Botão de Confirmação
+            ElevatedButton.icon(
+              icon: _isSaving
+                  ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+              )
+                  : const Icon(Icons.check_circle),
+              label: Text(_isSaving ? 'Salvando...' : 'Confirmar e Salvar Simulação'),
+              style: ElevatedButton.styleFrom(
+                minimumSize: const Size(double.infinity, 55),
+                textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              onPressed: _isSaving ? null : _saveSimulation,
+            ),
+          ],
+        ),
       ),
-    ),
-  );
-}
+    );
+  }
 }

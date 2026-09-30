@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
-import 'feedback_screen.dart'; // 👈 importa a tela de feedback
+import 'feedback_screen.dart';
 
 class HistoryDetailScreen extends StatelessWidget {
   final Map item;
@@ -9,6 +9,9 @@ class HistoryDetailScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // ✅ Tenta recuperar o caminho da imagem ajustada ou original
+    final String? imagePath = item['adjustedImage'] ?? item['originalImage'] ?? item['image'];
+
     return Scaffold(
       appBar: AppBar(title: const Text('Detalhes da Simulação')),
       body: Column(
@@ -16,9 +19,11 @@ class HistoryDetailScreen extends StatelessWidget {
           // Foto com zoom
           Expanded(
             child: InteractiveViewer(
-              child: item['image'] != null
-                  ? Image.file(File(item['image']))
-                  : const Icon(Icons.image_not_supported, size: 100),
+              child: (imagePath != null && File(imagePath).existsSync())
+                  ? Image.file(File(imagePath))
+                  : const Center(
+                child: Icon(Icons.image_not_supported, size: 100, color: Colors.grey),
+              ),
             ),
           ),
           // Dados do paciente e feedback
@@ -45,10 +50,16 @@ class HistoryDetailScreen extends StatelessWidget {
             children: [
               ElevatedButton.icon(
                 onPressed: () {
-                  Share.shareXFiles(
-                    [XFile(item['image'])],
-                    text: item['note'] ?? '',
-                  );
+                  if (imagePath != null && File(imagePath).existsSync()) {
+                    Share.shareXFiles(
+                      [XFile(imagePath)],
+                      text: item['note'] ?? '',
+                    );
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Arquivo de imagem não encontrado para compartilhar.')),
+                    );
+                  }
                 },
                 icon: const Icon(Icons.share),
                 label: const Text('Compartilhar'),

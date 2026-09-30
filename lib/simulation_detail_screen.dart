@@ -22,39 +22,44 @@ class SimulationDetailScreen extends StatelessWidget {
             pw.Text('Relatório de Simulação de Sorriso',
                 style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold)),
             pw.SizedBox(height: 20),
-            pw.Text('Cor: ${data['color']}'),
-            pw.Text('Formato: ${data['shape']}'),
-            pw.Text('Tamanho: ${data['size']}'),
+            pw.Text('Cor: ${data['color'] ?? '-'}'),
+            pw.Text('Formato: ${data['shape'] ?? '-'}'),
+            pw.Text('Tamanho: ${data['size'] ?? '-'}'),
             pw.SizedBox(height: 20),
-            pw.Text('Observações: ${data['note'] ?? ''}'),
+            pw.Text('Observações: ${data['note'] ?? 'Sem observações'}'),
           ],
         ),
       ),
     );
 
-    // Página com imagens
-    if (data['originalImage'] != null) {
-      final beforeImage = pw.MemoryImage(await File(data['originalImage']).readAsBytes());
+    // Página com imagens (com checagem se os arquivos realmente existem no celular)
+    final String? originalPath = data['originalImage'];
+    final String? adjustedPath = data['adjustedImage'];
+
+    if (originalPath != null && File(originalPath).existsSync()) {
+      final beforeImage = pw.MemoryImage(await File(originalPath).readAsBytes());
       pdf.addPage(
         pw.Page(
           build: (ctx) => pw.Column(
             children: [
               pw.Text("Imagem Original"),
-              pw.Image(beforeImage, width: 200, height: 200),
+              pw.SizedBox(height: 10),
+              pw.Image(beforeImage, width: 250, height: 250),
             ],
           ),
         ),
       );
     }
 
-    if (data['adjustedImage'] != null) {
-      final afterImage = pw.MemoryImage(await File(data['adjustedImage']).readAsBytes());
+    if (adjustedPath != null && File(adjustedPath).existsSync()) {
+      final afterImage = pw.MemoryImage(await File(adjustedPath).readAsBytes());
       pdf.addPage(
         pw.Page(
           build: (ctx) => pw.Column(
             children: [
               pw.Text("Imagem Ajustada"),
-              pw.Image(afterImage, width: 200, height: 200),
+              pw.SizedBox(height: 10),
+              pw.Image(afterImage, width: 250, height: 250),
             ],
           ),
         ),
@@ -74,22 +79,30 @@ class SimulationDetailScreen extends StatelessWidget {
 
     await Printing.sharePdf(bytes: await pdf.save(), filename: file.path.split('/').last);
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Relatório salvo em ${file.path} e pronto para compartilhar!')),
-    );
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Relatório salvo em ${file.path} e pronto para compartilhar!')),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final String? originalPath = data['originalImage'];
+    final String? adjustedPath = data['adjustedImage'];
+
     return Scaffold(
       appBar: AppBar(title: const Text("Detalhes da Simulação")),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              "Comparação Antes e Depois",
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            const Center(
+              child: Text(
+                "Comparação Antes e Depois",
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
             ),
             const SizedBox(height: 20),
 
@@ -98,27 +111,33 @@ class SimulationDetailScreen extends StatelessWidget {
               children: [
                 Column(
                   children: [
-                    const Text("Original"),
-                    if (data['originalImage'] != null)
-                      Image.file(File(data['originalImage']), height: 150),
+                    const Text("Original", style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    (originalPath != null && File(originalPath).existsSync())
+                        ? Image.file(File(originalPath), height: 140, fit: BoxFit.cover)
+                        : const Icon(Icons.image_not_supported, size: 80, color: Colors.grey),
                   ],
                 ),
                 Column(
                   children: [
-                    const Text("Ajustada"),
-                    if (data['adjustedImage'] != null)
-                      Image.file(File(data['adjustedImage']), height: 150),
+                    const Text("Ajustada", style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    (adjustedPath != null && File(adjustedPath).existsSync())
+                        ? Image.file(File(adjustedPath), height: 140, fit: BoxFit.cover)
+                        : const Icon(Icons.image_not_supported, size: 80, color: Colors.grey),
                   ],
                 ),
               ],
             ),
 
-            const SizedBox(height: 20),
-            Text("Cor: ${data['color']}"),
-            Text("Formato: ${data['shape']}"),
-            Text("Tamanho: ${data['size']}"),
-            const SizedBox(height: 10),
-            Text("Observações: ${data['note']}"),
+            const SizedBox(height: 30),
+            Text("Cor: ${data['color'] ?? '-'}", style: const TextStyle(fontSize: 16)),
+            const SizedBox(height: 8),
+            Text("Formato: ${data['shape'] ?? '-'}", style: const TextStyle(fontSize: 16)),
+            const SizedBox(height: 8),
+            Text("Tamanho: ${data['size'] ?? '-'}", style: const TextStyle(fontSize: 16)),
+            const SizedBox(height: 12),
+            Text("Observações: ${data['note'] ?? 'Sem observações'}", style: const TextStyle(fontSize: 16)),
 
             const Spacer(),
 

@@ -21,11 +21,12 @@ class _CaptureScreenState extends State<CaptureScreen> {
     }
   }
 
-  void _goToAdjust() {
+  // ✅ FIX: Direciona para a Análise com IA conforme o Fluxograma
+  void _goToAnalysis() {
     if (_image != null) {
       Navigator.pushNamed(
         context,
-        '/adjust',
+        '/analysis',
         arguments: {'image': _image!.path},
       );
     } else {
@@ -66,7 +67,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
 
               const SizedBox(height: 40),
 
-              // Botões centralizados
+              // Botões de seleção
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -76,23 +77,23 @@ class _CaptureScreenState extends State<CaptureScreen> {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.blue[300],
                       foregroundColor: Colors.white,
-                      minimumSize: const Size(160, 50),
-                      textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                      minimumSize: const Size(140, 50),
+                      textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(20),
                       ),
                     ),
                     onPressed: () => _pickImage(ImageSource.gallery),
                   ),
-                  const SizedBox(width: 20),
+                  const SizedBox(width: 16),
                   ElevatedButton.icon(
                     icon: const Icon(Icons.camera_alt),
                     label: const Text('Câmera'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.indigo[300],
                       foregroundColor: Colors.white,
-                      minimumSize: const Size(160, 50),
-                      textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                      minimumSize: const Size(140, 50),
+                      textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(20),
                       ),
@@ -104,7 +105,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
 
               const SizedBox(height: 30),
 
-              // Área de pré-visualização
+              // Pré-visualização da imagem capturada
               Expanded(
                 child: Center(
                   child: _image == null
@@ -117,13 +118,13 @@ class _CaptureScreenState extends State<CaptureScreen> {
         ),
       ),
 
-      // Botão de seguir embaixo
+      // Botão de avanço
       bottomNavigationBar: Padding(
         padding: const EdgeInsets.all(16.0),
         child: ElevatedButton.icon(
           icon: const Icon(Icons.arrow_forward),
           label: const Text(
-            'Seguir para Ajustes',
+            'Seguir para Análise com IA',
             style: TextStyle(
               fontWeight: FontWeight.bold,
               fontSize: 18,
@@ -137,7 +138,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
               borderRadius: BorderRadius.circular(30),
             ),
           ),
-          onPressed: _goToAdjust,
+          onPressed: _goToAnalysis,
         ),
       ),
     );

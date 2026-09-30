@@ -6,93 +6,103 @@ import 'package:printing/printing.dart';
 import 'package:path_provider/path_provider.dart';
 
 class FeedbackScreen extends StatelessWidget {
-  final Map existingItem;
+  final Map? existingItem;
 
-  const FeedbackScreen({super.key, required this.existingItem});
+  const FeedbackScreen({super.key, this.existingItem});
 
   @override
   Widget build(BuildContext context) {
-    final String? originalImage = existingItem['originalImage'];
-    final String? adjustedImage = existingItem['adjustedImage'];
+    // ✅ Tenta recuperar os argumentos passados via Navigator.pushNamed
+    final args = ModalRoute.of(context)!.settings.arguments as Map?;
+    final Map itemData = existingItem ?? args ?? {};
+
+    final String? originalImage = itemData['originalImage'];
+    final String? adjustedImage = itemData['adjustedImage'];
     final TextEditingController noteController =
-    TextEditingController(text: existingItem['note'] ?? '');
+    TextEditingController(text: itemData['note'] ?? '');
 
     return Scaffold(
       appBar: AppBar(title: const Text('Feedback do Dentista')),
       body: Padding(
         padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            // Pré-visualização das imagens
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                if (originalImage != null)
-                  Column(
-                    children: [
-                      const Text("Original", style: TextStyle(fontWeight: FontWeight.bold)),
-                      Image.file(File(originalImage), height: 150, fit: BoxFit.cover),
-                    ],
-                  ),
-                if (adjustedImage != null)
-                  Column(
-                    children: [
-                      const Text("Ajustada", style: TextStyle(fontWeight: FontWeight.bold)),
-                      Image.file(File(adjustedImage), height: 150, fit: BoxFit.cover),
-                    ],
-                  ),
-              ],
-            ),
-            const SizedBox(height: 20),
-
-            // Campo de texto para observações
-            TextField(
-              controller: noteController,
-              decoration: const InputDecoration(
-                labelText: 'Observações do dentista',
-                border: OutlineInputBorder(),
+        child: SingleChildScrollView(
+          child: Column(
+            children: [
+              // Pré-visualização das imagens
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  if (originalImage != null && File(originalImage).existsSync())
+                    Column(
+                      children: [
+                        const Text("Original", style: TextStyle(fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 8),
+                        Image.file(File(originalImage), height: 130, fit: BoxFit.cover),
+                      ],
+                    ),
+                  if (adjustedImage != null && File(adjustedImage).existsSync())
+                    Column(
+                      children: [
+                        const Text("Ajustada", style: TextStyle(fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 8),
+                        Image.file(File(adjustedImage), height: 130, fit: BoxFit.cover),
+                      ],
+                    ),
+                ],
               ),
-              maxLines: 3,
-              maxLength: 500,
-            ),
-            const SizedBox(height: 20),
+              const SizedBox(height: 20),
 
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                ElevatedButton(
-                  onPressed: () {
-                    var box = Hive.box('simulacoes');
-                    box.put(DateTime.now().toIso8601String(), {
-                      ...existingItem,
-                      'note': noteController.text,
-                    });
-
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Feedback salvo no histórico!')),
-                    );
-
-                    Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
-                  },
-                  child: const Text('Salvar Feedback'),
+              // Campo de texto para observações
+              TextField(
+                controller: noteController,
+                decoration: const InputDecoration(
+                  labelText: 'Observações do dentista',
+                  border: OutlineInputBorder(),
                 ),
-                ElevatedButton(
-                  onPressed: () async {
-                    await _gerarRelatorio(
-                      context,
-                      originalImage,
-                      adjustedImage,
-                      noteController.text,
-                      existingItem,
-                    );
+                maxLines: 3,
+                maxLength: 500,
+              ),
+              const SizedBox(height: 20),
 
-                    Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
-                  },
-                  child: const Text('Gerar Relatório PDF'),
-                ),
-              ],
-            ),
-          ],
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  ElevatedButton(
+                    onPressed: () {
+                      var box = Hive.box('simulacoes');
+                      box.put(DateTime.now().toIso8601String(), {
+                        ...itemData,
+                        'note': noteController.text,
+                      });
+
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Feedback salvo no histórico!')),
+                      );
+
+                      Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
+                    },
+                    child: const Text('Salvar Feedback'),
+                  ),
+                  ElevatedButton(
+                    onPressed: () async {
+                      await _gerarRelatorio(
+                        context,
+                        originalImage,
+                        adjustedImage,
+                        noteController.text,
+                        itemData,
+                      );
+
+                      if (context.mounted) {
+                        Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
+                      }
+                    },
+                    child: const Text('Gerar Relatório PDF'),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -112,15 +122,15 @@ class FeedbackScreen extends StatelessWidget {
       pw.Text('Relatório de Simulação de Sorriso',
           style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold)),
       pw.SizedBox(height: 20),
-      pw.Text('Cor: ${item['color']}'),
-      pw.Text('Formato: ${item['shape']}'),
-      pw.Text('Tamanho: ${item['size']}'),
+      pw.Text('Cor: ${item['color'] ?? ''}'),
+      pw.Text('Formato: ${item['shape'] ?? ''}'),
+      pw.Text('Tamanho: ${item['size'] ?? ''}'),
       pw.SizedBox(height: 20),
       pw.Text('Observações: $note'),
       pw.SizedBox(height: 20),
     ];
 
-    if (original != null && adjusted != null) {
+    if (original != null && adjusted != null && File(original).existsSync() && File(adjusted).existsSync()) {
       final beforeImage = pw.MemoryImage(await File(original).readAsBytes());
       final afterImage = pw.MemoryImage(await File(adjusted).readAsBytes());
 
@@ -146,8 +156,8 @@ class FeedbackScreen extends StatelessWidget {
     }
 
     // Assinatura ou carimbo da clínica
-    final signaturePath = item['signaturePath']; // caminho da imagem de assinatura
-    if (signaturePath != null) {
+    final signaturePath = item['signaturePath'] ?? Hive.box('simulacoes').get('signaturePath');
+    if (signaturePath != null && File(signaturePath).existsSync()) {
       final signatureImage = pw.MemoryImage(await File(signaturePath).readAsBytes());
       content.add(pw.SizedBox(height: 30));
       content.add(
@@ -180,8 +190,10 @@ class FeedbackScreen extends StatelessWidget {
 
     await Printing.sharePdf(bytes: await pdf.save(), filename: file.path.split('/').last);
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Relatório salvo em ${file.path} e pronto para compartilhar!')),
-    );
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Relatório salvo em ${file.path} e pronto para compartilhar!')),
+      );
+    }
   }
 }

@@ -1,135 +1,170 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
-import 'dart:typed_data';
 import 'api_service.dart';
 
 class AdjustSmileScreen extends StatefulWidget {
   final File image;
-  final Map<String, dynamic>? region; // coordenadas dos dentes
+  final Map<String, dynamic>? region;
 
-  const AdjustSmileScreen({super.key, required this.image, this.region});
+  const AdjustSmileScreen({
+    super.key,
+    required this.image,
+    this.region,
+  });
 
   @override
   State<AdjustSmileScreen> createState() => _AdjustSmileScreenState();
 }
 
 class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
-  String _selectedColor = 'Natural';
-  String _selectedShape = 'Quadrado';
+  String _selectedColor = 'A1';
+  String _selectedShape = 'Natural';
   String _selectedSize = 'Médio';
+  bool _isLoading = false;
 
-  bool loading = false;
+  final List<String> _colors = ['BL1', 'A1', 'A2', 'A3', 'B1'];
+  final List<String> _shapes = ['Natural', 'Oval', 'Quadrado', 'Retangular'];
+  final List<String> _sizes = ['Pequeno', 'Médio', 'Grande'];
 
-  Future<void> _applyAdjustments() async {
-    setState(() => loading = true);
+  Future<void> _applyChanges() async {
+    setState(() {
+      _isLoading = true;
+    });
+
     try {
-      // Envia a imagem original para a IA
-      final result = await ApiService.processSmile(widget.image);
+      // ✅ Chamada corrigida com todos os parâmetros nomeados fornecidos
+      final result = await ApiService.processSmile(
+        widget.image,
+        color: _selectedColor,
+        shape: _selectedShape,
+        size: _selectedSize,
+      );
 
       if (result != null) {
-        // Salva resultado temporário
-        final dir = await getTemporaryDirectory();
+        final tempDir = await getTemporaryDirectory();
         final adjustedFile = File(
-            '${dir.path}/adjusted_${DateTime.now().millisecondsSinceEpoch}.png');
+            '${tempDir.path}/adjusted_${DateTime.now().millisecondsSinceEpoch}.png');
         await adjustedFile.writeAsBytes(result);
 
-        // Vai direto para tela de comparação
-        Navigator.pushNamed(
-          context,
-          '/compare',
-          arguments: {
-            'originalImage': widget.image.path,
-            'existingItem': {
-              'color': _selectedColor,
-              'shape': _selectedShape,
-              'size': _selectedSize,
-              'date': DateTime.now().toIso8601String(),
-              'note': '',
-              'region': widget.region,
+        if (mounted) {
+          Navigator.pushNamed(
+            context,
+            '/compare',
+            arguments: {
+              'originalImage': widget.image.path,
+              'adjustedImage': adjustedFile.path,
+              'existingItem': {
+                'color': _selectedColor,
+                'shape': _selectedShape,
+                'size': _selectedSize,
+                'date': DateTime.now().toString().split('.')[0],
+              },
             },
-            'adjustedImage': adjustedFile.path,
-          },
-        );
+          );
+        }
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Não foi possível aplicar ajustes")),
-        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Falha ao processar a imagem no servidor.')),
+          );
+        }
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Erro ao aplicar ajustes: $e")),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro ao conectar com o servidor: $e')),
+        );
+      }
     } finally {
-      setState(() => loading = false);
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Ajustes de Sorriso")),
-      body: Padding(
-        padding: const EdgeInsets.all(24.0),
+      appBar: AppBar(title: const Text('Ajustes do Sorriso')),
+      body: _isLoading
+          ? const Center(
         child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Controles de ajuste
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                DropdownButton<String>(
-                  value: _selectedColor,
-                  items: const [
-                    DropdownMenuItem(value: 'Natural', child: Text('Natural')),
-                    DropdownMenuItem(value: 'Brilhante', child: Text('Brilhante')),
-                    DropdownMenuItem(value: 'Perolado', child: Text('Perolado')),
-                  ],
-                  onChanged: (value) => setState(() => _selectedColor = value!),
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text('Processando simulação no servidor...'),
+          ],
+        ),
+      )
+          : SingleChildScrollView(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(
+              height: 250,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                image: DecorationImage(
+                  image: FileImage(widget.image),
+                  fit: BoxFit.cover,
                 ),
-                DropdownButton<String>(
-                  value: _selectedShape,
-                  items: const [
-                    DropdownMenuItem(value: 'Quadrado', child: Text('Quadrado')),
-                    DropdownMenuItem(value: 'Arredondado', child: Text('Arredondado')),
-                    DropdownMenuItem(value: 'Oval', child: Text('Oval')),
-                  ],
-                  onChanged: (value) => setState(() => _selectedShape = value!),
-                ),
-                DropdownButton<String>(
-                  value: _selectedSize,
-                  items: const [
-                    DropdownMenuItem(value: 'Curto', child: Text('Curto')),
-                    DropdownMenuItem(value: 'Médio', child: Text('Médio')),
-                    DropdownMenuItem(value: 'Longo', child: Text('Longo')),
-                  ],
-                  onChanged: (value) => setState(() => _selectedSize = value!),
-                ),
-              ],
+              ),
             ),
-
             const SizedBox(height: 20),
 
-            // Pré-visualização simples da foto original
-            Expanded(
-              child: Center(
-                child: Image.file(widget.image, fit: BoxFit.contain),
-              ),
+            // Seleção de Cor
+            const Text('Cor dos Dentes', style: TextStyle(fontWeight: FontWeight.bold)),
+            DropdownButton<String>(
+              isExpanded: true,
+              value: _selectedColor,
+              items: _colors
+                  .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                  .toList(),
+              onChanged: (val) {
+                if (val != null) setState(() => _selectedColor = val);
+              },
             ),
+            const SizedBox(height: 12),
 
-            if (loading) const CircularProgressIndicator(),
+            // Seleção de Formato
+            const Text('Formato dos Dentes', style: TextStyle(fontWeight: FontWeight.bold)),
+            DropdownButton<String>(
+              isExpanded: true,
+              value: _selectedShape,
+              items: _shapes
+                  .map((s) => DropdownMenuItem(value: s, child: Text(s)))
+                  .toList(),
+              onChanged: (val) {
+                if (val != null) setState(() => _selectedShape = val);
+              },
+            ),
+            const SizedBox(height: 12),
+
+            // Seleção de Tamanho
+            const Text('Tamanho dos Dentes', style: TextStyle(fontWeight: FontWeight.bold)),
+            DropdownButton<String>(
+              isExpanded: true,
+              value: _selectedSize,
+              items: _sizes
+                  .map((s) => DropdownMenuItem(value: s, child: Text(s)))
+                  .toList(),
+              onChanged: (val) {
+                if (val != null) setState(() => _selectedSize = val);
+              },
+            ),
+            const SizedBox(height: 24),
 
             ElevatedButton(
-              onPressed: _applyAdjustments,
               style: ElevatedButton.styleFrom(
-                minimumSize: const Size(double.infinity, 60),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(30),
-                ),
+                padding: const EdgeInsets.symmetric(vertical: 16),
               ),
-              child: const Text(
-                "Aplicar Ajustes",
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-              ),
+              onPressed: _applyChanges,
+              child: const Text('Aplicar Simulação', style: TextStyle(fontSize: 18)),
             ),
           ],
         ),
