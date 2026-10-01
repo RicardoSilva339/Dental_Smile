@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'background.dart'; // seu widget de fundo
+import 'background.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -39,8 +39,8 @@ class HomeScreen extends StatelessWidget {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
         ),
-        backgroundColor: Colors.indigo[300], // azul da câmera
-        foregroundColor: Colors.white,       // texto branco
+        backgroundColor: Colors.indigo[300],
+        foregroundColor: Colors.white,
       ),
       onPressed: () => Navigator.pushNamed(context, route),
       child: Text(label),

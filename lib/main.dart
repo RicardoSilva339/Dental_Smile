@@ -6,8 +6,8 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'home_screen.dart';
 import 'history_screen.dart';
 import 'capture_screen.dart';
-import 'analysis_screen.dart'; // ✅ Adicionado
-import 'about_screen.dart';
+import 'analysis_screen.dart';
+import 'treatment_about_screen.dart'; // ✅ Import da nova tela de anotações
 import 'meus_relatorios_screen.dart';
 import 'feedback_screen.dart';
 import 'adjust_smile_screen.dart';
@@ -45,11 +45,11 @@ class MyApp extends StatelessWidget {
         // 3. Captura de Foto
         '/capture': (context) => const CaptureScreen(),
 
-        // 4. Análise com IA (Conforme o Fluxograma)
+        // 4. Análise com IA
         '/analysis': (context) => const AnalysisScreen(),
 
-        // 5. Sobre o Tratamento
-        '/about': (context) => const AboutScreen(),
+        // 5. Sobre o Tratamento (Prontuário/Notas do Dentista)
+        '/about': (context) => const TreatmentAboutScreen(), // ✅ Atualizado aqui!
 
         // 6. Meus Relatórios
         '/relatorios': (context) => const MeusRelatoriosScreen(),
