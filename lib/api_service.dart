@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
@@ -24,6 +25,15 @@ class ApiService {
     return File(result.path);
   }
 
+  // Função auxiliar para converter um Asset em File temporário para o upload
+  static Future<File> _getAssetFile(String assetPath) async {
+    final byteData = await rootBundle.load(assetPath);
+    final tempDir = await getTemporaryDirectory();
+    final file = File('${tempDir.path}/${assetPath.split('/').last}');
+    await file.writeAsBytes(byteData.buffer.asUint8List(byteData.offsetInBytes, byteData.lengthInBytes));
+    return file;
+  }
+
   static Future<Uint8List?> processSmile(
       File imageFile, {
         required String color,
@@ -37,16 +47,29 @@ class ApiService {
 
       final request = http.MultipartRequest('POST', Uri.parse(baseUrl));
 
-      // 2. Anexa o ficheiro comprimido
+      // 2. Anexa o ficheiro principal (foto do paciente)
       request.files.add(
         await http.MultipartFile.fromPath('file', fileToSend.path),
       );
 
+      // 3. Mapeia o formato (shape) escolhido para o asset PNG correspondente
+      String assetPath = 'assets/images/dentes_arredondados.png';
+      if (shape.toLowerCase().contains('quadrado')) {
+        assetPath = 'assets/images/dentes_quadrados.png';
+      }
+
+      // 4. Carrega e anexa o molde PNG no campo 'overlay'
+      final File overlayFile = await _getAssetFile(assetPath);
+      request.files.add(
+        await http.MultipartFile.fromPath('overlay', overlayFile.path),
+      );
+
+      // 5. Adiciona os parâmetros no formulário
       request.fields['color'] = color;
       request.fields['shape'] = shape;
       request.fields['size'] = size;
 
-      // 3. Define timeout de 90 segundos para dar tempo de resposta do Render
+      // 6. Define timeout de 90 segundos para dar tempo do Render responder
       final streamedResponse = await request.send().timeout(
         const Duration(seconds: 90),
       );
