@@ -23,7 +23,15 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
   String _selectedSize = 'Médio';
   bool _isLoading = false;
 
-  final List<String> _colors = ['BL1', 'A1', 'A2', 'A3', 'B1'];
+  // Dicionário com código enviado ao backend -> Texto exibido ao usuário
+  final Map<String, String> _colorOptions = {
+    'BL1': 'BL1 - Branco Extra (Bleach)',
+    'A1': 'A1 - Branco Natural (Muito Claro)',
+    'A2': 'A2 - Claro Natural',
+    'A3': 'A3 - Tom Médio / Natural',
+    'B1': 'B1 - Branco Amarelado Leve',
+  };
+
   final List<String> _shapes = ['Natural', 'Oval', 'Quadrado', 'Retangular'];
   final List<String> _sizes = ['Pequeno', 'Médio', 'Grande'];
 
@@ -33,7 +41,6 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
     });
 
     try {
-      // ✅ Chamada corrigida com todos os parâmetros nomeados fornecidos
       final result = await ApiService.processSmile(
         widget.image,
         color: _selectedColor,
@@ -117,14 +124,17 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
             ),
             const SizedBox(height: 20),
 
-            // Seleção de Cor
+            // Seleção de Cor com rótulos amigáveis
             const Text('Cor dos Dentes', style: TextStyle(fontWeight: FontWeight.bold)),
             DropdownButton<String>(
               isExpanded: true,
               value: _selectedColor,
-              items: _colors
-                  .map((c) => DropdownMenuItem(value: c, child: Text(c)))
-                  .toList(),
+              items: _colorOptions.entries.map((entry) {
+                return DropdownMenuItem<String>(
+                  value: entry.key,   // Envia o código técnico ('BL1', 'A1', etc.)
+                  child: Text(entry.value), // Mostra o nome descritivo para o usuário
+                );
+              }).toList(),
               onChanged: (val) {
                 if (val != null) setState(() => _selectedColor = val);
               },

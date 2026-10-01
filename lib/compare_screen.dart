@@ -75,6 +75,32 @@ class _CompareScreenState extends State<CompareScreen> {
     }
   }
 
+  // Função auxiliar para criar a caixa da imagem com suporte a zoom
+  Widget _buildZoomableImage(String imagePath) {
+    return Container(
+      height: 280, // Aumenta a área de visualização das fotos
+      decoration: BoxDecoration(
+        color: Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: InteractiveViewer(
+          panEnabled: true,  // Permite arrastar com o dedo
+          minScale: 1.0,     // Tamanho inicial
+          maxScale: 4.0,     // Permite dar zoom de até 4x
+          child: Image.file(
+            File(imagePath),
+            fit: BoxFit.cover,
+            width: double.infinity,
+            height: double.infinity,
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -91,7 +117,7 @@ class _CompareScreenState extends State<CompareScreen> {
             ),
             const SizedBox(height: 16),
 
-            // Exibição Lado a Lado
+            // Exibição Lado a Lado com Zoom
             Row(
               children: [
                 Expanded(
@@ -99,7 +125,7 @@ class _CompareScreenState extends State<CompareScreen> {
                     children: [
                       const Text('Antes', style: TextStyle(fontWeight: FontWeight.bold)),
                       const SizedBox(height: 8),
-                      Image.file(File(widget.originalImage), height: 180, fit: BoxFit.cover),
+                      _buildZoomableImage(widget.originalImage),
                     ],
                   ),
                 ),
@@ -109,7 +135,7 @@ class _CompareScreenState extends State<CompareScreen> {
                     children: [
                       const Text('Depois', style: TextStyle(fontWeight: FontWeight.bold)),
                       const SizedBox(height: 8),
-                      Image.file(File(widget.adjustedImage), height: 180, fit: BoxFit.cover),
+                      _buildZoomableImage(widget.adjustedImage),
                     ],
                   ),
                 ),

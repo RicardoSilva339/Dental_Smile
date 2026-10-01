@@ -1,5 +1,5 @@
 from flask import Flask, request, send_file, jsonify
-from PIL import Image
+from PIL import Image, ImageEnhance
 import io
 
 app = Flask(__name__)
@@ -17,21 +17,25 @@ def processar():
     if file.filename == '':
         return jsonify({"error": "Nome de arquivo inválido"}), 400
 
-    # Recebe os parâmetros adicionais vindos do Flutter (fields)
-    color = request.form.get('color', 'default')
+    # Recebe os parâmetros enviados pelo Flutter
+    color = request.form.get('color', 'A1')
     shape = request.form.get('shape', 'default')
     size = request.form.get('size', 'default')
 
     try:
-        img = Image.open(file)
+        # Garante que a imagem está em RGB (colorida)
+        img = Image.open(file).convert("RGB")
 
-        # Otimização de memória (máximo 800px)
+        # Otimização de memória para o Render (máximo 800px)
         max_dimension = 800
         if max(img.size) > max_dimension:
             img.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
 
-        # Processamento da imagem (Preto e branco para teste)
-        img = img.convert("L")
+        # Ajuste de clareamento/brilho baseado na cor escolhida
+        # Cores mais claras (BL1, A1) recebem um ganho de brilho maior
+        factor = 1.35 if color in ['BL1', 'A1'] else 1.20
+        enhancer = ImageEnhance.Brightness(img)
+        img = enhancer.enhance(factor)
 
         img_io = io.BytesIO()
         img.save(img_io, 'JPEG', quality=85)
