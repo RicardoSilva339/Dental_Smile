@@ -4,7 +4,6 @@ import io
 
 app = Flask(__name__)
 
-# Rota raiz necessária para o Render e testes
 @app.route('/', methods=['GET'])
 def health_check():
     return jsonify({"status": "online", "message": "Dental Smile Backend Ativo"}), 200
@@ -12,27 +11,36 @@ def health_check():
 @app.route('/processar', methods=['POST'])
 def processar():
     if 'file' not in request.files:
-        return "Nenhum arquivo enviado", 400
+        return jsonify({"error": "Nenhum arquivo enviado"}), 400
 
     file = request.files['file']
     if file.filename == '':
-        return "Nome de arquivo inválido", 400
+        return jsonify({"error": "Nome de arquivo inválido"}), 400
 
-    img = Image.open(file)
+    # Recebe os parâmetros adicionais vindos do Flutter (fields)
+    color = request.form.get('color', 'default')
+    shape = request.form.get('shape', 'default')
+    size = request.form.get('size', 'default')
 
-    # Redimensiona para economizar memória RAM (máx 800px)
-    max_dimension = 800
-    if max(img.size) > max_dimension:
-        img.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
+    try:
+        img = Image.open(file)
 
-    # Processamento da imagem
-    img = img.convert("L")
+        # Otimização de memória (máximo 800px)
+        max_dimension = 800
+        if max(img.size) > max_dimension:
+            img.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
 
-    img_io = io.BytesIO()
-    img.save(img_io, 'JPEG', quality=85)
-    img_io.seek(0)
+        # Processamento da imagem (Preto e branco para teste)
+        img = img.convert("L")
 
-    return send_file(img_io, mimetype='image/jpeg')
+        img_io = io.BytesIO()
+        img.save(img_io, 'JPEG', quality=85)
+        img_io.seek(0)
+
+        return send_file(img_io, mimetype='image/jpeg')
+    except Exception as e:
+        print(f"Erro no processamento: {e}")
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
