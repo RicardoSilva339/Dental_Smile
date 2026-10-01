@@ -1,20 +1,21 @@
 from flask import Flask, request, send_file, jsonify
-from PIL import Image, ImageEnhance, ImageOps
+from PIL import Image, ImageEnhance, ImageFilter
 import io
 
 app = Flask(__name__)
 
-# Tabela de tonalidades RGB baseadas na Escala Vita
-VITA_COLOR_MAP = {
-    'BL1': (250, 248, 240), # Ultra branco / Lente de contato
-    'A1':  (242, 236, 218), # Branco natural
-    'A2':  (235, 224, 198), # Amarelado claro
-    'B1':  (245, 240, 220), # Claro amarelado/cinza
+# Tabela de clareamento baseada na Escala Vita
+# Ajusta o brilho (Fator 1.0 = original)
+VITA_WHITENING_MAP = {
+    'BL1': 1.60, # Ultra branco
+    'A1':  1.45, # Branco natural
+    'A2':  1.30, # Levemente clareado
+    'B1':  1.50, # Claro
 }
 
 @app.route('/', methods=['GET'])
 def health_check():
-    return jsonify({"status": "online", "message": "Dental Smile Backend Ativo"}), 200
+    return jsonify({"status": "online", "message": "Dental Smile Backend Ativo (Plano B)"}), 200
 
 @app.route('/processar', methods=['POST'])
 def processar():
@@ -27,49 +28,44 @@ def processar():
 
     # Recebe os parâmetros do Flutter
     color_code = request.form.get('color', 'A1')
-    shape = request.form.get('shape', 'Natural')
-    size = request.form.get('size', 'Médio')
-
-    # Verifica se o Flutter enviou o arquivo do molde PNG de dentes
-    overlay_file = request.files.get('overlay')
 
     try:
-        # Carrega a imagem do paciente
-        base_img = Image.open(file).convert("RGBA")
+        # 1. Carrega a imagem do paciente e otimiza memória
+        img = Image.open(file).convert("RGB")
+        max_dimension = 1080
+        if max(img.size) > max_dimension:
+            img.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
+        width, height = img.size
 
-        # Otimização de memória para o Render (máx 800px)
-        max_dimension = 800
-        if max(base_img.size) > max_dimension:
-            base_img.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
+        # --- PROCESSAMENTO PLANO B (Clareamento + Suavização) ---
 
-        # Se o Flutter enviou o molde PNG (ex: dentes_arredondados.png ou dentes_quadrados.png)
-        if overlay_file:
-            overlay_img = Image.open(overlay_file).convert("RGBA")
+        # 2. Clareamento Global (Escala Vita)
+        whitening_factor = VITA_WHITENING_MAP.get(color_code, 1.45)
+        enhancer = ImageEnhance.Brightness(img)
+        img_clarificada = enhancer.enhance(whitening_factor)
 
-            # Redimensiona o molde para se adequar à foto do paciente
-            overlay_img = overlay_img.resize(base_img.size, Image.Resampling.LANCZOS)
+        # 3. Alinhamento Básico (Suavização de Textura)
+        # Cria uma máscara para focar apenas na área da boca (aproximadamente)
+        mask = Image.new('L', (width, height), 0)
+        # Define uma região central inferior para suavizar (boca)
+        # Y começa em 60% da altura e vai até 85%. X centralizado.
+        boca_regiao = (int(width*0.25), int(height*0.60), int(width*0.75), int(height*0.85))
+        mask_draw = Image.new('L', (width, height), 0)
+        from PIL import ImageDraw
+        draw = ImageDraw.Draw(mask_draw)
+        # Desenha um retângulo branco e desfoca para bordas suaves
+        draw.rectangle(boca_regiao, fill=255)
+        mask_suave = mask_draw.filter(ImageFilter.GaussianBlur(radius=20))
 
-            # Aplica o tom de cor escolhido no molde de dentes
-            target_rgb = VITA_COLOR_MAP.get(color_code, (242, 236, 218))
+        # 4. Aplica desfoque (Blur) para suavizar dentes tortos
+        img_suavizada = img_clarificada.filter(ImageFilter.GaussianBlur(radius=3))
 
-            # Separa os canais Alpha (transparência)
-            r, g, b, alpha = overlay_img.split()
+        # 5. Mescla as imagens: clareada onde é rosto, suavizada onde é boca
+        final_img = Image.composite(img_suavizada, img_clarificada, mask_suave)
 
-            # Colorização do molde
-            colored_overlay = Image.new("RGBA", base_img.size, target_rgb + (0,))
-            colored_overlay.putalpha(alpha)
+        # --- FIM DO PROCESSAMENTO ---
 
-            # Realiza a fusão (sobreposição) do molde com a imagem original
-            base_img = Image.alpha_composite(base_img, colored_overlay)
-        else:
-            # Caso não envie molde, aplica o clareamento global simples
-            rgb_img = base_img.convert("RGB")
-            factor = 1.35 if color_code in ['BL1', 'A1'] else 1.20
-            enhancer = ImageEnhance.Brightness(rgb_img)
-            base_img = enhancer.enhance(factor).convert("RGBA")
-
-        # Converte de volta para RGB e prepara para envio
-        final_img = base_img.convert("RGB")
+        # Prepara para envio
         img_io = io.BytesIO()
         final_img.save(img_io, 'JPEG', quality=85)
         img_io.seek(0)
