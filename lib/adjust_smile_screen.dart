@@ -1,7 +1,7 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:path_provider/path_provider.dart';
-import 'api_service.dart';
+import 'package:dental_smile/api_service.dart';
 
 class AdjustSmileScreen extends StatefulWidget {
   final File image;
@@ -18,166 +18,190 @@ class AdjustSmileScreen extends StatefulWidget {
 }
 
 class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
-  String _selectedColor = 'A1';
-  String _selectedShape = 'Natural';
-  String _selectedSize = 'Médio';
-  bool _isLoading = false;
+  bool _isProcessing = false;
 
-  // Dicionário com código enviado ao backend -> Texto exibido ao usuário
-  final Map<String, String> _colorOptions = {
-    'BL1': 'BL1 - Branco Extra (Bleach)',
-    'A1': 'A1 - Branco Natural (Muito Claro)',
-    'A2': 'A2 - Claro Natural',
-    'A3': 'A3 - Tom Médio / Natural',
-    'B1': 'B1 - Branco Amarelado Leve',
+  // Parâmetros do Sorriso selecionados
+  String _selectedColor = 'brilhante';
+  String _selectedShape = 'oval';
+  String _selectedSize = 'medio';
+
+  final Map<String, String> _colors = {
+    'natural': 'Natural',
+    'brilhante': 'Brilhante',
+    'perolado': 'Perolado',
   };
 
-  final List<String> _shapes = ['Natural', 'Oval', 'Quadrado', 'Retangular'];
-  final List<String> _sizes = ['Pequeno', 'Médio', 'Grande'];
+  final Map<String, String> _shapes = {
+    'oval': 'Oval',
+    'quadrado': 'Quadrado',
+    'retangular': 'Retangular',
+    'triangular': 'Triangular',
+  };
 
-  Future<void> _applyChanges() async {
-    setState(() {
-      _isLoading = true;
-    });
+  final Map<String, String> _sizes = {
+    'curto': 'Curto',
+    'medio': 'Médio',
+    'longo': 'Longo',
+  };
+
+  // Envia a imagem e os parâmetros selecionados para o servidor no Render
+  Future<void> _handleProcessSmile() async {
+    setState(() => _isProcessing = true);
 
     try {
-      final result = await ApiService.processSmile(
+      Uint8List? processedBytes = await ApiService.processSmile(
         widget.image,
         color: _selectedColor,
         shape: _selectedShape,
         size: _selectedSize,
       );
 
-      if (result != null) {
-        final tempDir = await getTemporaryDirectory();
-        final adjustedFile = File(
-            '${tempDir.path}/adjusted_${DateTime.now().millisecondsSinceEpoch}.png');
-        await adjustedFile.writeAsBytes(result);
+      if (!mounted) return;
 
-        if (mounted) {
-          Navigator.pushNamed(
-            context,
-            '/compare',
-            arguments: {
-              'originalImage': widget.image.path,
-              'adjustedImage': adjustedFile.path,
-              'existingItem': {
-                'color': _selectedColor,
-                'shape': _selectedShape,
-                'size': _selectedSize,
-                'date': DateTime.now().toString().split('.')[0],
-              },
-            },
-          );
-        }
+      if (processedBytes != null) {
+        Navigator.pushNamed(
+          context,
+          '/compare',
+          arguments: {
+            'originalImage': widget.image.path,
+            'processedBytes': processedBytes,
+          },
+        );
       } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Falha ao processar a imagem no servidor.')),
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erro ao conectar com o servidor: $e')),
+          const SnackBar(
+            content: Text('Erro ao processar imagem no servidor. Tente novamente.'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Falha na conexão: $e')),
+      );
     } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+      if (mounted) setState(() => _isProcessing = false);
     }
+  }
+
+  Widget _buildChipGroup({
+    required String title,
+    required Map<String, String> options,
+    required String selectedValue,
+    required ValueChanged<String> onSelected,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+          child: Text(
+            title,
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+          ),
+        ),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 12.0),
+          child: Row(
+            children: options.entries.map((entry) {
+              final isSelected = selectedValue == entry.key;
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                child: ChoiceChip(
+                  label: Text(entry.value),
+                  selected: isSelected,
+                  selectedColor: Colors.deepPurple.shade100,
+                  labelStyle: TextStyle(
+                    color: isSelected ? Colors.deepPurple : Colors.black87,
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                  ),
+                  onSelected: (selected) {
+                    if (selected) onSelected(entry.key);
+                  },
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+      ],
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Ajustes do Sorriso')),
-      body: _isLoading
-          ? const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            CircularProgressIndicator(),
-            SizedBox(height: 16),
-            Text('Processando simulação no servidor...'),
-          ],
-        ),
-      )
-          : SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Container(
-              height: 250,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(12),
-                image: DecorationImage(
-                  image: FileImage(widget.image),
+      appBar: AppBar(
+        title: const Text('Personalize o Sorriso'),
+      ),
+      body: Column(
+        children: [
+          // Preview da Imagem Capturada
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(24),
+                child: Image.file(
+                  widget.image,
                   fit: BoxFit.cover,
+                  width: double.infinity,
                 ),
               ),
             ),
-            const SizedBox(height: 20),
+          ),
 
-            // Seleção de Cor com rótulos amigáveis
-            const Text('Cor dos Dentes', style: TextStyle(fontWeight: FontWeight.bold)),
-            DropdownButton<String>(
-              isExpanded: true,
-              value: _selectedColor,
-              items: _colorOptions.entries.map((entry) {
-                return DropdownMenuItem<String>(
-                  value: entry.key,   // Envia o código técnico ('BL1', 'A1', etc.)
-                  child: Text(entry.value), // Mostra o nome descritivo para o usuário
-                );
-              }).toList(),
-              onChanged: (val) {
-                if (val != null) setState(() => _selectedColor = val);
-              },
-            ),
-            const SizedBox(height: 12),
+          // Painel de Configurações do Sorriso (Cor, Formato e Tamanho)
+          _buildChipGroup(
+            title: 'Cor:',
+            options: _colors,
+            selectedValue: _selectedColor,
+            onSelected: (val) => setState(() => _selectedColor = val),
+          ),
+          const SizedBox(height: 8),
 
-            // Seleção de Formato
-            const Text('Formato dos Dentes', style: TextStyle(fontWeight: FontWeight.bold)),
-            DropdownButton<String>(
-              isExpanded: true,
-              value: _selectedShape,
-              items: _shapes
-                  .map((s) => DropdownMenuItem(value: s, child: Text(s)))
-                  .toList(),
-              onChanged: (val) {
-                if (val != null) setState(() => _selectedShape = val);
-              },
-            ),
-            const SizedBox(height: 12),
+          _buildChipGroup(
+            title: 'Formato:',
+            options: _shapes,
+            selectedValue: _selectedShape,
+            onSelected: (val) => setState(() => _selectedShape = val),
+          ),
+          const SizedBox(height: 8),
 
-            // Seleção de Tamanho
-            const Text('Tamanho dos Dentes', style: TextStyle(fontWeight: FontWeight.bold)),
-            DropdownButton<String>(
-              isExpanded: true,
-              value: _selectedSize,
-              items: _sizes
-                  .map((s) => DropdownMenuItem(value: s, child: Text(s)))
-                  .toList(),
-              onChanged: (val) {
-                if (val != null) setState(() => _selectedSize = val);
-              },
-            ),
-            const SizedBox(height: 24),
+          _buildChipGroup(
+            title: 'Tamanho:',
+            options: _sizes,
+            selectedValue: _selectedSize,
+            onSelected: (val) => setState(() => _selectedSize = val),
+          ),
+          const SizedBox(height: 16),
 
-            ElevatedButton(
+          // Botão que chama a API no Render
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16.0, 0.0, 16.0, 24.0),
+            child: ElevatedButton.icon(
+              icon: _isProcessing
+                  ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+              )
+                  : const Icon(Icons.auto_awesome),
+              label: Text(_isProcessing ? 'Processando com IA...' : 'Aplicar Sorriso'),
               style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 16),
+                minimumSize: const Size(double.infinity, 52),
+                backgroundColor: const Color(0xFF5C6BC0),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
               ),
-              onPressed: _applyChanges,
-              child: const Text('Aplicar Simulação', style: TextStyle(fontSize: 18)),
+              onPressed: _isProcessing ? null : _handleProcessSmile,
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

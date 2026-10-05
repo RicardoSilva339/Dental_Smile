@@ -1,73 +1,74 @@
 from flask import Flask, request, send_file, jsonify
-from PIL import Image, ImageEnhance, ImageFilter
+from PIL import Image, ImageEnhance, ImageFilter, ImageDraw
 import io
 
 app = Flask(__name__)
 
-# Tabela de clareamento baseada na Escala Vita
-# Ajusta o brilho (Fator 1.0 = original)
-VITA_WHITENING_MAP = {
-    'BL1': 1.60, # Ultra branco
-    'A1':  1.45, # Branco natural
-    'A2':  1.30, # Levemente clareado
-    'B1':  1.50, # Claro
+# Mapeamento dos parâmetros enviados pelo Flutter para o fator de clareamento
+COLOR_MAP = {
+    'natural': 1.25,   # Clareamento suave
+    'brilhante': 1.55, # Clareamento intenso / branco radiante
+    'perolado': 1.40   # Clareamento equilibrado
 }
 
 @app.route('/', methods=['GET'])
 def health_check():
-    return jsonify({"status": "online", "message": "Dental Smile Backend Ativo (Plano B)"}), 200
+    return jsonify({"status": "online", "message": "Dental Smile Backend Ativo"}), 200
 
-@app.route('/processar', methods=['POST'])
-def processar():
-    if 'file' not in request.files:
+# Rota exata esperada pela ApiService do Flutter
+@app.route('/api/process-smile', methods=['POST'])
+def process_smile():
+    # 1. Validação do arquivo de imagem enviado pelo Flutter
+    if 'photo' not in request.files and 'file' not in request.files:
         return jsonify({"error": "Nenhum arquivo de imagem enviado"}), 400
 
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({"error": "Nome de arquivo inválido"}), 400
+    file = request.files.get('photo') or request.files.get('file')
+    if not file or file.filename == '':
+        return jsonify({"error": "Arquivo inválido"}), 400
 
-    # Recebe os parâmetros do Flutter
-    color_code = request.form.get('color', 'A1')
+    # 2. Leitura dos parâmetros enviados pelo Flutter
+    color_param = request.form.get('color', 'brilhante').lower()
+    shape_param = request.form.get('shape', 'oval')
+    size_param = request.form.get('size', 'medio')
 
     try:
-        # 1. Carrega a imagem do paciente e otimiza memória
+        # Carrega a imagem
         img = Image.open(file).convert("RGB")
         max_dimension = 1080
         if max(img.size) > max_dimension:
             img.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
         width, height = img.size
 
-        # --- PROCESSAMENTO PLANO B (Clareamento + Suavização) ---
+        # --- PROCESSAMENTO DOS DENTES ---
 
-        # 2. Clareamento Global (Escala Vita)
-        whitening_factor = VITA_WHITENING_MAP.get(color_code, 1.45)
+        # Define o fator de brilho/clareamento com base na cor selecionada
+        whitening_factor = COLOR_MAP.get(color_param, 1.45)
+
+        # Aplica o clareamento
         enhancer = ImageEnhance.Brightness(img)
-        img_clarificada = enhancer.enhance(whitening_factor)
+        img_clareada = enhancer.enhance(whitening_factor)
 
-        # 3. Alinhamento Básico (Suavização de Textura)
-        # Cria uma máscara para focar apenas na área da boca (aproximadamente)
-        mask = Image.new('L', (width, height), 0)
-        # Define uma região central inferior para suavizar (boca)
-        # Y começa em 60% da altura e vai até 85%. X centralizado.
-        boca_regiao = (int(width*0.25), int(height*0.60), int(width*0.75), int(height*0.85))
+        # Ajuste extra de contraste para realçar o sorriso
+        contrast_enhancer = ImageEnhance.Contrast(img_clareada)
+        img_clareada = contrast_enhancer.enhance(1.15)
+
+        # Máscara da Região do Sorriso (Centralizada no terço inferior da boca)
         mask_draw = Image.new('L', (width, height), 0)
-        from PIL import ImageDraw
         draw = ImageDraw.Draw(mask_draw)
-        # Desenha um retângulo branco e desfoca para bordas suaves
-        draw.rectangle(boca_regiao, fill=255)
-        mask_suave = mask_draw.filter(ImageFilter.GaussianBlur(radius=20))
 
-        # 4. Aplica desfoque (Blur) para suavizar dentes tortos
-        img_suavizada = img_clarificada.filter(ImageFilter.GaussianBlur(radius=3))
+        # Região aproximada do sorriso
+        boca_box = (int(width * 0.28), int(height * 0.52), int(width * 0.72), int(height * 0.78))
+        draw.ellipse(boca_box, fill=255)
 
-        # 5. Mescla as imagens: clareada onde é rosto, suavizada onde é boca
-        final_img = Image.composite(img_suavizada, img_clarificada, mask_suave)
+        # Sfumato/Suavização nas bordas da máscara para evitar cortes secos
+        mask_suave = mask_draw.filter(ImageFilter.GaussianBlur(radius=25))
 
-        # --- FIM DO PROCESSAMENTO ---
+        # Mescla a imagem com os dentes clareados/transformados na imagem original
+        final_img = Image.composite(img_clareada, img, mask_suave)
 
-        # Prepara para envio
+        # Prepara a imagem para ser devolvida em formato de Bytes para o Flutter
         img_io = io.BytesIO()
-        final_img.save(img_io, 'JPEG', quality=85)
+        final_img.save(img_io, 'JPEG', quality=90)
         img_io.seek(0)
 
         return send_file(img_io, mimetype='image/jpeg')

@@ -7,7 +7,7 @@ import 'home_screen.dart';
 import 'history_screen.dart';
 import 'capture_screen.dart';
 import 'analysis_screen.dart';
-import 'treatment_about_screen.dart'; // ✅ Import da nova tela de anotações
+import 'treatment_about_screen.dart';
 import 'meus_relatorios_screen.dart';
 import 'feedback_screen.dart';
 import 'adjust_smile_screen.dart';
@@ -49,7 +49,7 @@ class MyApp extends StatelessWidget {
         '/analysis': (context) => const AnalysisScreen(),
 
         // 5. Sobre o Tratamento (Prontuário/Notas do Dentista)
-        '/about': (context) => const TreatmentAboutScreen(), // ✅ Atualizado aqui!
+        '/about': (context) => const TreatmentAboutScreen(),
 
         // 6. Meus Relatórios
         '/relatorios': (context) => const MeusRelatoriosScreen(),
@@ -74,15 +74,8 @@ class MyApp extends StatelessWidget {
           );
         },
 
-        // 8. Comparar Antes/Depois
-        '/compare': (context) {
-          final args = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>?;
-          return CompareScreen(
-            originalImage: args?['originalImage'],
-            adjustedImage: args?['adjustedImage'],
-            existingItem: args?['existingItem'],
-          );
-        },
+        // 8. Comparar Antes/Depois (Atualizado!)
+        '/compare': (context) => const CompareScreen(),
       },
       onGenerateRoute: (settings) {
         // 9. Feedback do Dentista
