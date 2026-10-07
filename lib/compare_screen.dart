@@ -1,6 +1,10 @@
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 
 class CompareScreen extends StatefulWidget {
   const CompareScreen({super.key});
@@ -11,19 +15,111 @@ class CompareScreen extends StatefulWidget {
 
 class _CompareScreenState extends State<CompareScreen> {
   double _sliderValue = 0.5;
+  bool _isGeneratingPdf = false;
+
+  /// Função responsável por compilar o PDF e abrir o gerenciador nativo do dispositivo
+  Future<void> _generateAndShowPdf({
+    required String originalPath,
+    required Uint8List? processedBytes,
+    required String? processedPath,
+  }) async {
+    setState(() => _isGeneratingPdf = true);
+
+    try {
+      final pdf = pw.Document();
+
+      // 1. Carrega os bytes da imagem original
+      final Uint8List originalBytes = await File(originalPath).readAsBytes();
+
+      // 2. Carrega ou resolve os bytes da imagem processada
+      Uint8List? finalProcessedBytes = processedBytes;
+      if (finalProcessedBytes == null && processedPath != null) {
+        finalProcessedBytes = await File(processedPath).readAsBytes();
+      }
+
+      if (finalProcessedBytes == null) {
+        throw Exception("Não foi possível obter a imagem processada para o PDF.");
+      }
+
+      final imgOriginal = pw.MemoryImage(originalBytes);
+      final imgProcessed = pw.MemoryImage(finalProcessedBytes);
+
+      // 3. Constrói o layout da página do PDF
+      pdf.addPage(
+        pw.Page(
+          pageFormat: PdfPageFormat.a4,
+          build: (pw.Context context) {
+            return pw.Padding(
+              padding: const pw.EdgeInsets.all(24),
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Text(
+                    'Relatório Digital Smile Design',
+                    style: pw.TextStyle(
+                      fontSize: 22,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                  pw.SizedBox(height: 6),
+                  pw.Text('Simulação de Planejamento Estético Dental'),
+                  pw.SizedBox(height: 12),
+                  pw.Divider(thickness: 1),
+                  pw.SizedBox(height: 20),
+                  pw.Row(
+                    mainAxisAlignment: pw.MainAxisAlignment.spaceAround,
+                    children: [
+                      pw.Column(
+                        children: [
+                          pw.Text('Original (Antes)',
+                              style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                          pw.SizedBox(height: 8),
+                          pw.Image(imgOriginal, width: 220, height: 280),
+                        ],
+                      ),
+                      pw.Column(
+                        children: [
+                          pw.Text('Simulação IA (Depois)',
+                              style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                          pw.SizedBox(height: 8),
+                          pw.Image(imgProcessed, width: 220, height: 280),
+                        ],
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      );
+
+      // 4. Abre a interface nativa de impressão/salvamento no Android
+      await Printing.layoutPdf(
+        onLayout: (PdfPageFormat format) async => pdf.save(),
+        name: 'Simulacao_Dental_Smile.pdf',
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro ao gerar PDF: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isGeneratingPdf = false);
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
 
-    // 1. Recupera o caminho da imagem original (suporta diferentes nomes de chave)
     final String? originalPath = args?['originalImage'] ?? args?['originalImagePath'];
-
-    // 2. Recupera a imagem processada (suporta bytes em memória, caminho local ou URL)
     final Uint8List? processedBytes = args?['processedBytes'];
     final String? processedPath = args?['processedImage'] ?? args?['processedImagePath'];
 
-    // Se não houver imagem original ou nenhuma versão tratada, exibe o erro
     if (originalPath == null || (processedBytes == null && processedPath == null)) {
       return Scaffold(
         appBar: AppBar(title: const Text('Comparação')),
@@ -42,7 +138,11 @@ class _CompareScreenState extends State<CompareScreen> {
           IconButton(
             icon: const Icon(Icons.share),
             onPressed: () {
-              // Compartilhamento em PDF/Imagem
+              _generateAndShowPdf(
+                originalPath: originalPath,
+                processedBytes: processedBytes,
+                processedPath: processedPath,
+              );
             },
           ),
         ],
@@ -58,7 +158,7 @@ class _CompareScreenState extends State<CompareScreen> {
                   builder: (context, constraints) {
                     return Stack(
                       children: [
-                        // 1. Foto Processada pela IA (Fundo Completo)
+                        // 1. Foto Processada pela IA (Fundo)
                         Positioned.fill(
                           child: processedBytes != null
                               ? Image.memory(
@@ -76,7 +176,7 @@ class _CompareScreenState extends State<CompareScreen> {
                           )),
                         ),
 
-                        // 2. Foto Original (Revelada de acordo com o Slider - Efeito Cortina)
+                        // 2. Foto Original (Efeito Cortina)
                         Positioned(
                           left: 0,
                           top: 0,
@@ -97,7 +197,7 @@ class _CompareScreenState extends State<CompareScreen> {
                           ),
                         ),
 
-                        // 3. Linha divisória vertical do Slider
+                        // 3. Linha divisória vertical
                         Positioned(
                           left: (constraints.maxWidth * _sliderValue) - 1.5,
                           top: 0,
@@ -115,7 +215,7 @@ class _CompareScreenState extends State<CompareScreen> {
             ),
           ),
 
-          // Controle Deslizante (Original ↔ Com IA)
+          // Controle Deslizante
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 8.0),
             child: Row(
@@ -133,7 +233,7 @@ class _CompareScreenState extends State<CompareScreen> {
             ),
           ),
 
-          // Botões de Ação Final
+          // Botões de Ação
           Padding(
             padding: const EdgeInsets.fromLTRB(16.0, 0, 16.0, 24.0),
             child: Row(
@@ -148,14 +248,29 @@ class _CompareScreenState extends State<CompareScreen> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: ElevatedButton.icon(
-                    icon: const Icon(Icons.picture_as_pdf),
-                    label: const Text('Gerar PDF'),
+                    icon: _isGeneratingPdf
+                        ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                        : const Icon(Icons.picture_as_pdf),
+                    label: Text(_isGeneratingPdf ? 'Gerando...' : 'Gerar PDF'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF5C6BC0),
                       foregroundColor: Colors.white,
                     ),
-                    onPressed: () {
-                      // Geração de relatório PDF
+                    onPressed: _isGeneratingPdf
+                        ? null
+                        : () {
+                      _generateAndShowPdf(
+                        originalPath: originalPath,
+                        processedBytes: processedBytes,
+                        processedPath: processedPath,
+                      );
                     },
                   ),
                 ),

@@ -1,171 +1,47 @@
-import 'dart:io';
-import 'package:flutter/material.dart';
-import 'smile_service.dart';
+@app.route('/process-smile', methods=['POST'])
+@app.route('/api/process-smile', methods=['POST'])
+def process_smile():
+try:
+file = request.files.get('file') or request.files.get('image')
+if not file:
+return jsonify({'error': 'Nenhuma imagem enviada'}), 400
 
-class SmileGeneratorScreen extends StatefulWidget {
-  final File patientImage;
+color = request.form.get('color', 'brilhante')
 
-  const SmileGeneratorScreen({super.key, required this.patientImage});
+np_img = np.frombuffer(file.read(), np.uint8)
+img = cv2.imdecode(np_img, cv2.IMREAD_COLOR)
 
-  @override
-  State<SmileGeneratorScreen> createState() => _SmileGeneratorScreenState();
-}
+if img is None:
+return jsonify({'error': 'Imagem inválida'}), 400
 
-class _SmileGeneratorScreenState extends State<SmileGeneratorScreen> {
-  String _selectedColor = 'A1';
-  bool _isLoading = false;
+# Converte para LAB para isolar Luminância (L) de Cor (A, B)
+lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
+l, a, b = cv2.split(lab)
 
-  final Map<String, String> _vitaScaleOptions = {
-    'BL1': 'Ultra Branco (BL1)',
-    'A1': 'Branco Natural (A1)',
-    'A2': 'Levemente Clareado (A2)',
-    'B1': 'Claro (B1)',
-  };
+# Intensidade do clareamento de acordo com a opção
+boost = 45 if color == 'brilhante' else (30 if color == 'perolado' else 20)
 
-  Future<void> _generateSmile() async {
-    setState(() => _isLoading = true);
+# Isola regiões de alta luminância (dentes) e reduz o tom amarelado no canal B
+height, width = l.shape
+mouth_region = np.zeros_like(l)
+mouth_region[int(height * 0.45):int(height * 0.85), :] = 255  # Foco na área da boca
 
-    File? processedImage = await SmileService.processSmile(
-      imageFile: widget.patientImage,
-      colorCode: _selectedColor,
-    );
+# Máscara para pixels claros dentro da região focal
+teeth_mask = cv2.bitwise_and(cv2.threshold(l, 140, 255, cv2.THRESH_BINARY)[1], mouth_region)
+teeth_mask = cv2.GaussianBlur(teeth_mask, (11, 11), 0) / 255.0
 
-    setState(() => _isLoading = false);
+# Aumenta brilho (L) e neutraliza o amarelo (B)
+l_new = np.clip(l + (teeth_mask * boost), 0, 255).astype(np.uint8)
+b_new = np.clip(b - (teeth_mask * 15), 0, 255).astype(np.uint8)
 
-    if (processedImage != null && mounted) {
-      // Navega para a tela de Antes x Depois
-      Navigator.pushNamed(
-        context,
-        '/compare',
-        arguments: {
-          'originalImage': widget.patientImage.path,
-          'adjustedImage': processedImage.path,
-        },
-      );
-    } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Falha ao processar o sorriso no servidor. Verifique a conexão.'),
-          backgroundColor: Colors.redAccent,
-        ),
-      );
-    }
-  }
+lab_adjusted = cv2.merge([l_new, a, b_new])
+processed_img = cv2.cvtColor(lab_adjusted, cv2.COLOR_LAB2BGR)
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Análise e Clareamento DSD'),
-        backgroundColor: Colors.deepPurple,
-        foregroundColor: Colors.white,
-      ),
-      body: _isLoading
-          ? Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: const [
-            CircularProgressIndicator(color: Colors.deepPurple),
-            SizedBox(height: 20),
-            Text(
-              'A processar imagem no servidor...',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            SizedBox(height: 8),
-            Text(
-              'A aplicar clareamento da Escala Vita e suavização.',
-              style: TextStyle(color: Colors.grey),
-            ),
-          ],
-        ),
-      )
-          : SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Pré-visualização da foto
-            ClipRRect(
-              borderRadius: BorderRadius.circular(16),
-              child: Image.file(
-                widget.patientImage,
-                height: 280,
-                width: double.infinity,
-                fit: BoxFit.cover,
-              ),
-            ),
-            const SizedBox(height: 24),
+_, buffer = cv2.imencode('.png', processed_img)
+io_buf = io.BytesIO(buffer)
 
-            const Text(
-              'Selecione a Tonalidade (Escala Vita)',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 12),
+return send_file(io_buf, mimetype='image/png')
 
-            // Lista de Seleção de Cor
-            Column(
-              children: _vitaScaleOptions.entries.map((entry) {
-                final isSelected = _selectedColor == entry.key;
-                return Card(
-                  elevation: isSelected ? 3 : 1,
-                  margin: const EdgeInsets.symmetric(vertical: 4),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    side: BorderSide(
-                      color: isSelected ? Colors.deepPurple : Colors.transparent,
-                      width: 2,
-                    ),
-                  ),
-                  child: ListTile(
-                    title: Text(
-                      entry.value,
-                      style: TextStyle(
-                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                      ),
-                    ),
-                    leading: Radio<String>(
-                      value: entry.key,
-                      groupValue: _selectedColor,
-                      activeColor: Colors.deepPurple,
-                      onChanged: (value) {
-                        if (value != null) {
-                          setState(() => _selectedColor = value);
-                        }
-                      },
-                    ),
-                    onTap: () {
-                      setState(() => _selectedColor = entry.key);
-                    },
-                  ),
-                );
-              }).toList(),
-            ),
-
-            const SizedBox(height: 28),
-
-            // Botão de Envio para a API
-            SizedBox(
-              width: double.infinity,
-              height: 52,
-              child: ElevatedButton.icon(
-                icon: const Icon(Icons.auto_awesome),
-                label: const Text(
-                  'Gerar Sorriso Automático',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.deepPurple,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                onPressed: _generateSmile,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
+except Exception as e:
+print(f"Erro interno: {str(e)}")
+return jsonify({'error': str(e)}), 500
