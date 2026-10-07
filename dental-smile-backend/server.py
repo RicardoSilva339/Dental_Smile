@@ -1,3 +1,16 @@
+import io
+import cv2
+import numpy as np
+from flask import Flask, request, jsonify, send_file
+from flask_cors import CORS
+
+app = Flask(__name__)
+CORS(app)
+
+@app.route('/', methods=['GET'])
+def home():
+    return jsonify({'status': 'online', 'message': 'Dental Smile API em execução'})
+
 @app.route('/process-smile', methods=['POST'])
 @app.route('/api/process-smile', methods=['POST'])
 def process_smile():
@@ -55,3 +68,6 @@ def process_smile():
     except Exception as e:
         print(f"Erro interno: {str(e)}")
         return jsonify({'error': str(e)}), 500
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=10000)
