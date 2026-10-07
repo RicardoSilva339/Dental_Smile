@@ -20,7 +20,8 @@ def process_smile():
         if not file:
             return jsonify({'error': 'Nenhuma imagem enviada'}), 400
 
-        color = request.form.get('color', 'brilhante')
+        # Aceita a tonalidade do app ou da Escala Vita
+        color_code = request.form.get('colorCode') or request.form.get('color') or 'A1'
 
         np_img = np.frombuffer(file.read(), np.uint8)
         img = cv2.imdecode(np_img, cv2.IMREAD_COLOR)
@@ -28,38 +29,44 @@ def process_smile():
         if img is None:
             return jsonify({'error': 'Imagem inválida'}), 400
 
-        # Converte para espaço de cor HSV para manipular tonalidades e saturação
+        # Converte para HSV para isolar o amarelado/saturação dos dentes
         hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
         h, s, v = cv2.split(hsv)
 
-        # Seleciona a faixa de tons amarelados/claros (correspondente aos dentes)
-        lower_yellow = np.array([10, 25, 100])
+        # Filtra a faixa de tons amarelados/claros correspondentes aos dentes
+        lower_yellow = np.array([10, 20, 90])
         upper_yellow = np.array([40, 255, 255])
         mask = cv2.inRange(hsv, lower_yellow, upper_yellow)
 
-        # Suaviza a máscara para garantir transições naturais nas bordas dos dentes
+        # Suaviza a máscara nas bordas para transição natural
         mask_blur = cv2.GaussianBlur(mask, (15, 15), 0) / 255.0
 
-        # Intensidade do clareamento de acordo com a opção selecionada
-        if color == 'brilhante':
-            brightness_boost = 60
-            saturation_reduce = 0.3
-        elif color == 'perolado':
-            brightness_boost = 40
-            saturation_reduce = 0.5
-        else:  # natural
-            brightness_boost = 25
+        # Mapeia a intensidade do clareamento de acordo com a opção/Escala Vita
+        if color_code in ['BL1', 'brilhante']:
+            brightness_boost = 70
+            saturation_reduce = 0.8
+        elif color_code in ['A1', 'perolado']:
+            brightness_boost = 50
             saturation_reduce = 0.6
+        elif color_code in ['A2', 'natural']:
+            brightness_boost = 35
+            saturation_reduce = 0.4
+        elif color_code == 'B1':
+            brightness_boost = 45
+            saturation_reduce = 0.5
+        else:
+            brightness_boost = 45
+            saturation_reduce = 0.5
 
-        # Reduz a amarelização (Saturação) e aumenta a luminosidade (Valor/Brilho)
+        # Aplica o clareamento focalizado apenas na região dos dentes
         s_adjusted = np.clip(s * (1 - mask_blur * saturation_reduce), 0, 255).astype(np.uint8)
         v_adjusted = np.clip(v + (mask_blur * brightness_boost), 0, 255).astype(np.uint8)
 
-        # Recombina os canais HSV e reconverte para BGR
+        # Recombina os canais e converte para BGR
         hsv_processed = cv2.merge([h, s_adjusted, v_adjusted])
         processed_img = cv2.cvtColor(hsv_processed, cv2.COLOR_HSV2BGR)
 
-        # Converte o resultado processado para PNG na memória
+        # Envia os bytes diretos da imagem tratada
         _, buffer = cv2.imencode('.png', processed_img)
         io_buf = io.BytesIO(buffer)
 
