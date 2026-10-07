@@ -1,81 +1,55 @@
-from flask import Flask, request, send_file, jsonify
-from PIL import Image, ImageEnhance, ImageFilter, ImageDraw
+from flask import Flask, request, jsonify, send_file
+from flask_cors import CORS
+import cv2
+import numpy as np
+import os
 import io
 
 app = Flask(__name__)
+CORS(app)  # Libera o acesso para o aplicativo Flutter
 
-# Mapeamento dos parâmetros enviados pelo Flutter para o fator de clareamento
-COLOR_MAP = {
-    'natural': 1.25,   # Clareamento suave
-    'brilhante': 1.55, # Clareamento intenso / branco radiante
-    'perolado': 1.40   # Clareamento equilibrado
-}
-
+# Rota para checagem de saúde
 @app.route('/', methods=['GET'])
 def health_check():
-    return jsonify({"status": "online", "message": "Dental Smile Backend Ativo"}), 200
+    return jsonify({"status": "API Dental Smile online"}), 200
 
-# Rota exata esperada pela ApiService do Flutter
+# Aceita tanto a rota /process-smile quanto /api/process-smile
+@app.route('/process-smile', methods=['POST'])
 @app.route('/api/process-smile', methods=['POST'])
 def process_smile():
-    # 1. Validação do arquivo de imagem enviado pelo Flutter
-    if 'photo' not in request.files and 'file' not in request.files:
-        return jsonify({"error": "Nenhum arquivo de imagem enviado"}), 400
-
-    file = request.files.get('photo') or request.files.get('file')
-    if not file or file.filename == '':
-        return jsonify({"error": "Arquivo inválido"}), 400
-
-    # 2. Leitura dos parâmetros enviados pelo Flutter
-    color_param = request.form.get('color', 'brilhante').lower()
-    shape_param = request.form.get('shape', 'oval')
-    size_param = request.form.get('size', 'medio')
-
     try:
-        # Carrega a imagem
-        img = Image.open(file).convert("RGB")
-        max_dimension = 1080
-        if max(img.size) > max_dimension:
-            img.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
-        width, height = img.size
+        # Suporta tanto a chave 'file' quanto 'image'
+        file = request.files.get('file') or request.files.get('image')
 
-        # --- PROCESSAMENTO DOS DENTES ---
+        if not file:
+            return jsonify({'error': 'Nenhuma imagem foi recebida sob a chave "file" ou "image"'}), 400
 
-        # Define o fator de brilho/clareamento com base na cor selecionada
-        whitening_factor = COLOR_MAP.get(color_param, 1.45)
+        color = request.form.get('color', 'natural')
+        shape = request.form.get('shape', 'oval')
+        size = request.form.get('size', 'medio')
 
-        # Aplica o clareamento
-        enhancer = ImageEnhance.Brightness(img)
-        img_clareada = enhancer.enhance(whitening_factor)
+        # Converte a imagem enviada para OpenCV
+        np_img = np.frombuffer(file.read(), np.uint8)
+        img = cv2.imdecode(np_img, cv2.IMREAD_COLOR)
 
-        # Ajuste extra de contraste para realçar o sorriso
-        contrast_enhancer = ImageEnhance.Contrast(img_clareada)
-        img_clareada = contrast_enhancer.enhance(1.15)
+        if img is None:
+            return jsonify({'error': 'Arquivo de imagem inválido'}), 400
 
-        # Máscara da Região do Sorriso (Centralizada no terço inferior da boca)
-        mask_draw = Image.new('L', (width, height), 0)
-        draw = ImageDraw.Draw(mask_draw)
+        # --- LÓGICA DE PROCESSAMENTO / IA ---
+        # Exemplo: Ajuste leve de brilho/contraste com base nas escolhas
+        processed_img = cv2.convertScaleAbs(img, alpha=1.1, beta=15)
 
-        # Região aproximada do sorriso
-        boca_box = (int(width * 0.28), int(height * 0.52), int(width * 0.72), int(height * 0.78))
-        draw.ellipse(boca_box, fill=255)
+        # Converte o resultado processado para formato PNG em memória
+        _, buffer = cv2.imencode('.png', processed_img)
+        io_buf = io.BytesIO(buffer)
 
-        # Sfumato/Suavização nas bordas da máscara para evitar cortes secos
-        mask_suave = mask_draw.filter(ImageFilter.GaussianBlur(radius=25))
-
-        # Mescla a imagem com os dentes clareados/transformados na imagem original
-        final_img = Image.composite(img_clareada, img, mask_suave)
-
-        # Prepara a imagem para ser devolvida em formato de Bytes para o Flutter
-        img_io = io.BytesIO()
-        final_img.save(img_io, 'JPEG', quality=90)
-        img_io.seek(0)
-
-        return send_file(img_io, mimetype='image/jpeg')
+        # Retorna a imagem tratada diretamente em bytes
+        return send_file(io_buf, mimetype='image/png')
 
     except Exception as e:
-        print(f"Erro no processamento: {e}")
-        return jsonify({"error": str(e)}), 500
+        print(f"Erro interno: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)

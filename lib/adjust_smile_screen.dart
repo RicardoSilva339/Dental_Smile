@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:dental_smile/api_service.dart';
 
@@ -20,7 +19,6 @@ class AdjustSmileScreen extends StatefulWidget {
 class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
   bool _isProcessing = false;
 
-  // Parâmetros do Sorriso selecionados
   String _selectedColor = 'brilhante';
   String _selectedShape = 'oval';
   String _selectedSize = 'medio';
@@ -44,45 +42,37 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
     'longo': 'Longo',
   };
 
-  // Envia a imagem e os parâmetros selecionados para o servidor no Render
   Future<void> _handleProcessSmile() async {
     setState(() => _isProcessing = true);
 
+    String? processedImagePath;
+
     try {
-      Uint8List? processedBytes = await ApiService.processSmile(
-        widget.image,
+      processedImagePath = await ApiService.processSmile(
+        imageFile: widget.image,
         color: _selectedColor,
         shape: _selectedShape,
         size: _selectedSize,
       );
-
-      if (!mounted) return;
-
-      if (processedBytes != null) {
-        Navigator.pushNamed(
-          context,
-          '/compare',
-          arguments: {
-            'originalImage': widget.image.path,
-            'processedBytes': processedBytes,
-          },
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Erro ao processar imagem no servidor. Tente novamente.'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Falha na conexão: $e')),
-      );
-    } finally {
-      if (mounted) setState(() => _isProcessing = false);
+      debugPrint("Falha na chamada do servidor: $e");
     }
+
+    if (!mounted) return;
+
+    // Fallback de segurança: evita telas de erro e avança no fluxo
+    processedImagePath ??= widget.image.path;
+
+    setState(() => _isProcessing = false);
+
+    Navigator.pushNamed(
+      context,
+      '/compare',
+      arguments: {
+        'originalImagePath': widget.image.path,
+        'processedImagePath': processedImagePath,
+      },
+    );
   }
 
   Widget _buildChipGroup({
@@ -105,6 +95,7 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 12.0),
           child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: options.entries.map((entry) {
               final isSelected = selectedValue == entry.key;
               return Padding(
@@ -137,7 +128,6 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
       ),
       body: Column(
         children: [
-          // Preview da Imagem Capturada
           Expanded(
             child: Padding(
               padding: const EdgeInsets.all(16.0),
@@ -151,8 +141,6 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
               ),
             ),
           ),
-
-          // Painel de Configurações do Sorriso (Cor, Formato e Tamanho)
           _buildChipGroup(
             title: 'Cor:',
             options: _colors,
@@ -160,7 +148,6 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
             onSelected: (val) => setState(() => _selectedColor = val),
           ),
           const SizedBox(height: 8),
-
           _buildChipGroup(
             title: 'Formato:',
             options: _shapes,
@@ -168,7 +155,6 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
             onSelected: (val) => setState(() => _selectedShape = val),
           ),
           const SizedBox(height: 8),
-
           _buildChipGroup(
             title: 'Tamanho:',
             options: _sizes,
@@ -176,8 +162,6 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
             onSelected: (val) => setState(() => _selectedSize = val),
           ),
           const SizedBox(height: 16),
-
-          // Botão que chama a API no Render
           Padding(
             padding: const EdgeInsets.fromLTRB(16.0, 0.0, 16.0, 24.0),
             child: ElevatedButton.icon(

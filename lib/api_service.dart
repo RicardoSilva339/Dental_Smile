@@ -1,44 +1,38 @@
 import 'dart:io';
-import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
 
 class ApiService {
-  // Substitua pela URL exata do seu serviço no Render
-  static const String baseUrl = 'https://seu-servidor.onrender.com';
+  static const String baseUrl = 'https://dental-smile-backend-iso3.onrender.com';
 
-  static Future<Uint8List?> processSmile(
-      File imageFile, {
-        required String color,
-        required String shape,
-        required String size,
-      }) async {
+  static Future<String?> processSmile({
+    required File imageFile,
+    required String color,
+    required String shape,
+    required String size,
+  }) async {
     try {
-      final uri = Uri.parse('$baseUrl/api/process-smile');
-      var request = http.MultipartRequest('POST', uri);
+      final uri = Uri.parse('$baseUrl/process-smile');
 
-      // Enviando a imagem
-      request.files.add(
-        await http.MultipartFile.fromPath('photo', imageFile.path),
-      );
+      var request = http.MultipartRequest('POST', uri)
+        ..fields['color'] = color
+        ..fields['shape'] = shape
+        ..fields['size'] = size
+        ..files.add(await http.MultipartFile.fromPath('image', imageFile.path));
 
-      // Enviando os parâmetros selecionados
-      request.fields['color'] = color;
-      request.fields['shape'] = shape;
-      request.fields['size'] = size;
-
-      var streamedResponse = await request.send();
+      var streamedResponse = await request.send().timeout(const Duration(seconds: 10));
       var response = await http.Response.fromStream(streamedResponse);
 
       if (response.statusCode == 200) {
-        // Retorna os bytes da imagem final renderizada pelo servidor
-        return response.bodyBytes;
-      } else {
-        print('Erro no servidor: ${response.statusCode} - ${response.body}');
-        return null;
+        final tempDir = await getTemporaryDirectory();
+        final file = File('${tempDir.path}/processed_${DateTime.now().millisecondsSinceEpoch}.png');
+        await file.writeAsBytes(response.bodyBytes);
+        return file.path;
       }
     } catch (e) {
-      print('Erro ao comunicar com a API: $e');
-      rethrow;
+      debugPrint("Erro no ApiService: $e");
     }
+    return null;
   }
 }

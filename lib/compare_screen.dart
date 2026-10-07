@@ -14,13 +14,17 @@ class _CompareScreenState extends State<CompareScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Recupera os argumentos passados via Navigator
     final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
 
-    final String? originalPath = args?['originalImage'];
-    final Uint8List? processedBytes = args?['processedBytes'];
+    // 1. Recupera o caminho da imagem original (suporta diferentes nomes de chave)
+    final String? originalPath = args?['originalImage'] ?? args?['originalImagePath'];
 
-    if (originalPath == null || processedBytes == null) {
+    // 2. Recupera a imagem processada (suporta bytes em memória, caminho local ou URL)
+    final Uint8List? processedBytes = args?['processedBytes'];
+    final String? processedPath = args?['processedImage'] ?? args?['processedImagePath'];
+
+    // Se não houver imagem original ou nenhuma versão tratada, exibe o erro
+    if (originalPath == null || (processedBytes == null && processedPath == null)) {
       return Scaffold(
         appBar: AppBar(title: const Text('Comparação')),
         body: const Center(
@@ -56,13 +60,23 @@ class _CompareScreenState extends State<CompareScreen> {
                       children: [
                         // 1. Foto Processada pela IA (Fundo Completo)
                         Positioned.fill(
-                          child: Image.memory(
+                          child: processedBytes != null
+                              ? Image.memory(
                             processedBytes,
                             fit: BoxFit.cover,
-                          ),
+                          )
+                              : (processedPath!.startsWith('http')
+                              ? Image.network(
+                            processedPath,
+                            fit: BoxFit.cover,
+                          )
+                              : Image.file(
+                            File(processedPath),
+                            fit: BoxFit.cover,
+                          )),
                         ),
 
-                        // 2. Foto Original (Revelada de acordo com o Slider)
+                        // 2. Foto Original (Revelada de acordo com o Slider - Efeito Cortina)
                         Positioned(
                           left: 0,
                           top: 0,
@@ -83,7 +97,7 @@ class _CompareScreenState extends State<CompareScreen> {
                           ),
                         ),
 
-                        // 3. Linha divisória vertical do Slider (Efeito Cortina)
+                        // 3. Linha divisória vertical do Slider
                         Positioned(
                           left: (constraints.maxWidth * _sliderValue) - 1.5,
                           top: 0,
