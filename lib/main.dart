@@ -2,14 +2,12 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
-// Telas internas
+// Telas ativas mantidas na arquitetura
 import 'home_screen.dart';
 import 'history_screen.dart';
 import 'capture_screen.dart';
 import 'analysis_screen.dart';
 import 'treatment_about_screen.dart';
-import 'meus_relatorios_screen.dart';
-import 'feedback_screen.dart';
 import 'adjust_smile_screen.dart';
 import 'compare_screen.dart';
 
@@ -39,7 +37,7 @@ class MyApp extends StatelessWidget {
         // 1. Tela Inicial
         '/': (context) => const HomeScreen(),
 
-        // 2. Histórico
+        // 2. Histórico de Simulações
         '/history': (context) => const HistoryScreen(),
 
         // 3. Captura de Foto
@@ -48,13 +46,10 @@ class MyApp extends StatelessWidget {
         // 4. Análise com IA
         '/analysis': (context) => const AnalysisScreen(),
 
-        // 5. Sobre o Tratamento (Prontuário/Notas do Dentista)
+        // 5. Sobre o Tratamento (Notas Clínicas do Dentista)
         '/about': (context) => const TreatmentAboutScreen(),
 
-        // 6. Meus Relatórios
-        '/relatorios': (context) => const MeusRelatoriosScreen(),
-
-        // 7. Ajustes de Sorriso
+        // 6. Ajuste Fino do Sorriso
         '/adjust': (context) {
           final args = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>?;
 
@@ -74,18 +69,8 @@ class MyApp extends StatelessWidget {
           );
         },
 
-        // 8. Comparar Antes/Depois (Atualizado!)
-        '/compare': (context) => const CompareScreen(),
-      },
-      onGenerateRoute: (settings) {
-        // 9. Feedback do Dentista
-        if (settings.name == '/feedback') {
-          final args = settings.arguments as Map<String, dynamic>?;
-          return MaterialPageRoute(
-            builder: (_) => FeedbackScreen(existingItem: args ?? {}),
-          );
-        }
-        return null;
+        // 7. Comparar Antes/Depois e Gerar Relatório PDF (const removido)
+        '/compare': (context) => CompareScreen(),
       },
     );
   }

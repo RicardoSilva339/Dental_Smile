@@ -18,8 +18,6 @@ class HomeScreen extends StatelessWidget {
               children: [
                 _buildButton(context, 'Nova Simulação', '/capture'),
                 const SizedBox(height: 20),
-                _buildButton(context, 'Meus Relatórios', '/relatorios'),
-                const SizedBox(height: 20),
                 _buildButton(context, 'Histórico de Simulações', '/history'),
                 const SizedBox(height: 20),
                 _buildButton(context, 'Sobre o Tratamento', '/about'),
