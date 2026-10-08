@@ -135,7 +135,7 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
                 borderRadius: BorderRadius.circular(24),
                 child: Image.file(
                   widget.image,
-                  fit: BoxFit.cover,
+                  fit: BoxFit.contain, // ✅ Alterado de BoxFit.cover para BoxFit.contain para manter a proporção real
                   width: double.infinity,
                 ),
               ),
