@@ -1,6 +1,5 @@
 flask
 flask-cors
-gunicorn
+requests
+replicate
 pillow
-numpy
-opencv-python-headless

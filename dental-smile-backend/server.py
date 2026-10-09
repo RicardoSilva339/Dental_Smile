@@ -1,73 +1,65 @@
-import io
-import cv2
-import numpy as np
-from flask import Flask, request, jsonify, send_file
+import os
+import base64
+from flask import Flask, request, jsonify
 from flask_cors import CORS
+import replicate
 
 app = Flask(__name__)
 CORS(app)
 
-@app.route('/process-smile', methods=['POST'])
-@app.route('/api/process-smile', methods=['POST'])
-def process_smile():
+# Configura o token da API do Replicate
+os.environ["REPLICATE_API_TOKEN"] = "r8_bUmvwILZ7nzN3Unq9Ddul44eCNcYPUi1KwScC"
+
+@app.route('/process-image', methods=['POST'])
+def process_image():
     try:
-        file = request.files.get('file') or request.files.get('image')
-        if not file:
+        data = request.get_json()
+        if not data or 'image' not in data:
             return jsonify({'error': 'Nenhuma imagem enviada'}), 400
 
-        color = request.form.get('color', 'brilhante')
+        image_data = data['image']
+        color = data.get('color', 'brilhante')
+        shape = data.get('shape', 'quadrado')
+        size = data.get('size', 'medio')
 
-        np_img = np.frombuffer(file.read(), np.uint8)
-        img = cv2.imdecode(np_img, cv2.IMREAD_COLOR)
+        if ',' in image_data:
+            image_data = image_data.split(',')[1]
 
-        if img is None:
-            return jsonify({'error': 'Imagem inválida'}), 400
+        image_bytes = base64.b64decode(image_data)
+        input_image_path = "/tmp/input_patient.png"
+        with open(input_image_path, "wb") as f:
+            f.write(image_bytes)
 
-        height, width = img.shape[:2]
+        # Prompt de IA focado em estética dental
+        prompt = (
+            f"Professional dental aesthetic simulation, realistic smile, "
+            f"perfectly aligned teeth, teeth color {color} white, teeth shape {shape}, "
+            f"teeth size {size}, high quality dental porcelain veneers, "
+            f"keep original face, skin, lips, and glasses unchanged."
+        )
 
-        # 1. Converter para os espaços de cor LAB e HSV
-        lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
-        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+        output = replicate.run(
+            "stability-ai/stable-diffusion-inpainting:c28b782980f7f32997e3b1c6d1d4dbed8690349887758ed0064f9f257521e102",
+            input={
+                "image": open(input_image_path, "rb"),
+                "prompt": prompt,
+                "negative_prompt": "crooked teeth, yellow teeth, blurry, distorted face, bad anatomy, extra teeth",
+                "num_inference_steps": 30,
+                "guidance_scale": 7.5
+            }
+        )
 
-        l, a, b = cv2.split(lab)
-        h, s, v = cv2.split(hsv)
+        result_url = output[0] if isinstance(output, list) else str(output)
 
-        # 2. Definição da ROI em formato elíptico (focado estritamente na boca)
-        roi_mask = np.zeros((height, width), dtype=np.uint8)
-        center_x, center_y = int(width * 0.50), int(height * 0.60)
-        axes_x, axes_y = int(width * 0.20), int(height * 0.10) # Reduzido para não pegar o queixo
-        cv2.ellipse(roi_mask, (center_x, center_y), (axes_x, axes_y), 0, 0, 360, 255, -1)
-
-        # 3. Filtro de Cor Anatômica dos Dentes:
-        # - Luminosidade alta (v > 130)
-        # - Baixa saturação (s < 100 -> exclui lábios vermelhos e pele rosada/morena)
-        teeth_color_mask = cv2.inRange(hsv, (0, 0, 130), (180, 95, 255))
-
-        # 4. Interseção da região bucal com os pixels característicos de dentes
-        teeth_mask = cv2.bitwise_and(teeth_color_mask, roi_mask)
-
-        # 5. Suavização progressiva para blend invisível com as gengivas e lábios
-        teeth_mask_blur = cv2.GaussianBlur(teeth_mask, (31, 31), 0) / 255.0
-
-        # 6. Intensidade do Clareamento
-        boost_l = 35 if color == 'brilhante' else (25 if color == 'perolado' else 15)
-        neutralize_b = 16 if color == 'brilhante' else 10
-
-        # Aplica o clareamento no canal L e remove o tom amarelado no canal B
-        l_new = np.clip(l + (teeth_mask_blur * boost_l), 0, 255).astype(np.uint8)
-        b_new = np.clip(b - (teeth_mask_blur * neutralize_b), 0, 255).astype(np.uint8)
-
-        lab_adjusted = cv2.merge([l_new, a, b_new])
-        processed_img = cv2.cvtColor(lab_adjusted, cv2.COLOR_LAB2BGR)
-
-        _, buffer = cv2.imencode('.png', processed_img)
-        io_buf = io.BytesIO(buffer)
-
-        return send_file(io_buf, mimetype='image/png')
+        return jsonify({
+            'success': True,
+            'result_url': result_url
+        })
 
     except Exception as e:
-        print(f"Erro interno: {str(e)}")
+        print(f"Erro no processamento: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
