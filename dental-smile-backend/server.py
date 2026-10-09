@@ -7,27 +7,32 @@ app = Flask(__name__)
 @app.route('/process-smile', methods=['POST'])
 def process_smile():
     try:
-        # 1. Verificar se o ficheiro foi enviado na requisição multipart
-        if 'file' not in request.files:
-            return jsonify({'error': 'Nenhum ficheiro/foto enviado'}), 400
+        # Verifica se existe algum ficheiro na requisição multipart, independentemente do nome do campo
+        if not request.files:
+            return jsonify({'error': 'Nenhum ficheiro enviado nos arquivos da requisição'}), 400
 
-        file = request.files['file']
-        color = request.form.get('color', 'BL1')  # Pega o parâmetro 'color' do Flutter
+        # Pega automaticamente o primeiro ficheiro enviado (evita erro de nome de campo)
+        image_key = list(request.files.keys())[0]
+        image_file = request.files[image_key]
 
-        # 2. Enviar para a API do Replicate usando o novo token (REPLICATE_API_TOKEN)
-        # Substitua 'seu-usuario/seu-modelo:versao' pelo modelo real utilizado no Replicate
+        # Pega o parâmetro de cor enviado pelo app (padrão 'A1' se vier vazio)
+        color_code = request.form.get('color', 'A1')
+
+        # Executa o modelo no Replicate
         output = replicate.run(
-            "seu-usuario/seu-modelo:versao",
+            "seu-usuario/seu-modelo:versao",  # Substitua pelo ID/versão real do seu modelo no Replicate
             input={
-                "image": file,
-                "color": color
+                "image": image_file,
+                "color": color_code
             }
         )
 
-        # 3. Retornar o resultado para o aplicativo Flutter
-        # Caso o Replicate retorne um stream/URL da imagem processada
+        # Retorna o resultado gerado pela IA para o Flutter
         return send_file(output, mimetype='image/jpeg')
 
     except Exception as e:
-        print(f"Erro no processamento: {e}")
+        print(f"Erro no processamento interno: {e}")
         return jsonify({'error': str(e)}), 500
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=10000)
