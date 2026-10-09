@@ -13,7 +13,11 @@ import 'compare_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Inicializa o Hive para armazenamento local do histórico
   await Hive.initFlutter();
+
+  // Abre a box 'simulacoes' antes de iniciar o aplicativo
   await Hive.openBox('simulacoes');
 
   runApp(const MyApp());
@@ -69,8 +73,8 @@ class MyApp extends StatelessWidget {
           );
         },
 
-        // 7. Comparar Antes/Depois e Gerar Relatório PDF (const removido)
-        '/compare': (context) => CompareScreen(),
+        // 7. Comparar Antes/Depois e Gerar Relatório PDF
+        '/compare': (context) => const CompareScreen(),
       },
     );
   }
