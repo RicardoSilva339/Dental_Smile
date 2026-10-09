@@ -8,12 +8,12 @@ app = Flask(__name__)
 CORS(app)
 
 # Lê o token diretamente das variáveis de ambiente configuradas no servidor (Render)
-# Para desenvolvimento local, você pode definir a variável no seu terminal/sistema
 REPLICATE_API_TOKEN = os.environ.get("REPLICATE_API_TOKEN", "")
 os.environ["REPLICATE_API_TOKEN"] = REPLICATE_API_TOKEN
 
-@app.route('/process-image', methods=['POST'])
-def process_image():
+# Rota alterada para /process-smile para bater com a chamada do Flutter
+@app.route('/process-smile', methods=['POST'])
+def process_smile():
     try:
         data = request.get_json()
         if not data or 'image' not in data:
