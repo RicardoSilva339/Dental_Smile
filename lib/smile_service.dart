@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 
@@ -10,7 +11,8 @@ class SmileService {
     required File imageFile,
     required String colorCode, // 'BL1', 'A1', 'A2', 'B1'
   }) async {
-    final uri = Uri.parse('$baseUrl/processar');
+    // 1. Rota atualizada conforme chamada nos logs (/process-smile)
+    final uri = Uri.parse('$baseUrl/process-smile');
 
     var request = http.MultipartRequest('POST', uri)
       ..fields['color'] = colorCode
@@ -26,11 +28,11 @@ class SmileService {
         await file.writeAsBytes(response.bodyBytes);
         return file;
       } else {
-        print('Erro no servidor: ${response.statusCode} - ${response.body}');
+        debugPrint('Erro no servidor: ${response.statusCode}\n${response.body}');
         return null;
       }
     } catch (e) {
-      print('Erro ao comunicar com a API no Render: $e');
+      debugPrint('Erro ao comunicar com a API no Render: $e');
       return null;
     }
   }
