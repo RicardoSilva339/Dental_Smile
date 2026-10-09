@@ -18,9 +18,9 @@ def process_smile():
         image_bytes = image_file.read()
         image_stream = io.BytesIO(image_bytes)
 
-        # Executa o modelo no Replicate passando o stream binário
+        # Executa o modelo exato no Replicate
         output = replicate.run(
-            "seu-usuario/seu-modelo:versao",  # Substitua pelo ID/versão real do seu modelo no Replicate
+            "sourav-sarkar-doc32/smile-correct:4956c634",  # Modelo atualizado
             input={
                 "image": image_stream,
                 "color": color_code
