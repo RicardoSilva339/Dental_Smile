@@ -86,7 +86,7 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                   borderRadius: BorderRadius.circular(16),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.12),
+                      color: Colors.black.withValues(alpha: 0.12), // ✅ Atualizado para .withValues
                       blurRadius: 10,
                       offset: const Offset(0, 4),
                     ),

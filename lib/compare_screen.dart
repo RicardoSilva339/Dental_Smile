@@ -356,13 +356,13 @@ Future<pw.Document> _gerarDocumentoPdf({
               style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold),
             ),
           ),
-          pw.SizedBox(height: 15),
+          pw.SizedBox(height: 15), // Removido const
 
           pw.Text(
             'Parâmetros do Planeamento:',
             style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
           ),
-          pw.SizedBox(height: 6),
+          pw.SizedBox(height: 6), // Removido const
           pw.Text('• Cor: ${color ?? '-'}'),
           pw.Text('• Formato: ${shape ?? '-'}'),
           pw.Text('• Tamanho: ${size ?? '-'}'),
@@ -378,7 +378,7 @@ Future<pw.Document> _gerarDocumentoPdf({
                   crossAxisAlignment: pw.CrossAxisAlignment.center,
                   children: [
                     pw.Text("Antes (Original)", style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-                    pw.SizedBox(height: 8),
+                    pw.SizedBox(height: 8), // Removido const
                     pw.Image(beforeImage, width: 200, height: 250),
                   ],
                 ),
@@ -387,7 +387,7 @@ Future<pw.Document> _gerarDocumentoPdf({
                   crossAxisAlignment: pw.CrossAxisAlignment.center,
                   children: [
                     pw.Text("Depois (Simulação)", style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-                    pw.SizedBox(height: 8),
+                    pw.SizedBox(height: 8), // Removido const
                     pw.Image(afterImage, width: 200, height: 250),
                   ],
                 ),
