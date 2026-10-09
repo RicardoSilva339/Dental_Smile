@@ -12,21 +12,40 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
   bool _isLoading = true;
   bool _smileDetected = false;
   File? _imageFile;
+  bool _isInit = true;
 
   @override
-  void initState() {
-    super.initState();
-    _analisarImagem();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // ✅ Garante que os argumentos da rota sejam lidos com segurança apenas uma vez
+    if (_isInit) {
+      final args = ModalRoute.of(context)?.settings.arguments;
+
+      if (args is Map<String, dynamic>) {
+        final path = args['imagePath'] ?? args['image'] ?? args['originalImagePath'];
+        if (path is String && path.isNotEmpty) {
+          _imageFile = File(path);
+        } else if (path is File) {
+          _imageFile = path;
+        }
+      } else if (args is String && args.isNotEmpty) {
+        _imageFile = File(args);
+      } else if (args is File) {
+        _imageFile = args;
+      }
+
+      _analisarImagem();
+      _isInit = false;
+    }
   }
 
   Future<void> _analisarImagem() async {
-    // Simulação da análise com IA (substitua pelo seu serviço/API real)
+    // Simulação da análise com IA
     await Future.delayed(const Duration(seconds: 2));
 
     if (mounted) {
       setState(() {
         _isLoading = false;
-        // Altere para a lógica real que valida a presença do sorriso
         _smileDetected = true;
       });
     }
@@ -34,12 +53,6 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final args = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>?;
-    final imagePath = args?['imagePath'] as String?;
-    if (imagePath != null) {
-      _imageFile = File(imagePath);
-    }
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Análise com IA'),
@@ -66,7 +79,7 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
             ),
             const SizedBox(height: 20),
 
-            // Preview da imagem com bordas suavizadas e sombra sutil
+            // Preview da imagem
             if (_imageFile != null && _imageFile!.existsSync())
               Container(
                 decoration: BoxDecoration(
@@ -85,7 +98,7 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                     _imageFile!,
                     height: 280,
                     width: double.infinity,
-                    fit: BoxFit.cover,
+                    fit: BoxFit.contain, // ✅ BoxFit.contain para manter a proporção real
                   ),
                 ),
               )
@@ -94,7 +107,7 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
 
             const SizedBox(height: 24),
 
-            // Mensagem Dinâmica de Validação
+            // Mensagem Dinâmica
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -138,11 +151,14 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                   style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
                 onPressed: () {
-                  if (_smileDetected) {
+                  if (_smileDetected && _imageFile != null) {
                     Navigator.pushNamed(
                       context,
                       '/adjust',
-                      arguments: {'image': _imageFile},
+                      arguments: {
+                        'imagePath': _imageFile!.path, // ✅ Passa o caminho (String) padronizado
+                        'image': _imageFile,           // ✅ Mantém o objeto File como fallback
+                      },
                     );
                   } else {
                     Navigator.pop(context);
@@ -153,7 +169,6 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
 
             const SizedBox(height: 12),
 
-            // Botão Secundário: Recapturar foto se necessário
             if (_smileDetected)
               TextButton.icon(
                 onPressed: () => Navigator.pop(context),

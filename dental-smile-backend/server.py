@@ -23,34 +23,39 @@ def process_smile():
         if img is None:
             return jsonify({'error': 'Imagem inválida'}), 400
 
-        # Converte para YCrCb (para isolar cor) e LAB (para ajustar brilho)
-        ycrcb = cv2.cvtColor(img, cv2.COLOR_BGR2YCrCb)
+        height, width = img.shape[:2]
+
+        # 1. Converter para os espaços de cor LAB e HSV
         lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
+        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
 
-        _, cr, _ = cv2.split(ycrcb)
         l, a, b = cv2.split(lab)
+        h, s, v = cv2.split(hsv)
 
-        # Intensidade do clareamento
-        boost = 40 if color == 'brilhante' else (28 if color == 'perolado' else 18)
+        # 2. Definição da ROI em formato elíptico (focado estritamente na boca)
+        roi_mask = np.zeros((height, width), dtype=np.uint8)
+        center_x, center_y = int(width * 0.50), int(height * 0.60)
+        axes_x, axes_y = int(width * 0.20), int(height * 0.10) # Reduzido para não pegar o queixo
+        cv2.ellipse(roi_mask, (center_x, center_y), (axes_x, axes_y), 0, 0, 360, 255, -1)
 
-        height, width = l.shape
+        # 3. Filtro de Cor Anatômica dos Dentes:
+        # - Luminosidade alta (v > 130)
+        # - Baixa saturação (s < 100 -> exclui lábios vermelhos e pele rosada/morena)
+        teeth_color_mask = cv2.inRange(hsv, (0, 0, 130), (180, 95, 255))
 
-        # 1. Restringe a busca apenas para a área central inferior (evita testa, olhos e bochechas externas)
-        roi_mask = np.zeros_like(l)
-        roi_mask[int(height * 0.50):int(height * 0.82), int(width * 0.25):int(width * 0.75)] = 255
+        # 4. Interseção da região bucal com os pixels característicos de dentes
+        teeth_mask = cv2.bitwise_and(teeth_color_mask, roi_mask)
 
-        # 2. Localiza pixels de alta luminosidade (dentes)
-        bright_pixels = cv2.threshold(l, 155, 255, cv2.THRESH_BINARY)[1]
+        # 5. Suavização progressiva para blend invisível com as gengivas e lábios
+        teeth_mask_blur = cv2.GaussianBlur(teeth_mask, (31, 31), 0) / 255.0
 
-        # 3. Interseção: Apenas pixels realmente claros dentro da região da boca
-        teeth_mask = cv2.bitwise_and(bright_pixels, roi_mask)
+        # 6. Intensidade do Clareamento
+        boost_l = 35 if color == 'brilhante' else (25 if color == 'perolado' else 15)
+        neutralize_b = 16 if color == 'brilhante' else 10
 
-        # 4. Suavização para transição natural
-        teeth_mask_blur = cv2.GaussianBlur(teeth_mask, (15, 15), 0) / 255.0
-
-        # 5. Aumenta brilho (L) e neutraliza o tom amarelo (B)
-        l_new = np.clip(l + (teeth_mask_blur * boost), 0, 255).astype(np.uint8)
-        b_new = np.clip(b - (teeth_mask_blur * 14), 0, 255).astype(np.uint8)
+        # Aplica o clareamento no canal L e remove o tom amarelado no canal B
+        l_new = np.clip(l + (teeth_mask_blur * boost_l), 0, 255).astype(np.uint8)
+        b_new = np.clip(b - (teeth_mask_blur * neutralize_b), 0, 255).astype(np.uint8)
 
         lab_adjusted = cv2.merge([l_new, a, b_new])
         processed_img = cv2.cvtColor(lab_adjusted, cv2.COLOR_LAB2BGR)
