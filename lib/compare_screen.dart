@@ -5,6 +5,7 @@ import 'package:printing/printing.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'background.dart';
+import 'adjust_smile_screen.dart';
 
 class CompareScreen extends StatefulWidget {
   const CompareScreen({super.key});
@@ -311,70 +312,144 @@ class _CompareScreenState extends State<CompareScreen> {
                 ),
               const SizedBox(height: 12),
 
-              // Área de Comparação Visual Interativa (Slider)
-              Container(
-                height: 320,
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.1),
-                      blurRadius: 8,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(16),
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      // Imagem Depois (IA) no fundo
-                      if (processedFile != null && processedFile.existsSync())
-                        Image.file(processedFile, fit: BoxFit.cover)
-                      else
-                        const Center(child: Text('Erro ao carregar imagem processada')),
+              // 💥 EFEITO IMPACTANTE: Área de Comparação Directa sobre a Imagem com Toque/Arraste
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final containerWidth = constraints.maxWidth;
+                  const containerHeight = 340.0;
 
-                      // Imagem Original recortada pelo Slider
-                      if (originalFile != null && originalFile.existsSync())
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: FractionallySizedBox(
-                            widthFactor: _sliderValue,
-                            alignment: Alignment.topLeft,
-                            child: ClipRect(
-                              child: OverflowBox(
-                                alignment: Alignment.topLeft,
-                                maxWidth: MediaQuery.of(context).size.width - 32,
-                                maxHeight: 320,
-                                child: Image.file(originalFile, fit: BoxFit.cover),
+                  return GestureDetector(
+                    onPanUpdate: (details) {
+                      setState(() {
+                        _sliderValue += details.delta.dx / containerWidth;
+                        if (_sliderValue < 0.0) _sliderValue = 0.0;
+                        if (_sliderValue > 1.0) _sliderValue = 1.0;
+                      });
+                    },
+                    onTapDown: (details) {
+                      final localX = details.localPosition.dx;
+                      setState(() {
+                        _sliderValue = (localX / containerWidth).clamp(0.0, 1.0);
+                      });
+                    },
+                    child: Container(
+                      height: containerHeight,
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.15),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(16),
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            // 1. Imagem Com IA (Fundo Completo)
+                            if (processedFile != null && processedFile.existsSync())
+                              Image.file(processedFile, fit: BoxFit.cover)
+                            else
+                              const Center(child: Text('Erro ao carregar imagem processada')),
+
+                            // 2. Imagem Original Cortada Dinamicamente pelo Arraste
+                            if (originalFile != null && originalFile.existsSync())
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: FractionallySizedBox(
+                                  widthFactor: _sliderValue,
+                                  alignment: Alignment.topLeft,
+                                  child: ClipRect(
+                                    child: OverflowBox(
+                                      alignment: Alignment.topLeft,
+                                      maxWidth: containerWidth,
+                                      maxHeight: containerHeight,
+                                      child: Image.file(originalFile, fit: BoxFit.cover),
+                                    ),
+                                  ),
+                                ),
+                              ),
+
+                            // 3. Linha Divisória Central com Botão de Setas e Rótulos Flutuantes
+                            Positioned(
+                              top: 0,
+                              bottom: 0,
+                              left: (containerWidth * _sliderValue) - 1.5,
+                              child: Container(
+                                width: 3,
+                                color: Colors.white,
+                                child: Stack(
+                                  alignment: Alignment.center,
+                                  clipBehavior: Clip.none,
+                                  children: [
+                                    // Indicador Circular com Setas Esquerda/Direita
+                                    Container(
+                                      height: 36,
+                                      width: 36,
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        shape: BoxShape.circle,
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Colors.black.withValues(alpha: 0.3),
+                                            blurRadius: 6,
+                                          )
+                                        ],
+                                      ),
+                                      child: const Icon(
+                                        Icons.compare_arrows,
+                                        size: 20,
+                                        color: Colors.indigo,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
-                          ),
+
+                            // Rótulo Flutuante "Original" (Canto Superior Esquerdo)
+                            Positioned(
+                              top: 12,
+                              left: 12,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.6),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: const Text(
+                                  'Original',
+                                  style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            ),
+
+                            // Rótulo Flutuante "Com IA" (Canto Superior Direito)
+                            Positioned(
+                              top: 12,
+                              right: 12,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: Colors.indigo.withValues(alpha: 0.8),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: const Text(
+                                  'Com IA',
+                                  style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                    ],
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 12),
-
-              // Controlo do Slider (Original vs Com IA)
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text('Original', style: TextStyle(fontWeight: FontWeight.bold)),
-                  Expanded(
-                    child: Slider(
-                      value: _sliderValue,
-                      min: 0.0,
-                      max: 1.0,
-                      onChanged: (val) => setState(() => _sliderValue = val),
+                      ),
                     ),
-                  ),
-                  const Text('Com IA', style: TextStyle(fontWeight: FontWeight.bold)),
-                ],
+                  );
+                },
               ),
 
               const SizedBox(height: 16),
@@ -408,8 +483,18 @@ class _CompareScreenState extends State<CompareScreen> {
                         ),
                       ),
                       onPressed: () {
-                        // Fecha o ecrã atual para voltar ao ecrã de ajuste anterior
-                        Navigator.pop(context);
+                        if (_originalPath != null && _originalPath!.isNotEmpty) {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => AdjustSmileScreen(
+                                image: File(_originalPath!),
+                              ),
+                            ),
+                          );
+                        } else {
+                          Navigator.pop(context);
+                        }
                       },
                       icon: const Icon(Icons.tune),
                       label: const Text('Ajustar'),

@@ -171,7 +171,7 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
             title: 'Formato:',
             options: _shapes,
             selectedValue: _selectedShape,
-            onSelected: (val) => setState(() => _selectedColor = val),
+            onSelected: (val) => setState(() => _selectedShape = val), // Corrigido aqui!
           ),
           const SizedBox(height: 8),
           _buildChipGroup(

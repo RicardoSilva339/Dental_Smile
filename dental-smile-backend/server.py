@@ -9,15 +9,66 @@ from PIL import Image
 app = Flask(__name__)
 CORS(app)
 
-# Defina o seu token da Hugging Face nas variáveis de ambiente do Render (HUGGINGFACE_API_TOKEN)
+# Token da Hugging Face configurado nas variáveis de ambiente do Render
 HF_TOKEN = os.environ.get("HUGGINGFACE_API_TOKEN", "")
-
-# Exemplo de modelo de Img2Img estável na Hugging Face (pode ajustar conforme o modelo desejado)
 API_URL = "https://api-inference.huggingface.co/models/runwayml/stable-diffusion-v1-5"
+
+# 💎 Base de dados simulada de créditos por Dentista (Chave de Acesso / API Key)
+# 🎁 Agora com 3 créditos de degustação para o modelo Freemium!
+CREDITOS_DB = {
+    "dentista_demo_123": {
+        "nome": "Dr. Ricardo",
+        "creditos": 3  # Saldo inicial de degustação
+    }
+}
+
+@app.route('/check-credits', methods=['GET'])
+def check_credits():
+    """Rota para o app Flutter verificar quantos créditos o dentista ainda tem."""
+    api_key = request.args.get('api_key', 'dentista_demo_123')
+
+    if api_key in CREDITOS_DB:
+        user_data = CREDITOS_DB[api_key]
+        return jsonify({
+            'success': True,
+            'nome': user_data['nome'],
+            'creditos': user_data['creditos']
+        }), 200
+
+    return jsonify({'success': False, 'error': 'Chave de acesso inválida'}), 401
+
+@app.route('/add-credits', methods=['POST'])
+def add_credits():
+    """Rota para recarregar créditos após a confirmação de pagamento."""
+    data = request.json or {}
+    api_key = data.get('api_key', 'dentista_demo_123')
+    quantidade = data.get('quantidade', 0)
+
+    if api_key in CREDITOS_DB:
+        CREDITOS_DB[api_key]['creditos'] += int(quantidade)
+        print(f"Créditos adicionados para {api_key}. Novo saldo: {CREDITOS_DB[api_key]['creditos']}")
+        return jsonify({
+            'success': True,
+            'novo_saldo': CREDITOS_DB[api_key]['creditos']
+        }), 200
+
+    return jsonify({'success': False, 'error': 'Chave de acesso inválida'}), 401
 
 @app.route('/process-smile', methods=['POST'])
 def process_smile():
     try:
+        # Pega a chave de acesso enviada pelo app (ou usa uma padrão de demonstração)
+        api_key = request.form.get('api_key', 'dentista_demo_123')
+
+        # Validação de Créditos antes de processar
+        if api_key not in CREDITOS_DB:
+            return jsonify({'error': 'Autenticação necessária. Chave inválida.'}), 401
+
+        if CREDITOS_DB[api_key]['creditos'] <= 0:
+            return jsonify({
+                'error': 'Créditos esgotados! Por favor, recarregue o seu plano para continuar a simular.'
+            }), 402 # HTTP 402 Payment Required
+
         if not request.files:
             return jsonify({'error': 'Nenhum ficheiro enviado'}), 400
 
@@ -30,8 +81,6 @@ def process_smile():
 
         # Lê a imagem enviada pelo Flutter
         input_image = Image.open(image_file.stream).convert("RGB")
-
-        # Redimensiona para otimizar o envio à API (opcional, mas recomendado para evitar timeouts)
         input_image.thumbnail((512, 512))
 
         img_byte_arr = io.BytesIO()
@@ -42,10 +91,8 @@ def process_smile():
             "Authorization": f"Bearer {HF_TOKEN}",
         }
 
-        # Prompt estruturado para guiar a IA na modificação mantendo a estrutura
         prompt_text = f"Close up photo of person smiling, professional dentistry aesthetic, teeth shade {color}, shape {shape}, highly detailed, realistic."
 
-        # Payload para modelos compatíveis ou tarefas de imagem
         files = {
             'image': img_bytes
         }
@@ -58,9 +105,11 @@ def process_smile():
 
         if response.status_code != 200:
             print(f"Erro na Hugging Face: {response.status_code} - {response.text}")
-            # Fallback temporário para não quebrar a app caso a API esteja a carregar o modelo (503)
-            # Retorna a imagem original tratada ou o erro limpo
             return send_file(io.BytesIO(img_bytes), mimetype='image/jpeg')
+
+        # Sucesso no processamento: Desconta 1 crédito do saldo do dentista!
+        CREDITOS_DB[api_key]['creditos'] -= 1
+        print(f"Crédito descontado para {api_key}. Restantes: {CREDITOS_DB[api_key]['creditos']}")
 
         return send_file(io.BytesIO(response.content), mimetype='image/jpeg')
 
