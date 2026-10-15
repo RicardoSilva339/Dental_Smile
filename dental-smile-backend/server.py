@@ -8,10 +8,9 @@ from flask_cors import CORS
 app = Flask(__name__)
 CORS(app)
 
-# O token lido do Render
+# O token lido do Render (com permissão de Inference criada)
 HF_TOKEN = os.getenv("HUGGINGFACE_API_KEY")
-# Novo endpoint atualizado do router da Hugging Face
-API_URL = "https://router.huggingface.co/hf-inference/models/runwayml/stable-diffusion-v1-5"
+API_URL = "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell"
 
 @app.route('/process-smile', methods=['POST'])
 def process_smile():
@@ -25,7 +24,7 @@ def process_smile():
 
         prompt_text = (
             f"photo of perfectsmile smile, shade {color_code}, "
-            "aligned white teeth, healthy teeth with a perfect smile"
+            "aligned white teeth, healthy teeth with a perfect smile, high quality"
         )
 
         headers = {
