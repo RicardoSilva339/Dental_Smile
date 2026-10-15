@@ -69,8 +69,11 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
       context,
       '/compare',
       arguments: {
-        'originalImagePath': widget.image.path,
-        'processedImagePath': processedImagePath,
+        'originalPath': widget.image.path,
+        'processedPath': processedImagePath,
+        'color': _colors[_selectedColor] ?? _selectedColor,
+        'shape': _shapes[_selectedShape] ?? _selectedShape,
+        'size': _sizes[_selectedSize] ?? _selectedSize,
       },
     );
   }
@@ -135,7 +138,7 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
                 borderRadius: BorderRadius.circular(24),
                 child: Image.file(
                   widget.image,
-                  fit: BoxFit.contain, // ✅ Alterado de BoxFit.cover para BoxFit.contain para manter a proporção real
+                  fit: BoxFit.contain,
                   width: double.infinity,
                 ),
               ),
