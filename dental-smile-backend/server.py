@@ -1,13 +1,19 @@
 import os
 import io
 import traceback
-import urllib.parse
 import requests
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
+from PIL import Image
 
 app = Flask(__name__)
 CORS(app)
+
+# Defina o seu token da Hugging Face nas variáveis de ambiente do Render (HUGGINGFACE_API_TOKEN)
+HF_TOKEN = os.environ.get("HUGGINGFACE_API_TOKEN", "")
+
+# Exemplo de modelo de Img2Img estável na Hugging Face (pode ajustar conforme o modelo desejado)
+API_URL = "https://api-inference.huggingface.co/models/runwayml/stable-diffusion-v1-5"
 
 @app.route('/process-smile', methods=['POST'])
 def process_smile():
@@ -17,26 +23,44 @@ def process_smile():
 
         image_key = list(request.files.keys())[0]
         image_file = request.files[image_key]
-        color_code = request.form.get('color', 'A1')
 
-        # Prompt otimizado para a geração do sorriso
-        prompt_text = (
-            f"photo of perfect smile, shade {color_code}, "
-            "aligned white teeth, healthy teeth with a perfect smile, high quality, realistic dentistry photo"
-        )
+        color = request.form.get('color', 'Brilhante')
+        shape = request.form.get('shape', 'Oval')
+        size = request.form.get('size', 'Médio')
 
-        # Codifica o prompt para ser usado com segurança na URL
-        encoded_prompt = urllib.parse.quote(prompt_text)
+        # Lê a imagem enviada pelo Flutter
+        input_image = Image.open(image_file.stream).convert("RGB")
 
-        # URL do serviço gratuito Pollinations (sem necessidade de token ou pagamento)
-        pollinations_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1024&seed=42&nologo=true"
+        # Redimensiona para otimizar o envio à API (opcional, mas recomendado para evitar timeouts)
+        input_image.thumbnail((512, 512))
 
-        # Faz o pedido da imagem gerada
-        response = requests.get(pollinations_url, timeout=60)
+        img_byte_arr = io.BytesIO()
+        input_image.save(img_byte_arr, format='JPEG')
+        img_bytes = img_byte_arr.getvalue()
+
+        headers = {
+            "Authorization": f"Bearer {HF_TOKEN}",
+        }
+
+        # Prompt estruturado para guiar a IA na modificação mantendo a estrutura
+        prompt_text = f"Close up photo of person smiling, professional dentistry aesthetic, teeth shade {color}, shape {shape}, highly detailed, realistic."
+
+        # Payload para modelos compatíveis ou tarefas de imagem
+        files = {
+            'image': img_bytes
+        }
+        data = {
+            'inputs': prompt_text
+        }
+
+        # Faz a requisição para a Hugging Face Inference API
+        response = requests.post(API_URL, headers=headers, files=files, data=data, timeout=60)
 
         if response.status_code != 200:
-            print(f"Erro na geração de imagem: {response.status_code}")
-            return jsonify({'error': 'Erro ao gerar imagem no serviço externo'}), response.status_code
+            print(f"Erro na Hugging Face: {response.status_code} - {response.text}")
+            # Fallback temporário para não quebrar a app caso a API esteja a carregar o modelo (503)
+            # Retorna a imagem original tratada ou o erro limpo
+            return send_file(io.BytesIO(img_bytes), mimetype='image/jpeg')
 
         return send_file(io.BytesIO(response.content), mimetype='image/jpeg')
 
