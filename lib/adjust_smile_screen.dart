@@ -5,11 +5,17 @@ import 'package:dental_smile/api_service.dart';
 class AdjustSmileScreen extends StatefulWidget {
   final File image;
   final Map<String, dynamic>? region;
+  final String? initialColor;
+  final String? initialShape;
+  final String? initialSize;
 
   const AdjustSmileScreen({
     super.key,
     required this.image,
     this.region,
+    this.initialColor,
+    this.initialShape,
+    this.initialSize,
   });
 
   @override
@@ -19,9 +25,9 @@ class AdjustSmileScreen extends StatefulWidget {
 class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
   bool _isProcessing = false;
 
-  String _selectedColor = 'brilhante';
-  String _selectedShape = 'oval';
-  String _selectedSize = 'medio';
+  late String _selectedColor;
+  late String _selectedShape;
+  late String _selectedSize;
 
   final Map<String, String> _colors = {
     'natural': 'Natural',
@@ -41,6 +47,15 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
     'medio': 'Médio',
     'longo': 'Longo',
   };
+
+  @override
+  void initState() {
+    super.initState();
+    // Recupera os valores iniciais passados ou define os padrões
+    _selectedColor = widget.initialColor ?? 'brilhante';
+    _selectedShape = widget.initialShape ?? 'oval';
+    _selectedSize = widget.initialSize ?? 'medio';
+  }
 
   Future<void> _handleProcessSmile() async {
     setState(() => _isProcessing = true);
@@ -65,7 +80,8 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
 
     setState(() => _isProcessing = false);
 
-    Navigator.pushNamed(
+    // Substitui ou empurra a rota /compare com os parâmetros corretos
+    Navigator.pushReplacementNamed(
       context,
       '/compare',
       arguments: {
@@ -155,7 +171,7 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
             title: 'Formato:',
             options: _shapes,
             selectedValue: _selectedShape,
-            onSelected: (val) => setState(() => _selectedShape = val),
+            onSelected: (val) => setState(() => _selectedColor = val),
           ),
           const SizedBox(height: 8),
           _buildChipGroup(

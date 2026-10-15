@@ -33,7 +33,6 @@ class _CompareScreenState extends State<CompareScreen> {
       final args = ModalRoute.of(context)?.settings.arguments;
       if (args is Map<String, dynamic>) {
         _originalPath = args['originalPath'] ?? args['original'];
-        // Trata todas as variações possíveis para garantir que a imagem processada seja encontrada
         _processedPath = args['processedPath'] ?? args['processed'] ?? args['image'] ?? args['resultPath'];
 
         _selectedColor = args['color'] ?? 'A1';
@@ -239,7 +238,7 @@ class _CompareScreenState extends State<CompareScreen> {
 
     if (!mounted) return;
 
-    Navigator.push(
+    await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => Scaffold(
@@ -270,6 +269,10 @@ class _CompareScreenState extends State<CompareScreen> {
         ),
       ),
     );
+
+    // Assim que fecha o PDF, regressa automaticamente à página inicial
+    if (!mounted) return;
+    Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
   }
 
   @override
@@ -404,7 +407,10 @@ class _CompareScreenState extends State<CompareScreen> {
                           borderRadius: BorderRadius.circular(12),
                         ),
                       ),
-                      onPressed: () => Navigator.pop(context),
+                      onPressed: () {
+                        // Fecha o ecrã atual para voltar ao ecrã de ajuste anterior
+                        Navigator.pop(context);
+                      },
                       icon: const Icon(Icons.tune),
                       label: const Text('Ajustar'),
                     ),
