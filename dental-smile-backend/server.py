@@ -8,11 +8,11 @@ from flask_cors import CORS
 app = Flask(__name__)
 CORS(app)
 
-# O token lido das variáveis de ambiente do Render
+# O token de inferencia lido do Render
 HF_TOKEN = os.getenv("HUGGINGFACE_API_KEY")
 
-# Endpoint gratuito direto (sem depender de permissões de leitura do Hub)
-API_URL = "https://router.huggingface.co/hf-inference/models/segmind/SSDL-1B"
+# Endpoint oficial de tarefa genérica para text-to-image no router gratuito
+API_URL = "https://router.huggingface.co/hf-inference/v1/tasks/text-to-image"
 
 @app.route('/process-smile', methods=['POST'])
 def process_smile():
@@ -30,7 +30,8 @@ def process_smile():
         )
 
         headers = {
-            "Authorization": f"Bearer {HF_TOKEN}"
+            "Authorization": f"Bearer {HF_TOKEN}",
+            "Content-Type": "application/json"
         }
 
         payload = {
