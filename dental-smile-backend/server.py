@@ -10,7 +10,8 @@ CORS(app)
 
 # O token lido do Render
 HF_TOKEN = os.getenv("HUGGINGFACE_API_KEY")
-API_URL = "https://api-inference.huggingface.co/models/runwayml/stable-diffusion-v1-5"
+# Novo endpoint atualizado do router da Hugging Face
+API_URL = "https://router.huggingface.co/hf-inference/models/runwayml/stable-diffusion-v1-5"
 
 @app.route('/process-smile', methods=['POST'])
 def process_smile():
@@ -41,7 +42,6 @@ def process_smile():
             print(f"Erro da Hugging Face: {response.text}")
             return jsonify({'error': f"Erro na API externa: {response.text}"}), response.status_code
 
-        # A API retorna os bytes diretos da imagem gerada
         return send_file(io.BytesIO(response.content), mimetype='image/jpeg')
 
     except Exception as e:
