@@ -26,7 +26,8 @@ def process_smile():
             "aligned white teeth, healthy teeth with a perfect smile"
         )
 
-        model_id = "stabilityai/stable-diffusion-2-1"
+        # Alterado para um modelo público e aberto para evitar restrições de termos
+        model_id = "runwayml/stable-diffusion-v1-5"
 
         # Chamada segura usando o cliente oficial
         image_output = client.text_to_image(
