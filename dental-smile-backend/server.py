@@ -1,5 +1,6 @@
 import os
 import io
+import traceback
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from huggingface_hub import InferenceClient
@@ -42,7 +43,9 @@ def process_smile():
         return send_file(img_io, mimetype='image/jpeg')
 
     except Exception as e:
-        print(f"Erro no processamento interno: {e}")
+        # Imprime o erro técnico completo no console do Render
+        traceback.print_exc()
+        print(f"Erro no processamento interno: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
