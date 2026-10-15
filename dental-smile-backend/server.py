@@ -8,10 +8,10 @@ from huggingface_hub import InferenceClient
 app = Flask(__name__)
 CORS(app)
 
-# O token lido das variáveis de ambiente do Render
+# O token lido do Render
 HF_TOKEN = os.getenv("HUGGINGFACE_API_KEY")
 
-# Inicializa o cliente oficial da Hugging Face com o token
+# Inicializa o cliente oficial da Hugging Face
 client = InferenceClient(api_key=HF_TOKEN)
 
 @app.route('/process-smile', methods=['POST'])
@@ -29,13 +29,12 @@ def process_smile():
             "aligned white teeth, healthy teeth with a perfect smile, high quality"
         )
 
-        # Gera a imagem usando o cliente oficial com o modelo FLUX
+        # Usando um modelo totalmente mantido na camada serverless gratuita
         image = client.text_to_image(
             prompt=prompt_text,
-            model="black-forest-labs/FLUX.1-schnell"
+            model="stabilityai/stable-diffusion-2-1"
         )
 
-        # Converte a imagem gerada (PIL Image) para bytes para enviar na resposta
         img_byte_arr = io.BytesIO()
         image.save(img_byte_arr, format='JPEG')
         img_byte_arr.seek(0)
