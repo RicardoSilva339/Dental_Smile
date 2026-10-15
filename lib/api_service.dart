@@ -21,14 +21,18 @@ class ApiService {
         ..fields['size'] = size
         ..files.add(await http.MultipartFile.fromPath('image', imageFile.path));
 
-      var streamedResponse = await request.send().timeout(const Duration(seconds: 10));
+      // Aumentado para 60 segundos para dar tempo à IA de gerar a imagem sem timeout
+      var streamedResponse = await request.send().timeout(const Duration(seconds: 60));
       var response = await http.Response.fromStream(streamedResponse);
 
       if (response.statusCode == 200) {
         final tempDir = await getTemporaryDirectory();
-        final file = File('${tempDir.path}/processed_${DateTime.now().millisecondsSinceEpoch}.png');
+        // Salvando com extensão .jpg para corresponder ao mimetype image/jpeg enviado pelo servidor
+        final file = File('${tempDir.path}/processed_${DateTime.now().millisecondsSinceEpoch}.jpg');
         await file.writeAsBytes(response.bodyBytes);
         return file.path;
+      } else {
+        debugPrint("Erro do servidor: ${response.statusCode} - ${response.body}");
       }
     } catch (e) {
       debugPrint("Erro no ApiService: $e");
