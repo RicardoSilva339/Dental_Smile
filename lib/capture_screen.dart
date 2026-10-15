@@ -21,13 +21,23 @@ class _CaptureScreenState extends State<CaptureScreen> {
     }
   }
 
-  // ✅ FIX: Direciona para a Análise com IA conforme o Fluxograma
+  String _gerarSimulationId() {
+    final now = DateTime.now();
+    final timestamp = now.millisecondsSinceEpoch.toString().substring(5);
+    return 'DS-$timestamp';
+  }
+
   void _goToAnalysis() {
     if (_image != null) {
+      final simulationId = _gerarSimulationId();
+
       Navigator.pushNamed(
         context,
         '/analysis',
-        arguments: {'image': _image!.path},
+        arguments: {
+          'image': _image!.path,
+          'simulationId': simulationId,
+        },
       );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -53,9 +63,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
                   fontWeight: FontWeight.bold,
                 ),
               ),
-
               const SizedBox(height: 10),
-
               const Text(
                 'Enquadre o sorriso ou selecione uma foto',
                 textAlign: TextAlign.center,
@@ -64,10 +72,8 @@ class _CaptureScreenState extends State<CaptureScreen> {
                   fontWeight: FontWeight.bold,
                 ),
               ),
-
               const SizedBox(height: 40),
 
-              // Botões de seleção
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -102,23 +108,22 @@ class _CaptureScreenState extends State<CaptureScreen> {
                   ),
                 ],
               ),
-
               const SizedBox(height: 30),
 
-              // Pré-visualização da imagem capturada
               Expanded(
                 child: Center(
                   child: _image == null
                       ? const Text('Nenhuma imagem selecionada')
-                      : Image.file(_image!, height: 300, fit: BoxFit.cover),
+                      : ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: Image.file(_image!, height: 300, fit: BoxFit.cover),
+                  ),
                 ),
               ),
             ],
           ),
         ),
       ),
-
-      // Botão de avanço
       bottomNavigationBar: Padding(
         padding: const EdgeInsets.all(16.0),
         child: ElevatedButton.icon(

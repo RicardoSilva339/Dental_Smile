@@ -1,9 +1,10 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:printing/printing.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
+import 'background.dart';
 
 class CompareScreen extends StatefulWidget {
   const CompareScreen({super.key});
@@ -13,11 +14,41 @@ class CompareScreen extends StatefulWidget {
 }
 
 class _CompareScreenState extends State<CompareScreen> {
-  double _sliderValue = 1.0;
-  bool _isGeneratingPdf = false;
-
-  // Controller para capturar o texto digitado pelo dentista
+  double _sliderValue = 0.5; // 0.0 = Original, 1.0 = Com IA
   final TextEditingController _notesController = TextEditingController();
+
+  String? _originalPath;
+  String? _processedPath;
+  String? _selectedColor;
+  String? _selectedShape;
+  String? _selectedSize;
+  String? _simulationId;
+
+  bool _isInit = true;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_isInit) {
+      final args = ModalRoute.of(context)?.settings.arguments;
+      if (args is Map<String, dynamic>) {
+        _originalPath = args['originalPath'] ?? args['original'];
+        // Trata todas as variações possíveis para garantir que a imagem processada seja encontrada
+        _processedPath = args['processedPath'] ?? args['processed'] ?? args['image'] ?? args['resultPath'];
+
+        _selectedColor = args['color'] ?? 'A1';
+        _selectedShape = args['shape'] ?? 'Natural';
+        _selectedSize = args['size'] ?? 'Médio';
+        _simulationId = args['simulationId'] ?? 'DS-${DateTime.now().millisecondsSinceEpoch.toString().substring(5)}';
+
+        final existingNotes = args['notes'] ?? args['note'];
+        if (existingNotes != null) {
+          _notesController.text = existingNotes;
+        }
+      }
+      _isInit = false;
+    }
+  }
 
   @override
   void dispose() {
@@ -25,137 +56,226 @@ class _CompareScreenState extends State<CompareScreen> {
     super.dispose();
   }
 
-  // Função auxiliar para resetar a navegação e retornar à tela inicial
-  void _goToHomeScreen() {
-    Navigator.of(context).popUntil((route) => route.isFirst);
-  }
-
-  /// Salva a simulação no banco local (Hive) para que apareça no HistoryScreen
-  Future<void> _salvarNoHistorico({
-    required String? originalPath,
-    required String? processedPath,
-    required String? color,
-    required String? shape,
-    required String? size,
-    required String? note,
-  }) async {
+  // Carrega a imagem com segurança para o PDF
+  Future<pw.MemoryImage?> _carregarImagemSegura(String? path) async {
+    if (path == null || path.isEmpty) return null;
     try {
-      final box = Hive.box('simulacoes');
-      final now = DateTime.now();
-      final dataFormatada =
-          "${now.day.toString().padLeft(2, '0')}/${now.month.toString().padLeft(2, '0')}/${now.year} ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}";
-
-      await box.add({
-        'date': dataFormatada,
-        'originalImage': originalPath ?? '',
-        'originalImagePath': originalPath ?? '', // compatibilidade com chaves alternativas
-        'adjustedImage': processedPath ?? '',
-        'processedImagePath': processedPath ?? '', // compatibilidade com chaves alternativas
-        'color': color ?? '-',
-        'shape': shape ?? '-',
-        'size': size ?? '-',
-        'note': note ?? 'Sem observações',
-        'notes': note ?? 'Sem observações',
-      });
-      debugPrint('Simulação salva no Hive com sucesso!');
+      final file = File(path);
+      if (file.existsSync()) {
+        final bytes = await file.readAsBytes();
+        return pw.MemoryImage(bytes);
+      }
     } catch (e) {
-      debugPrint('Erro ao salvar no Hive: $e');
+      debugPrint('Erro ao carregar imagem para o PDF: $e');
     }
+    return null;
   }
 
-  Future<void> _handleGeneratePdf({
+  // 📄 Geração do Documento PDF Completo e Profissional
+  Future<pw.Document> _gerarDocumentoPdf({
     required String? originalPath,
-    required String? processedPath,
-    required String? color,
-    required String? shape,
-    required String? size,
+    required String? adjustedPath,
+    String? color,
+    String? shape,
+    String? size,
+    String? note,
+    String? simulationId,
   }) async {
-    setState(() => _isGeneratingPdf = true);
+    final pdf = pw.Document();
 
-    try {
-      final noteText = _notesController.text.trim().isEmpty ? null : _notesController.text.trim();
+    final beforeImage = await _carregarImagemSegura(originalPath);
+    final afterImage = await _carregarImagemSegura(adjustedPath);
 
-      // 1. Gera o PDF
-      final pdfDoc = await _gerarDocumentoPdf(
-        originalPath: originalPath,
-        adjustedPath: processedPath,
-        color: color,
-        shape: shape,
-        size: size,
-        note: noteText,
-      );
+    final now = DateTime.now();
+    final dataHoraFormatada = "${now.day.toString().padLeft(2, '0')}/${now.month.toString().padLeft(2, '0')}/${now.year} às ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}";
 
-      final pdfBytes = await pdfDoc.save();
-
-      // 2. Persiste os dados da simulação no Hive para o Histórico
-      await _salvarNoHistorico(
-        originalPath: originalPath,
-        processedPath: processedPath,
-        color: color,
-        shape: shape,
-        size: size,
-        note: noteText,
-      );
-
-      if (!mounted) return;
-
-      // 3. Abre a janela de impressão / salvamento do PDF
-      await Printing.layoutPdf(
-        onLayout: (PdfPageFormat format) async => pdfBytes,
-        name: 'Relatorio_Dental_Smile.pdf',
-      );
-
-      // 4. Caixa de diálogo pós-impressão/geração de PDF
-      if (mounted) {
-        showDialog(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: const Text('Simulação Concluída'),
-            content: const Text('O relatório PDF foi gerado e salvo no histórico. Deseja voltar à tela inicial para iniciar um novo atendimento?'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('Permanecer'),
-              ),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF5C6BC0),
-                  foregroundColor: Colors.white,
+    pdf.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(32),
+        build: (ctx) => pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            // Cabeçalho com ID e Data
+            pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Text(
+                      'Relatório de Simulação - Dental Smile',
+                      style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
+                    ),
+                    pw.SizedBox(height: 4),
+                    pw.Text(
+                      'ID da Simulação: ${simulationId ?? "DS-Geral"}',
+                      style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey700),
+                    ),
+                    pw.Text(
+                      'Data: $dataHoraFormatada',
+                      style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey700),
+                    ),
+                  ],
                 ),
-                onPressed: () {
-                  Navigator.pop(ctx);
-                  _goToHomeScreen();
-                },
-                child: const Text('Voltar ao Início'),
+              ],
+            ),
+
+            pw.Divider(height: 16, thickness: 1, color: PdfColors.grey400),
+
+            // Parâmetros e Observações do Dentista
+            pw.Text(
+              'Parâmetros do Planeamento:',
+              style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold),
+            ),
+            pw.SizedBox(height: 4),
+            pw.Text('- Cor: ${color ?? '-'}', style: const pw.TextStyle(fontSize: 10)),
+            pw.Text('- Formato: ${shape ?? '-'}', style: const pw.TextStyle(fontSize: 10)),
+            pw.Text('- Tamanho: ${size ?? '-'}', style: const pw.TextStyle(fontSize: 10)),
+            pw.Text('- Observações do Dentista: ${note ?? 'Sem observações'}', style: const pw.TextStyle(fontSize: 10)),
+
+            pw.SizedBox(height: 12),
+
+            // Imagens Lado a Lado (Antes / Depois)
+            pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceAround,
+              children: [
+                if (beforeImage != null)
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.center,
+                    children: [
+                      pw.Text("Antes (Original)", style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11)),
+                      pw.SizedBox(height: 4),
+                      pw.Image(beforeImage, width: 160, height: 190, fit: pw.BoxFit.cover),
+                    ],
+                  ),
+                if (afterImage != null)
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.center,
+                    children: [
+                      pw.Text("Depois (Simulação IA)", style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11)),
+                      pw.SizedBox(height: 4),
+                      pw.Image(afterImage, width: 160, height: 190, fit: pw.BoxFit.cover),
+                    ],
+                  ),
+              ],
+            ),
+
+            pw.SizedBox(height: 12),
+
+            // Observação Importante (Disclaimer Legal Fixo)
+            pw.Container(
+              padding: const pw.EdgeInsets.all(8),
+              decoration: pw.BoxDecoration(
+                color: PdfColors.grey200,
+                borderRadius: const pw.BorderRadius.all(pw.Radius.circular(6)),
               ),
-            ],
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Text(
+                    'Observação Importante:',
+                    style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold, color: PdfColors.grey900),
+                  ),
+                  pw.SizedBox(height: 2),
+                  pw.Text(
+                    'Esta imagem representa apenas uma simulação digital com finalidade ilustrativa e não garante o resultado clínico final do tratamento odontológico. O resultado real pode variar de acordo com as condições clínicas, planejamento profissional e execução do tratamento.',
+                    style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
+                  ),
+                ],
+              ),
+            ),
+
+            pw.Spacer(),
+
+            // Rodapé Fixo com Logo e Copyright
+            pw.Divider(height: 10, thickness: 0.5, color: PdfColors.grey400),
+            pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              children: [
+                pw.Text(
+                  'Dental Smile © 2026',
+                  style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold, color: PdfColors.grey600),
+                ),
+                pw.Text(
+                  'Documento gerado digitalmente',
+                  style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey500),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+
+    return pdf;
+  }
+
+  // Salva no Hive para o Histórico
+  Future<void> _salvarNoHistorico(String noteText) async {
+    final box = Hive.box('simulacoes');
+    final simulationData = {
+      'simulationId': _simulationId ?? 'DS-${DateTime.now().millisecondsSinceEpoch.toString().substring(5)}',
+      'date': DateTime.now().toIso8601String(),
+      'originalPath': _originalPath,
+      'processedPath': _processedPath,
+      'color': _selectedColor,
+      'shape': _selectedShape,
+      'size': _selectedSize,
+      'notes': noteText,
+    };
+    await box.add(simulationData);
+  }
+
+  // 🔍 Abre a tela de Pré-visualização com Zoom por Pinça (PdfPreview)
+  void _abrirPreviewPdf() async {
+    final noteText = _notesController.text.trim().isEmpty
+        ? 'Sem observações'
+        : _notesController.text.trim();
+
+    // Persiste no histórico local
+    await _salvarNoHistorico(noteText);
+
+    if (!mounted) return;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => Scaffold(
+          appBar: AppBar(
+            title: const Text('Pré-visualização do Relatório'),
+            backgroundColor: const Color(0xFF5C6BC0),
+            foregroundColor: Colors.white,
           ),
-        );
-      }
-    } catch (e) {
-      debugPrint('Erro ao gerar/imprimir PDF: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erro ao gerar relatório PDF: $e')),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isGeneratingPdf = false);
-      }
-    }
+          body: PdfPreview(
+            build: (format) async {
+              final doc = await _gerarDocumentoPdf(
+                originalPath: _originalPath,
+                adjustedPath: _processedPath,
+                color: _selectedColor,
+                shape: _selectedShape,
+                size: _selectedSize,
+                note: noteText,
+                simulationId: _simulationId,
+              );
+              return doc.save();
+            },
+            allowSharing: true,
+            allowPrinting: true,
+            canChangeOrientation: false,
+            canChangePageFormat: false,
+            pdfFileName: 'Relatorio_Dental_Smile_${_simulationId ?? "simulacao"}.pdf',
+          ),
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final args = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>?;
-    final originalPath = args?['originalImagePath'] as String? ?? args?['originalImage'] as String?;
-    final processedPath = args?['processedImagePath'] as String? ?? args?['adjustedImage'] as String?;
-
-    // Resgata os parâmetros passados da tela de seleção
-    final selectedColor = args?['color'] as String? ?? args?['selectedColor'] as String?;
-    final selectedShape = args?['shape'] as String? ?? args?['selectedShape'] as String?;
-    final selectedSize = args?['size'] as String? ?? args?['selectedSize'] as String?;
+    final originalFile = (_originalPath != null && _originalPath!.isNotEmpty) ? File(_originalPath!) : null;
+    final processedFile = (_processedPath != null && _processedPath!.isNotEmpty) ? File(_processedPath!) : null;
 
     return Scaffold(
       appBar: AppBar(
@@ -163,105 +283,123 @@ class _CompareScreenState extends State<CompareScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.home),
-            tooltip: 'Voltar ao Início',
-            onPressed: _goToHomeScreen,
+            onPressed: () => Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false),
           ),
         ],
       ),
-      body: SingleChildScrollView(
-        child: Column(
-          children: [
-            // Área de visualização comparativa (Antes / Depois)
-            SizedBox(
-              height: 400,
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(24),
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      // Camada 1: Foto Original (Fundo)
-                      if (originalPath != null && File(originalPath).existsSync())
-                        Image.file(
-                          File(originalPath),
-                          fit: BoxFit.contain,
-                          width: double.infinity,
-                          height: double.infinity,
-                        )
-                      else
-                        const Center(child: Icon(Icons.image_not_supported, size: 80, color: Colors.grey)),
+      body: Background(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              // Identificador da Simulação visível na tela
+              if (_simulationId != null)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.indigo.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    'ID: $_simulationId',
+                    style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.indigo),
+                  ),
+                ),
+              const SizedBox(height: 12),
 
-                      // Camada 2: Foto Processada por IA
-                      if (processedPath != null && File(processedPath).existsSync())
-                        Opacity(
-                          opacity: _sliderValue,
-                          child: Image.file(
-                            File(processedPath),
-                            fit: BoxFit.contain,
-                            width: double.infinity,
-                            height: double.infinity,
+              // Área de Comparação Visual Interativa (Slider)
+              Container(
+                height: 320,
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.1),
+                      blurRadius: 8,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      // Imagem Depois (IA) no fundo
+                      if (processedFile != null && processedFile.existsSync())
+                        Image.file(processedFile, fit: BoxFit.cover)
+                      else
+                        const Center(child: Text('Erro ao carregar imagem processada')),
+
+                      // Imagem Original recortada pelo Slider
+                      if (originalFile != null && originalFile.existsSync())
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: FractionallySizedBox(
+                            widthFactor: _sliderValue,
+                            alignment: Alignment.topLeft,
+                            child: ClipRect(
+                              child: OverflowBox(
+                                alignment: Alignment.topLeft,
+                                maxWidth: MediaQuery.of(context).size.width - 32,
+                                maxHeight: 320,
+                                child: Image.file(originalFile, fit: BoxFit.cover),
+                              ),
+                            ),
                           ),
                         ),
                     ],
                   ),
                 ),
               ),
-            ),
 
-            // Controle deslizante (Slider Original <-> Com IA)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 4.0),
-              child: Row(
+              const SizedBox(height: 12),
+
+              // Controlo do Slider (Original vs Com IA)
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   const Text('Original', style: TextStyle(fontWeight: FontWeight.bold)),
                   Expanded(
                     child: Slider(
                       value: _sliderValue,
+                      min: 0.0,
+                      max: 1.0,
                       onChanged: (val) => setState(() => _sliderValue = val),
-                      activeColor: const Color(0xFF5C6BC0),
                     ),
                   ),
                   const Text('Com IA', style: TextStyle(fontWeight: FontWeight.bold)),
                 ],
               ),
-            ),
 
-            // Campo de Observações do Dentista
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 8.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Observações do Dentista:',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+              const SizedBox(height: 16),
+
+              // Campo de Observações do Dentista
+              TextField(
+                controller: _notesController,
+                maxLines: 3,
+                decoration: InputDecoration(
+                  labelText: 'Observações do Dentista',
+                  hintText: 'Insira as notas clínicas ou recomendações...',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                  const SizedBox(height: 6),
-                  TextField(
-                    controller: _notesController,
-                    maxLines: 2,
-                    decoration: InputDecoration(
-                      hintText: 'Digite aqui as observações para o paciente...',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      contentPadding: const EdgeInsets.all(12),
-                    ),
-                  ),
-                ],
+                  filled: true,
+                  fillColor: Colors.white.withValues(alpha: 0.9),
+                ),
               ),
-            ),
 
-            // Botões inferiores (Ajustar / Gerar PDF)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16.0, 8.0, 16.0, 24.0),
-              child: Row(
+              const SizedBox(height: 20),
+
+              // Botões de Ação
+              Row(
                 children: [
                   Expanded(
                     child: OutlinedButton.icon(
                       style: OutlinedButton.styleFrom(
-                        minimumSize: const Size(double.infinity, 50),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
@@ -271,132 +409,28 @@ class _CompareScreenState extends State<CompareScreen> {
                       label: const Text('Ajustar'),
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 16),
                   Expanded(
                     child: ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
-                        minimumSize: const Size(double.infinity, 50),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
                         backgroundColor: const Color(0xFF5C6BC0),
                         foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
                       ),
-                      onPressed: _isGeneratingPdf
-                          ? null
-                          : () => _handleGeneratePdf(
-                        originalPath: originalPath,
-                        processedPath: processedPath,
-                        color: selectedColor,
-                        shape: selectedShape,
-                        size: selectedSize,
-                      ),
-                      icon: _isGeneratingPdf
-                          ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                      )
-                          : const Icon(Icons.picture_as_pdf),
-                      label: Text(_isGeneratingPdf ? 'Gerando...' : 'Gerar PDF'),
+                      onPressed: _abrirPreviewPdf,
+                      icon: const Icon(Icons.picture_as_pdf),
+                      label: const Text('Gerar PDF'),
                     ),
                   ),
                 ],
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
-}
-
-// -----------------------------------------------------------------------------
-// MÉTODOS AUXILIARES DE PDF
-// -----------------------------------------------------------------------------
-
-Future<pw.MemoryImage?> _carregarImagemSegura(String? path) async {
-  if (path != null && path.isNotEmpty) {
-    final file = File(path);
-    if (await file.exists()) {
-      try {
-        final bytes = await file.readAsBytes();
-        return pw.MemoryImage(bytes);
-      } catch (e) {
-        debugPrint('Erro ao ler bytes da imagem ($path): $e');
-      }
-    }
-  }
-  return null;
-}
-
-Future<pw.Document> _gerarDocumentoPdf({
-  required String? originalPath,
-  required String? adjustedPath,
-  String? color,
-  String? shape,
-  String? size,
-  String? note,
-}) async {
-  final pdf = pw.Document();
-
-  final beforeImage = await _carregarImagemSegura(originalPath);
-  final afterImage = await _carregarImagemSegura(adjustedPath);
-
-  pdf.addPage(
-    pw.Page(
-      pageFormat: PdfPageFormat.a4,
-      build: (ctx) => pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.start,
-        children: [
-          pw.Header(
-            level: 0,
-            child: pw.Text(
-              'Relatório de Simulação - Dental Smile',
-              style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold),
-            ),
-          ),
-          pw.SizedBox(height: 15), // Removido const
-
-          pw.Text(
-            'Parâmetros do Planeamento:',
-            style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
-          ),
-          pw.SizedBox(height: 6), // Removido const
-          pw.Text('• Cor: ${color ?? '-'}'),
-          pw.Text('• Formato: ${shape ?? '-'}'),
-          pw.Text('• Tamanho: ${size ?? '-'}'),
-          pw.Text('• Observações: ${note ?? 'Sem observações'}'),
-
-          pw.SizedBox(height: 25),
-
-          pw.Row(
-            mainAxisAlignment: pw.MainAxisAlignment.spaceAround,
-            children: [
-              if (beforeImage != null)
-                pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.center,
-                  children: [
-                    pw.Text("Antes (Original)", style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-                    pw.SizedBox(height: 8), // Removido const
-                    pw.Image(beforeImage, width: 200, height: 250),
-                  ],
-                ),
-              if (afterImage != null)
-                pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.center,
-                  children: [
-                    pw.Text("Depois (Simulação)", style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-                    pw.SizedBox(height: 8), // Removido const
-                    pw.Image(afterImage, width: 200, height: 250),
-                  ],
-                ),
-            ],
-          ),
-        ],
-      ),
-    ),
-  );
-
-  return pdf;
 }

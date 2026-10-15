@@ -10,14 +10,12 @@ class AnalysisScreen extends StatefulWidget {
 
 class _AnalysisScreenState extends State<AnalysisScreen> {
   bool _isLoading = true;
-  bool _smileDetected = false;
   File? _imageFile;
   bool _isInit = true;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // ✅ Garante que os argumentos da rota sejam lidos com segurança apenas uma vez
     if (_isInit) {
       final args = ModalRoute.of(context)?.settings.arguments;
 
@@ -34,19 +32,18 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
         _imageFile = args;
       }
 
-      _analisarImagem();
+      _processarCarregamento();
       _isInit = false;
     }
   }
 
-  Future<void> _analisarImagem() async {
-    // Simulação da análise com IA
-    await Future.delayed(const Duration(seconds: 2));
+  Future<void> _processarCarregamento() async {
+    // Breve pausa para dar fluidez visual ao transitar da captura
+    await Future.delayed(const Duration(milliseconds: 800));
 
     if (mounted) {
       setState(() {
         _isLoading = false;
-        _smileDetected = true;
       });
     }
   }
@@ -55,7 +52,7 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Análise com IA'),
+        title: const Text('Análise da Imagem'),
       ),
       body: _isLoading
           ? const Center(
@@ -64,7 +61,7 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
           children: [
             CircularProgressIndicator(),
             SizedBox(height: 16),
-            Text('Analisando imagem com IA...'),
+            Text('Preparando imagem...'),
           ],
         ),
       )
@@ -74,7 +71,7 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             const Text(
-              'Resultado da Análise',
+              'Imagem Carregada',
               style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 20),
@@ -86,7 +83,7 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                   borderRadius: BorderRadius.circular(16),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.12), // ✅ Atualizado para .withValues
+                      color: Colors.black.withValues(alpha: 0.12),
                       blurRadius: 10,
                       offset: const Offset(0, 4),
                     ),
@@ -96,41 +93,16 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                   borderRadius: BorderRadius.circular(16),
                   child: Image.file(
                     _imageFile!,
-                    height: 280,
+                    height: 320,
                     width: double.infinity,
-                    fit: BoxFit.contain, // ✅ BoxFit.contain para manter a proporção real
+                    fit: BoxFit.contain,
                   ),
                 ),
               )
             else
               const Icon(Icons.image_not_supported, size: 100, color: Colors.grey),
 
-            const SizedBox(height: 24),
-
-            // Mensagem Dinâmica
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  _smileDetected ? Icons.check_circle : Icons.warning_amber_rounded,
-                  color: _smileDetected ? Colors.green : Colors.red,
-                  size: 24,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  _smileDetected
-                      ? 'Sorriso detectado com sucesso!'
-                      : 'Sorriso não detectado na foto.',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: _smileDetected ? Colors.green : Colors.red,
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 32),
+            const SizedBox(height: 40),
 
             // Botão Principal: Seguir para Ajustes
             SizedBox(
@@ -138,30 +110,28 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
               height: 52,
               child: ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: _smileDetected ? Colors.deepPurple : Colors.orange[800],
+                  backgroundColor: Colors.deepPurple,
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
                   elevation: 2,
                 ),
-                icon: Icon(_smileDetected ? Icons.arrow_forward : Icons.camera_alt),
-                label: Text(
-                  _smileDetected ? 'Seguir para Ajustes' : 'Tirar Nova Foto',
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                icon: const Icon(Icons.arrow_forward),
+                label: const Text(
+                  'Seguir para Ajustes do Sorriso',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
                 onPressed: () {
-                  if (_smileDetected && _imageFile != null) {
+                  if (_imageFile != null) {
                     Navigator.pushNamed(
                       context,
                       '/adjust',
                       arguments: {
-                        'imagePath': _imageFile!.path, // ✅ Passa o caminho (String) padronizado
-                        'image': _imageFile,           // ✅ Mantém o objeto File como fallback
+                        'imagePath': _imageFile!.path,
+                        'image': _imageFile,
                       },
                     );
-                  } else {
-                    Navigator.pop(context);
                   }
                 },
               ),
@@ -169,15 +139,14 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
 
             const SizedBox(height: 12),
 
-            if (_smileDetected)
-              TextButton.icon(
-                onPressed: () => Navigator.pop(context),
-                icon: const Icon(Icons.refresh, size: 18, color: Colors.grey),
-                label: const Text(
-                  'Tirar outra foto',
-                  style: TextStyle(color: Colors.grey, fontSize: 14),
-                ),
+            TextButton.icon(
+              onPressed: () => Navigator.pop(context),
+              icon: const Icon(Icons.refresh, size: 18, color: Colors.grey),
+              label: const Text(
+                'Tirar outra foto',
+                style: TextStyle(color: Colors.grey, fontSize: 14),
               ),
+            ),
           ],
         ),
       ),

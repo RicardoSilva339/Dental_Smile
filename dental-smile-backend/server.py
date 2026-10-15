@@ -1,12 +1,16 @@
 import os
 import io
 import requests
-import replicate
 from flask import Flask, request, jsonify, send_file
 
 app = Flask(__name__)
 
-# O Replicate usará automaticamente a variável REPLICATE_API_TOKEN configurada no Render
+# A Hugging Face usará o token configurado no Render (HUGGINGFACE_API_KEY)
+HF_TOKEN = os.getenv("HUGGINGFACE_API_KEY")
+
+# Substitua pelo ID do modelo que deseja usar na Hugging Face (ex: um modelo de Stable Diffusion ou fine-tune)
+HF_MODEL_ID = "stabilityai/stable-diffusion-2-1" # Exemplo de modelo, troque pelo seu se tiver um treinado
+HF_API_URL = f"https://api-inference.huggingface.co/models/{HF_MODEL_ID}"
 
 @app.route('/process-smile', methods=['POST'])
 def process_smile():
@@ -18,31 +22,32 @@ def process_smile():
         image_file = request.files[image_key]
         color_code = request.form.get('color', 'A1')
 
-        # Lê os bytes da imagem
+        # Lê os bytes da imagem enviada pelo app
         image_bytes = image_file.read()
-        image_stream = io.BytesIO(image_bytes)
 
-        # Executa o modelo no Replicate configurado para economizar créditos
-        output = replicate.run(
-            "sourav-sarkar-doc32/smile-correct:4956c634b9aa976129f13166c713f8cf38bd337cd58c77925e8cd71d935d5696",
-            input={
-                "image": image_stream,
-                "prompt": f"photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1>(Beautiful natural teeth, aligned bite teeth), shade {color_code}, aligned white teeth, human like teeth, (no teeth gap), celebrity-like teeth, healthy teeth with a perfect smile, not big incisor, good proportion teeth, good proportion smile",
-                "num_outputs": 1,  # CRUCIAL: 1 gera apenas 1 imagem e economiza 4x mais saldo
-                "negative_prompt": "(deformed teeth, semi-realistic, cgi, 3d, render, sketch, cartoon, drawing, anime), (deformed, distorted, abnormal teeth:1.3, disfigured:1.3, large teeth:2), poorly drawn, Fixer, bad anatomy, rabbit teeth, wrong anatomy, missing teeth, disconnected teeth, unnatural mouth, bunny teeth, big incisor teeth, disproportionate front teeth, bad smile, reflection, crooked teeth, distorted teeth, cropped, out of frame, worst quality, low quality, jpeg artifacts, ugly, morbid, disfigured, gross proportions, too many teeth, lipstick, lip gloss, too less teeth, unnatural size teeth, poorly drawn mouth, poorly drawn teeth"
-            }
+        # Prepara os cabeçalhos com o token da Hugging Face
+        headers = {
+            "Authorization": f"Bearer {HF_TOKEN}"
+        }
+
+        # Opcional: Prompt para guiar a IA, caso o modelo aceite parâmetros adicionais no payload ou option
+        prompt_text = (
+            f"photo of perfectsmile smile, shade {color_code}, "
+            "aligned white teeth, healthy teeth with a perfect smile"
         )
 
-        # O Replicate retorna uma lista de URLs de imagens ou um FileOutput
-        # Caso retorne URL, fazemos o download direto dos bytes para entregar ao Flutter:
-        if isinstance(output, list) and len(output) > 0:
-            image_url = str(output[0])
-            img_res = requests.get(image_url)
-            return send_file(io.BytesIO(img_res.content), mimetype='image/jpeg')
-        elif hasattr(output, 'read'):
-            return send_file(io.BytesIO(output.read()), mimetype='image/jpeg')
-        else:
-            return jsonify({'error': 'Formato de resposta inesperado do Replicate'}), 500
+        # Algumas APIs da Hugging Face aceitam a imagem diretamente no body ou em formato JSON
+        # Para modelos de image-to-image/inpainting na Inference API padrão, enviamos os bytes diretamente:
+        response = requests.post(HF_API_URL, headers=headers, data=image_bytes)
+
+        if response.status_code != 200:
+            return jsonify({
+                'error': f'Erro na API da Hugging Face (Status {response.status_code}): {response.text}'
+            }), response.status_code
+
+        # Se a API retornar a imagem gerada em bytes diretamente
+        processed_image_bytes = response.content
+        return send_file(io.BytesIO(processed_image_bytes), mimetype='image/jpeg')
 
     except Exception as e:
         print(f"Erro no processamento interno: {e}")
