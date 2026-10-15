@@ -1,16 +1,16 @@
 import os
 import io
 import traceback
+import requests
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
-from huggingface_hub import InferenceClient
 
 app = Flask(__name__)
 CORS(app)
 
 # O token lido do Render
 HF_TOKEN = os.getenv("HUGGINGFACE_API_KEY")
-client = InferenceClient(token=HF_TOKEN)
+API_URL = "https://api-inference.huggingface.co/models/runwayml/stable-diffusion-v1-5"
 
 @app.route('/process-smile', methods=['POST'])
 def process_smile():
@@ -27,23 +27,24 @@ def process_smile():
             "aligned white teeth, healthy teeth with a perfect smile"
         )
 
-        # Alterado para um modelo público e aberto para evitar restrições de termos
-        model_id = "runwayml/stable-diffusion-v1-5"
+        headers = {
+            "Authorization": f"Bearer {HF_TOKEN}"
+        }
 
-        # Chamada segura usando o cliente oficial
-        image_output = client.text_to_image(
-            prompt=prompt_text,
-            model=model_id,
-        )
+        payload = {
+            "inputs": prompt_text
+        }
 
-        img_io = io.BytesIO()
-        image_output.save(img_io, 'JPEG')
-        img_io.seek(0)
+        response = requests.post(API_URL, headers=headers, json=payload)
 
-        return send_file(img_io, mimetype='image/jpeg')
+        if response.status_code != 200:
+            print(f"Erro da Hugging Face: {response.text}")
+            return jsonify({'error': f"Erro na API externa: {response.text}"}), response.status_code
+
+        # A API retorna os bytes diretos da imagem gerada
+        return send_file(io.BytesIO(response.content), mimetype='image/jpeg')
 
     except Exception as e:
-        # Imprime o erro técnico completo no console do Render
         traceback.print_exc()
         print(f"Erro no processamento interno: {str(e)}")
         return jsonify({'error': str(e)}), 500
