@@ -1,17 +1,18 @@
 import os
 import io
 import traceback
-import requests
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
+from huggingface_hub import InferenceClient
 
 app = Flask(__name__)
 CORS(app)
 
-# O token lido do Render
+# O token lido das variáveis de ambiente do Render
 HF_TOKEN = os.getenv("HUGGINGFACE_API_KEY")
-# Atualizado para o modelo estável e ativo no router atual
-API_URL = "https://router.huggingface.co/hf-inference/models/stabilityai/stable-diffusion-3.5-large"
+
+# Inicializa o cliente oficial da Hugging Face com o token
+client = InferenceClient(api_key=HF_TOKEN)
 
 @app.route('/process-smile', methods=['POST'])
 def process_smile():
@@ -28,21 +29,18 @@ def process_smile():
             "aligned white teeth, healthy teeth with a perfect smile, high quality"
         )
 
-        headers = {
-            "Authorization": f"Bearer {HF_TOKEN}"
-        }
+        # Gera a imagem usando o cliente oficial com o modelo FLUX
+        image = client.text_to_image(
+            prompt=prompt_text,
+            model="black-forest-labs/FLUX.1-schnell"
+        )
 
-        payload = {
-            "inputs": prompt_text
-        }
+        # Converte a imagem gerada (PIL Image) para bytes para enviar na resposta
+        img_byte_arr = io.BytesIO()
+        image.save(img_byte_arr, format='JPEG')
+        img_byte_arr.seek(0)
 
-        response = requests.post(API_URL, headers=headers, json=payload)
-
-        if response.status_code != 200:
-            print(f"Erro da Hugging Face: {response.text}")
-            return jsonify({'error': f"Erro na API externa: {response.text}"}), response.status_code
-
-        return send_file(io.BytesIO(response.content), mimetype='image/jpeg')
+        return send_file(img_byte_arr, mimetype='image/jpeg')
 
     except Exception as e:
         traceback.print_exc()
