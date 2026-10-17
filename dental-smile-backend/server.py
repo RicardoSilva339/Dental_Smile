@@ -12,7 +12,7 @@ app = Flask(__name__)
 DATABASE_URL = os.environ.get("DATABASE_URL")
 HUGGINGFACE_API_KEY = os.environ.get("HUGGINGFACE_API_KEY")
 
-# URL do modelo Stable Diffusion no Hugging Face (mantido igual ao seu projeto)
+# URL do modelo Stable Diffusion no Hugging Face
 HF_API_URL = "https://api-inference.huggingface.co/models/runwayml/stable-diffusion-v1-5"
 HEADERS = {"Authorization": f"Bearer {HUGGINGFACE_API_KEY}"}
 
@@ -106,7 +106,7 @@ def process_smile():
     data = request.json or {}
     api_key = data.get('api_key', 'dentista_demo_123')
 
-    # 1. Validação de Créditos no PostgreSQL
+    # Validação de Créditos no PostgreSQL
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute("SELECT creditos FROM usuarios WHERE api_key = %s;", (api_key,))
@@ -157,7 +157,7 @@ def process_smile():
         ai_image_resized.save(buffered, format="JPEG")
         processed_b64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
 
-        # 2. Desconta 1 crédito do usuário no PostgreSQL após o sucesso
+        # Desconta 1 crédito do usuário no PostgreSQL após o sucesso
         cur.execute("UPDATE usuarios SET creditos = creditos - 1 WHERE api_key = %s RETURNING creditos;", (api_key,))
         novo_saldo = cur.fetchone()[0]
         conn.commit()
