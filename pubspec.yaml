@@ -8,7 +8,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  http: ^1.2.0                         # <--- Adicionado para resolver os imports de http
+  http: ^1.2.0                         # Adicionado para resolver os imports de http
   google_mlkit_face_detection: ^0.15.1 # Detecção facial automática
   camera: ^0.10.5+9                    # Câmera customizada com guia
 
@@ -23,6 +23,7 @@ dependencies:
   open_file: ^3.3.2
   flutter_image_compress: ^2.3.0
   image_cropper: ^8.0.2
+  before_after: ^3.2.0
 
 dev_dependencies:
   flutter_test:

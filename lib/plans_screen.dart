@@ -12,6 +12,7 @@ class PlansScreen extends StatefulWidget {
 class _PlansScreenState extends State<PlansScreen> {
 
   Future<void> _comprarPlano(int creditos, String nomePlano, String preco) async {
+    // Exibe diálogo de carregamento do processamento
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -27,13 +28,14 @@ class _PlansScreenState extends State<PlansScreen> {
       ),
     );
 
+    // Simulação do tempo de resposta da operadora de cartão / PIX
     await Future.delayed(const Duration(seconds: 2));
 
     try {
       final sucesso = await ApiService.adicionarCreditos('dentista_demo_123', creditos);
 
       if (!mounted) return;
-      Navigator.pop(context); // Fecha o loading
+      Navigator.pop(context); // Fecha o diálogo de loading
 
       if (sucesso) {
         showDialog(
@@ -49,8 +51,8 @@ class _PlansScreenState extends State<PlansScreen> {
                   foregroundColor: Colors.white,
                 ),
                 onPressed: () {
-                  Navigator.pop(context); // Fecha diálogo
-                  Navigator.pop(context, true); // Retorna à Home atualizando os créditos
+                  Navigator.pop(context); // Fecha diálogo de confirmação
+                  Navigator.pop(context, true); // Retorna para a HomeScreen atualizando os créditos
                 },
                 child: const Text('OK'),
               ),
@@ -62,12 +64,13 @@ class _PlansScreenState extends State<PlansScreen> {
       }
     } catch (e) {
       if (!mounted) return;
-      Navigator.pop(context);
+      Navigator.pop(context); // Fecha o diálogo de loading em caso de erro
       _mostrarErro('Erro ao processar a compra: $e');
     }
   }
 
   void _mostrarErro(String mensagem) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(mensagem), backgroundColor: Colors.red),
     );

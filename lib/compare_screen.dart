@@ -167,9 +167,9 @@ class _CompareScreenState extends State<CompareScreen> {
             // Observação Importante (Disclaimer Legal Fixo)
             pw.Container(
               padding: const pw.EdgeInsets.all(8),
-              decoration: pw.BoxDecoration(
+              decoration: const pw.BoxDecoration(
                 color: PdfColors.grey200,
-                borderRadius: const pw.BorderRadius.all(pw.Radius.circular(6)),
+                borderRadius: pw.BorderRadius.all(pw.Radius.circular(6)),
               ),
               child: pw.Column(
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -312,11 +312,11 @@ class _CompareScreenState extends State<CompareScreen> {
                 ),
               const SizedBox(height: 12),
 
-              // 💥 EFEITO IMPACTANTE: Área de Comparação Directa sobre a Imagem com Toque/Arraste
+              // 💥 ÁREA DE COMPARAÇÃO SOBREPOSTA (SLIDER IDÊNTICO 1:1)
               LayoutBuilder(
                 builder: (context, constraints) {
                   final containerWidth = constraints.maxWidth;
-                  const containerHeight = 340.0;
+                  const containerHeight = 360.0;
 
                   return GestureDetector(
                     onPanUpdate: (details) {
@@ -334,7 +334,7 @@ class _CompareScreenState extends State<CompareScreen> {
                     },
                     child: Container(
                       height: containerHeight,
-                      width: double.infinity,
+                      width: containerWidth,
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(16),
                         boxShadow: [
@@ -350,13 +350,19 @@ class _CompareScreenState extends State<CompareScreen> {
                         child: Stack(
                           fit: StackFit.expand,
                           children: [
-                            // 1. Imagem Com IA (Fundo Completo)
+                            // 1. Imagem Com IA (Fundo Base)
                             if (processedFile != null && processedFile.existsSync())
-                              Image.file(processedFile, fit: BoxFit.cover)
+                              Image.file(
+                                processedFile,
+                                width: containerWidth,
+                                height: containerHeight,
+                                fit: BoxFit.cover,
+                                alignment: Alignment.center,
+                              )
                             else
                               const Center(child: Text('Erro ao carregar imagem processada')),
 
-                            // 2. Imagem Original Cortada Dinamicamente pelo Arraste
+                            // 2. Imagem Original (Sobreposta com mesmo alinhamento e corte proporcional)
                             if (originalFile != null && originalFile.existsSync())
                               Align(
                                 alignment: Alignment.centerLeft,
@@ -366,15 +372,23 @@ class _CompareScreenState extends State<CompareScreen> {
                                   child: ClipRect(
                                     child: OverflowBox(
                                       alignment: Alignment.topLeft,
+                                      minWidth: containerWidth,
                                       maxWidth: containerWidth,
+                                      minHeight: containerHeight,
                                       maxHeight: containerHeight,
-                                      child: Image.file(originalFile, fit: BoxFit.cover),
+                                      child: Image.file(
+                                        originalFile,
+                                        width: containerWidth,
+                                        height: containerHeight,
+                                        fit: BoxFit.cover,
+                                        alignment: Alignment.center,
+                                      ),
                                     ),
                                   ),
                                 ),
                               ),
 
-                            // 3. Linha Divisória Central com Botão de Setas e Rótulos Flutuantes
+                            // 3. Linha Divisória Central com Botão de Setas
                             Positioned(
                               top: 0,
                               bottom: 0,
@@ -386,10 +400,9 @@ class _CompareScreenState extends State<CompareScreen> {
                                   alignment: Alignment.center,
                                   clipBehavior: Clip.none,
                                   children: [
-                                    // Indicador Circular com Setas Esquerda/Direita
                                     Container(
-                                      height: 36,
-                                      width: 36,
+                                      height: 38,
+                                      width: 38,
                                       decoration: BoxDecoration(
                                         color: Colors.white,
                                         shape: BoxShape.circle,
@@ -402,7 +415,7 @@ class _CompareScreenState extends State<CompareScreen> {
                                       ),
                                       child: const Icon(
                                         Icons.compare_arrows,
-                                        size: 20,
+                                        size: 22,
                                         color: Colors.indigo,
                                       ),
                                     ),
@@ -411,14 +424,14 @@ class _CompareScreenState extends State<CompareScreen> {
                               ),
                             ),
 
-                            // Rótulo Flutuante "Original" (Canto Superior Esquerdo)
+                            // Rótulo Flutuante "Original"
                             Positioned(
                               top: 12,
                               left: 12,
                               child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                 decoration: BoxDecoration(
-                                  color: Colors.black.withValues(alpha: 0.6),
+                                  color: Colors.black.withValues(alpha: 0.65),
                                   borderRadius: BorderRadius.circular(6),
                                 ),
                                 child: const Text(
@@ -428,14 +441,14 @@ class _CompareScreenState extends State<CompareScreen> {
                               ),
                             ),
 
-                            // Rótulo Flutuante "Com IA" (Canto Superior Direito)
+                            // Rótulo Flutuante "Com IA"
                             Positioned(
                               top: 12,
                               right: 12,
                               child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                 decoration: BoxDecoration(
-                                  color: Colors.indigo.withValues(alpha: 0.8),
+                                  color: Colors.indigo.withValues(alpha: 0.85),
                                   borderRadius: BorderRadius.circular(6),
                                 ),
                                 child: const Text(

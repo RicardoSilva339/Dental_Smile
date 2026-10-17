@@ -4,3 +4,4 @@ requests
 pillow
 gunicorn
 huggingface-hub
+psycopg2-binary

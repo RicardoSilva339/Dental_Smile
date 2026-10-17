@@ -44,6 +44,7 @@ class ApiService {
     return false;
   }
 
+  // 🪄 Envia a foto e parâmetros para o servidor gerar o novo sorriso
   static Future<String?> processSmile({
     required File imageFile,
     required String color,
@@ -61,7 +62,7 @@ class ApiService {
         ..fields['size'] = size
         ..files.add(await http.MultipartFile.fromPath('image', imageFile.path));
 
-      // Aumentado para 60 segundos para dar tempo à IA de gerar a imagem sem timeout
+      // Timeout de 60 segundos para aguardar o processamento da IA
       var streamedResponse = await request.send().timeout(const Duration(seconds: 60));
       var response = await http.Response.fromStream(streamedResponse);
 

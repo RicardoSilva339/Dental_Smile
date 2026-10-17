@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:dental_smile/api_service.dart';
+import 'background.dart';
 
 class AdjustSmileScreen extends StatefulWidget {
   final File image;
@@ -80,7 +81,7 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
 
     setState(() => _isProcessing = false);
 
-    // Substitui ou empurra a rota /compare com os parâmetros corretos
+    // Substitui a rota para /compare com os parâmetros formatados
     Navigator.pushReplacementNamed(
       context,
       '/compare',
@@ -107,7 +108,7 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
           child: Text(
             title,
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white),
           ),
         ),
         SingleChildScrollView(
@@ -122,9 +123,10 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
                 child: ChoiceChip(
                   label: Text(entry.value),
                   selected: isSelected,
-                  selectedColor: Colors.deepPurple.shade100,
+                  selectedColor: const Color(0xFF5C6BC0),
+                  backgroundColor: Colors.white.withValues(alpha: 0.85),
                   labelStyle: TextStyle(
-                    color: isSelected ? Colors.deepPurple : Colors.black87,
+                    color: isSelected ? Colors.white : Colors.black87,
                     fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                   ),
                   onSelected: (selected) {
@@ -144,67 +146,72 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Personalize o Sorriso'),
+        backgroundColor: const Color(0xFF5C6BC0),
+        foregroundColor: Colors.white,
       ),
-      body: Column(
-        children: [
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(24),
-                child: Image.file(
-                  widget.image,
-                  fit: BoxFit.contain,
-                  width: double.infinity,
+      body: Background(
+        child: Column(
+          children: [
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(24),
+                  child: Image.file(
+                    widget.image,
+                    fit: BoxFit.contain,
+                    width: double.infinity,
+                  ),
                 ),
               ),
             ),
-          ),
-          _buildChipGroup(
-            title: 'Cor:',
-            options: _colors,
-            selectedValue: _selectedColor,
-            onSelected: (val) => setState(() => _selectedColor = val),
-          ),
-          const SizedBox(height: 8),
-          _buildChipGroup(
-            title: 'Formato:',
-            options: _shapes,
-            selectedValue: _selectedShape,
-            onSelected: (val) => setState(() => _selectedShape = val), // Corrigido aqui!
-          ),
-          const SizedBox(height: 8),
-          _buildChipGroup(
-            title: 'Tamanho:',
-            options: _sizes,
-            selectedValue: _selectedSize,
-            onSelected: (val) => setState(() => _selectedSize = val),
-          ),
-          const SizedBox(height: 16),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16.0, 0.0, 16.0, 24.0),
-            child: ElevatedButton.icon(
-              icon: _isProcessing
-                  ? const SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-              )
-                  : const Icon(Icons.auto_awesome),
-              label: Text(_isProcessing ? 'Processando com IA...' : 'Aplicar Sorriso'),
-              style: ElevatedButton.styleFrom(
-                minimumSize: const Size(double.infinity, 52),
-                backgroundColor: const Color(0xFF5C6BC0),
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-              ),
-              onPressed: _isProcessing ? null : _handleProcessSmile,
+            _buildChipGroup(
+              title: 'Cor:',
+              options: _colors,
+              selectedValue: _selectedColor,
+              onSelected: (val) => setState(() => _selectedColor = val),
             ),
-          ),
-        ],
+            const SizedBox(height: 8),
+            _buildChipGroup(
+              title: 'Formato:',
+              options: _shapes,
+              selectedValue: _selectedShape,
+              // ✅ CORRIGIDO: Agora atualiza a variável correta (_selectedShape)
+              onSelected: (val) => setState(() => _selectedShape = val),
+            ),
+            const SizedBox(height: 8),
+            _buildChipGroup(
+              title: 'Tamanho:',
+              options: _sizes,
+              selectedValue: _selectedSize,
+              onSelected: (val) => setState(() => _selectedSize = val),
+            ),
+            const SizedBox(height: 16),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16.0, 0.0, 16.0, 24.0),
+              child: ElevatedButton.icon(
+                icon: _isProcessing
+                    ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                )
+                    : const Icon(Icons.auto_awesome),
+                label: Text(_isProcessing ? 'Processando com IA...' : 'Aplicar Sorriso'),
+                style: ElevatedButton.styleFrom(
+                  minimumSize: const Size(double.infinity, 52),
+                  backgroundColor: const Color(0xFF5C6BC0),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                onPressed: _isProcessing ? null : _handleProcessSmile,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
