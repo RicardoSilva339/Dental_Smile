@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:dental_smile/api_service.dart';
 import 'background.dart';
+import 'plans_screen.dart'; // Certifique-se de importar a tela de planos se necessário
 
 class AdjustSmileScreen extends StatefulWidget {
   final File image;
@@ -25,6 +26,7 @@ class AdjustSmileScreen extends StatefulWidget {
 
 class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
   bool _isProcessing = false;
+  int _creditos = 0; // Armazena o saldo atual de créditos
 
   late String _selectedColor;
   late String _selectedShape;
@@ -52,10 +54,21 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
   @override
   void initState() {
     super.initState();
-    // Recupera os valores iniciais passados ou define os padrões
     _selectedColor = widget.initialColor ?? 'brilhante';
     _selectedShape = widget.initialShape ?? 'oval';
     _selectedSize = widget.initialSize ?? 'medio';
+
+    // Busca os créditos ao abrir o ecrã
+    _carregarCreditos();
+  }
+
+  Future<void> _carregarCreditos() async {
+    final resultado = await ApiService.checkCredits('dentista_demo_123');
+    if (resultado['success'] == true && mounted) {
+      setState(() {
+        _creditos = resultado['creditos'] ?? 0;
+      });
+    }
   }
 
   Future<void> _handleProcessSmile() async {
@@ -76,12 +89,10 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
 
     if (!mounted) return;
 
-    // Fallback de segurança: evita telas de erro e avança no fluxo
     processedImagePath ??= widget.image.path;
 
     setState(() => _isProcessing = false);
 
-    // Substitui a rota para /compare com os parâmetros formatados
     Navigator.pushReplacementNamed(
       context,
       '/compare',
@@ -148,6 +159,50 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
         title: const Text('Personalize o Sorriso'),
         backgroundColor: const Color(0xFF5C6BC0),
         foregroundColor: Colors.white,
+        actions: [
+          // 🛒 Botão de Créditos / Carrinho interativo no topo
+          Padding(
+            padding: const EdgeInsets.only(right: 12.0),
+            child: Center(
+              child: GestureDetector(
+                onTap: () async {
+                  // Abre o ecrã de planos e aguarda o retorno para atualizar os créditos se houver compra
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const PlansScreen()),
+                  );
+                  // Atualiza os créditos ao voltar da tela de planos
+                  _carregarCreditos();
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.amber.withValues(alpha: 0.6)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.monetization_on, color: Colors.amber, size: 18),
+                      const SizedBox(width: 6),
+                      Text(
+                        '$_creditos Créditos',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      const Icon(Icons.shopping_cart, color: Colors.amber, size: 16),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
       body: Background(
         child: Column(
@@ -176,7 +231,6 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
               title: 'Formato:',
               options: _shapes,
               selectedValue: _selectedShape,
-              // ✅ CORRIGIDO: Agora atualiza a variável correta (_selectedShape)
               onSelected: (val) => setState(() => _selectedShape = val),
             ),
             const SizedBox(height: 8),

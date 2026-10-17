@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:dental_smile/api_service.dart';
 import 'background.dart';
+import 'plans_screen.dart'; // 🛒 Importação necessária para o ecrã de planos
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -63,7 +64,11 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             onPressed: () async {
               Navigator.pop(context); // Fecha o alerta
-              await Navigator.pushNamed(context, '/plans');
+              // ✅ CORRIGIDO: Navegação direta para PlansScreen
+              await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const PlansScreen()),
+              );
               _buscarCreditos(); // Atualiza após voltar da compra
             },
             icon: const Icon(Icons.shopping_cart, size: 18),
@@ -96,7 +101,11 @@ class _HomeScreenState extends State<HomeScreen> {
           label: 'RECARREGAR',
           textColor: Colors.amber,
           onPressed: () async {
-            await Navigator.pushNamed(context, '/plans');
+            // ✅ CORRIGIDO: Navegação direta para PlansScreen
+            await Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const PlansScreen()),
+            );
             _buscarCreditos();
           },
         ),
@@ -144,7 +153,11 @@ class _HomeScreenState extends State<HomeScreen> {
                     // Distintivo com mudança dinâmica de cor para vermelho se <= 5 créditos
                     GestureDetector(
                       onTap: () async {
-                        await Navigator.pushNamed(context, '/plans');
+                        // ✅ CORRIGIDO: Navegação direta para PlansScreen
+                        await Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (context) => const PlansScreen()),
+                        );
                         _buscarCreditos();
                       },
                       child: AnimatedContainer(

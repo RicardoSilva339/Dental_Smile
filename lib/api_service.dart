@@ -7,11 +7,15 @@ import 'package:path_provider/path_provider.dart';
 class ApiService {
   static const String baseUrl = 'https://dental-smile-backend-iso3.onrender.com';
 
-  // 🔍 Verifica o saldo de créditos do dentista
+  // 🔍 Verifica o saldo de créditos do dentista (Corrigido para POST)
   static Future<Map<String, dynamic>> checkCredits(String apiKey) async {
     try {
-      final url = Uri.parse('$baseUrl/check-credits?api_key=$apiKey');
-      final response = await http.get(url);
+      final url = Uri.parse('$baseUrl/check-credits');
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'api_key': apiKey}),
+      );
 
       if (response.statusCode == 200) {
         return jsonDecode(response.body);
@@ -56,7 +60,7 @@ class ApiService {
       final uri = Uri.parse('$baseUrl/process-smile');
 
       var request = http.MultipartRequest('POST', uri)
-        ..fields['api_key'] = apiKey // Envia a chave para o servidor descontar o crédito
+        ..fields['api_key'] = apiKey
         ..fields['color'] = color
         ..fields['shape'] = shape
         ..fields['size'] = size
@@ -68,12 +72,11 @@ class ApiService {
 
       if (response.statusCode == 200) {
         final tempDir = await getTemporaryDirectory();
-        // Salvando com extensão .jpg para corresponder ao mimetype image/jpeg enviado pelo servidor
         final file = File('${tempDir.path}/processed_${DateTime.now().millisecondsSinceEpoch}.jpg');
         await file.writeAsBytes(response.bodyBytes);
         return file.path;
       } else {
-        debugPrint("Erro do servidor: ${response.statusCode} - ${response.body}");
+        debugPrint("Erro do servidor: ${response.statusCode}\n${response.body}");
       }
     } catch (e) {
       debugPrint("Erro no ApiService: $e");

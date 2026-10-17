@@ -6,6 +6,8 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'background.dart';
 import 'adjust_smile_screen.dart';
+import 'plans_screen.dart'; // 🛒 Importação necessária para a tela de planos
+import 'api_service.dart';    // 🌐 Importação para buscar os créditos do PostgreSQL
 
 class CompareScreen extends StatefulWidget {
   const CompareScreen({super.key});
@@ -25,6 +27,7 @@ class _CompareScreenState extends State<CompareScreen> {
   String? _selectedSize;
   String? _simulationId;
 
+  int _creditos = 0; // 💳 Variável para armazenar o saldo atual de créditos
   bool _isInit = true;
 
   @override
@@ -47,6 +50,17 @@ class _CompareScreenState extends State<CompareScreen> {
         }
       }
       _isInit = false;
+      _carregarCreditos(); // 🔄 Busca os créditos assim que abre a tela
+    }
+  }
+
+  // 🔍 Função para buscar os créditos atualizados do PostgreSQL
+  Future<void> _carregarCreditos() async {
+    final resultado = await ApiService.checkCredits('dentista_demo_123');
+    if (resultado['success'] == true && mounted) {
+      setState(() {
+        _creditos = resultado['creditos'] ?? 0;
+      });
     }
   }
 
@@ -96,7 +110,6 @@ class _CompareScreenState extends State<CompareScreen> {
         build: (ctx) => pw.Column(
           crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: [
-            // Cabeçalho com ID e Data
             pw.Row(
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -121,10 +134,7 @@ class _CompareScreenState extends State<CompareScreen> {
                 ),
               ],
             ),
-
             pw.Divider(height: 16, thickness: 1, color: PdfColors.grey400),
-
-            // Parâmetros e Observações do Dentista
             pw.Text(
               'Parâmetros do Planeamento:',
               style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold),
@@ -134,10 +144,7 @@ class _CompareScreenState extends State<CompareScreen> {
             pw.Text('- Formato: ${shape ?? '-'}', style: const pw.TextStyle(fontSize: 10)),
             pw.Text('- Tamanho: ${size ?? '-'}', style: const pw.TextStyle(fontSize: 10)),
             pw.Text('- Observações do Dentista: ${note ?? 'Sem observações'}', style: const pw.TextStyle(fontSize: 10)),
-
             pw.SizedBox(height: 12),
-
-            // Imagens Lado a Lado (Antes / Depois)
             pw.Row(
               mainAxisAlignment: pw.MainAxisAlignment.spaceAround,
               children: [
@@ -161,10 +168,7 @@ class _CompareScreenState extends State<CompareScreen> {
                   ),
               ],
             ),
-
             pw.SizedBox(height: 12),
-
-            // Observação Importante (Disclaimer Legal Fixo)
             pw.Container(
               padding: const pw.EdgeInsets.all(8),
               decoration: const pw.BoxDecoration(
@@ -186,10 +190,7 @@ class _CompareScreenState extends State<CompareScreen> {
                 ],
               ),
             ),
-
             pw.Spacer(),
-
-            // Rodapé Fixo com Logo e Copyright
             pw.Divider(height: 10, thickness: 0.5, color: PdfColors.grey400),
             pw.Row(
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
@@ -234,7 +235,6 @@ class _CompareScreenState extends State<CompareScreen> {
         ? 'Sem observações'
         : _notesController.text.trim();
 
-    // Persiste no histórico local
     await _salvarNoHistorico(noteText);
 
     if (!mounted) return;
@@ -271,7 +271,6 @@ class _CompareScreenState extends State<CompareScreen> {
       ),
     );
 
-    // Assim que fecha o PDF, regressa automaticamente à página inicial
     if (!mounted) return;
     Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
   }
@@ -284,7 +283,50 @@ class _CompareScreenState extends State<CompareScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Resultado da Simulação'),
+        backgroundColor: const Color(0xFF5C6BC0),
+        foregroundColor: Colors.white,
         actions: [
+          // 🛒 Botão de Créditos / Carrinho interativo no topo
+          Padding(
+            padding: const EdgeInsets.only(right: 12.0),
+            child: Center(
+              child: GestureDetector(
+                onTap: () async {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const PlansScreen()),
+                  );
+                  // Atualiza os créditos ao voltar da tela de planos
+                  _carregarCreditos();
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.amber.withValues(alpha: 0.6)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.monetization_on, color: Colors.amber, size: 18),
+                      const SizedBox(width: 6),
+                      Text(
+                        '$_creditos Créditos',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      const Icon(Icons.shopping_cart, color: Colors.amber, size: 16),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.home),
             onPressed: () => Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false),
@@ -297,7 +339,6 @@ class _CompareScreenState extends State<CompareScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // Identificador da Simulação visível na tela
               if (_simulationId != null)
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -312,7 +353,7 @@ class _CompareScreenState extends State<CompareScreen> {
                 ),
               const SizedBox(height: 12),
 
-              // 💥 ÁREA DE COMPARAÇÃO SOBREPOSTA (SLIDER IDÊNTICO 1:1)
+              // ÁREA DE COMPARAÇÃO SOBREPOSTA (SLIDER IDÊNTICO 1:1)
               LayoutBuilder(
                 builder: (context, constraints) {
                   final containerWidth = constraints.maxWidth;
@@ -350,7 +391,6 @@ class _CompareScreenState extends State<CompareScreen> {
                         child: Stack(
                           fit: StackFit.expand,
                           children: [
-                            // 1. Imagem Com IA (Fundo Base)
                             if (processedFile != null && processedFile.existsSync())
                               Image.file(
                                 processedFile,
@@ -362,7 +402,6 @@ class _CompareScreenState extends State<CompareScreen> {
                             else
                               const Center(child: Text('Erro ao carregar imagem processada')),
 
-                            // 2. Imagem Original (Sobreposta com mesmo alinhamento e corte proporcional)
                             if (originalFile != null && originalFile.existsSync())
                               Align(
                                 alignment: Alignment.centerLeft,
@@ -388,7 +427,6 @@ class _CompareScreenState extends State<CompareScreen> {
                                 ),
                               ),
 
-                            // 3. Linha Divisória Central com Botão de Setas
                             Positioned(
                               top: 0,
                               bottom: 0,
@@ -424,7 +462,6 @@ class _CompareScreenState extends State<CompareScreen> {
                               ),
                             ),
 
-                            // Rótulo Flutuante "Original"
                             Positioned(
                               top: 12,
                               left: 12,
@@ -441,7 +478,6 @@ class _CompareScreenState extends State<CompareScreen> {
                               ),
                             ),
 
-                            // Rótulo Flutuante "Com IA"
                             Positioned(
                               top: 12,
                               right: 12,
@@ -467,7 +503,6 @@ class _CompareScreenState extends State<CompareScreen> {
 
               const SizedBox(height: 16),
 
-              // Campo de Observações do Dentista
               TextField(
                 controller: _notesController,
                 maxLines: 3,
@@ -484,7 +519,6 @@ class _CompareScreenState extends State<CompareScreen> {
 
               const SizedBox(height: 20),
 
-              // Botões de Ação
               Row(
                 children: [
                   Expanded(
