@@ -7,7 +7,7 @@ import 'package:path_provider/path_provider.dart';
 class ApiService {
   static const String baseUrl = 'https://dental-smile-backend-iso3.onrender.com';
 
-  // 🔍 Verifica o saldo de créditos do dentista (Corrigido para POST)
+  // 🔍 Verifica o saldo de créditos do dentista
   static Future<Map<String, dynamic>> checkCredits(String apiKey) async {
     try {
       final url = Uri.parse('$baseUrl/check-credits');
@@ -48,39 +48,57 @@ class ApiService {
     return false;
   }
 
-  // 🪄 Envia a foto e parâmetros para o servidor gerar o novo sorriso
-  static Future<String?> processSmile({
+  // 🪄 Envia a foto em Base64 para o servidor gerar o sorriso e descontar o crédito
+  static Future<Map<String, dynamic>> processSmile({
     required File imageFile,
     required String color,
     required String shape,
     required String size,
-    String apiKey = 'dentista_demo_123', // Chave padrão de demonstração
+    String apiKey = 'dentista_demo_123',
   }) async {
     try {
-      final uri = Uri.parse('$baseUrl/process-smile');
+      final url = Uri.parse('$baseUrl/process-smile');
 
-      var request = http.MultipartRequest('POST', uri)
-        ..fields['api_key'] = apiKey
-        ..fields['color'] = color
-        ..fields['shape'] = shape
-        ..fields['size'] = size
-        ..files.add(await http.MultipartFile.fromPath('image', imageFile.path));
+      List<int> imageBytes = await imageFile.readAsBytes();
+      String base64Image = base64Encode(imageBytes);
 
-      // Timeout de 60 segundos para aguardar o processamento da IA
-      var streamedResponse = await request.send().timeout(const Duration(seconds: 60));
-      var response = await http.Response.fromStream(streamedResponse);
+      String customPrompt = 'perfect white smile, color $color, shape $shape, size $size, professional cosmetic dentistry, highly detailed';
+
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'api_key': apiKey,
+          'image': base64Image,
+          'prompt': customPrompt,
+        }),
+      ).timeout(const Duration(seconds: 60));
 
       if (response.statusCode == 200) {
-        final tempDir = await getTemporaryDirectory();
-        final file = File('${tempDir.path}/processed_${DateTime.now().millisecondsSinceEpoch}.jpg');
-        await file.writeAsBytes(response.bodyBytes);
-        return file.path;
+        final data = jsonDecode(response.body);
+        if (data['success'] == true) {
+          String processedBase64 = data['processed_image'];
+          Uint8List decodedBytes = base64Decode(processedBase64);
+
+          final tempDir = await getTemporaryDirectory();
+          final file = File('${tempDir.path}/processed_${DateTime.now().millisecondsSinceEpoch}.jpg');
+          await file.writeAsBytes(decodedBytes);
+
+          return {
+            'success': true,
+            'imagePath': file.path,
+            'creditos_restantes': data['creditos_restantes'],
+          };
+        }
       } else {
         debugPrint("Erro do servidor: ${response.statusCode}\n${response.body}");
+        final errorData = jsonDecode(response.body);
+        return {'success': false, 'error': errorData['error'] ?? 'Erro desconhecido'};
       }
     } catch (e) {
       debugPrint("Erro no ApiService: $e");
+      return {'success': false, 'error': e.toString()};
     }
-    return null;
+    return {'success': false, 'error': 'Falha na comunicação com o servidor'};
   }
 }

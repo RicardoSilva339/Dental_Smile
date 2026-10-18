@@ -77,12 +77,30 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
     String? processedImagePath;
 
     try {
-      processedImagePath = await ApiService.processSmile(
+      // O ApiService.processSmile agora retorna um Map com o resultado e os créditos atualizados
+      final resultado = await ApiService.processSmile(
         imageFile: widget.image,
         color: _selectedColor,
         shape: _selectedShape,
         size: _selectedSize,
       );
+
+      if (resultado['success'] == true) {
+        processedImagePath = resultado['imagePath'];
+
+        if (mounted) {
+          setState(() {
+            // Atualiza os créditos na tela instantaneamente (ex: descendo de 13 para 12)
+            _creditos = resultado['creditos_restantes'] ?? _creditos;
+          });
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(resultado['error'] ?? 'Erro ao processar simulação')),
+          );
+        }
+      }
     } catch (e) {
       debugPrint("Falha na chamada do servidor: $e");
     }
