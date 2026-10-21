@@ -7,6 +7,54 @@ import 'package:path_provider/path_provider.dart';
 class ApiService {
   static const String baseUrl = 'https://dental-smile-backend-iso3.onrender.com';
 
+  // 📝 Registo de novo utilizador com senha
+  static Future<Map<String, dynamic>> register({
+    required String nome,
+    required String email,
+    required String cro,
+    required String senha,
+  }) async {
+    try {
+      final url = Uri.parse('$baseUrl/register');
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'nome': nome,
+          'email': email,
+          'cro': cro,
+          'senha': senha,
+        }),
+      );
+      return jsonDecode(response.body);
+    } catch (e) {
+      debugPrint("Erro no registo: $e");
+      return {'success': false, 'error': e.toString()};
+    }
+  }
+
+  // 🔑 Login do utilizador (com tratamento de senha e bloqueio)
+  static Future<Map<String, dynamic>> login({
+    required String email,
+    required String senha,
+  }) async {
+    try {
+      final url = Uri.parse('$baseUrl/login');
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'email': email,
+          'senha': senha,
+        }),
+      );
+      return jsonDecode(response.body);
+    } catch (e) {
+      debugPrint("Erro no login: $e");
+      return {'success': false, 'error': e.toString()};
+    }
+  }
+
   // 🔍 Verifica o saldo de créditos do dentista
   static Future<Map<String, dynamic>> checkCredits(String apiKey) async {
     try {
@@ -44,31 +92,6 @@ class ApiService {
       }
     } catch (e) {
       debugPrint("Erro ao adicionar créditos: $e");
-    }
-    return false;
-  }
-
-  // 👤 Atualiza o perfil profissional e dados cadastrais no PostgreSQL (Render)
-  static Future<bool> updateProfile(String apiKey, String nome, String email, String cro) async {
-    try {
-      final url = Uri.parse('$baseUrl/update-profile');
-      final response = await http.post(
-        url,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'api_key': apiKey,
-          'nome': nome,
-          'email': email,
-          'cro': cro,
-        }),
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return data['success'] == true;
-      }
-    } catch (e) {
-      debugPrint("Erro ao atualizar perfil no servidor: $e");
     }
     return false;
   }

@@ -11,43 +11,76 @@ class PlansScreen extends StatefulWidget {
 }
 
 class _PlansScreenState extends State<PlansScreen> {
-  // 📝 Controllers para o formulário de cadastro do utilizador
+  // 📝 Controllers para os formulários de autenticação / cadastro
   final TextEditingController _nomeController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _croController = TextEditingController();
+  final TextEditingController _senhaController = TextEditingController();
+
+  bool _lembrarEmail = true;
+  bool _modoCadastro = false; // Alterna entre Login (false) e Cadastro (true)
+
+  @override
+  void initState() {
+    super.initState();
+    _carregarEmailSalvo();
+  }
 
   @override
   void dispose() {
     _nomeController.dispose();
     _emailController.dispose();
     _croController.dispose();
+    _senhaController.dispose();
     super.dispose();
   }
 
-  // 🔍 Verifica se o utilizador já realizou o cadastro local
-  bool _usuarioPossuiCadastro() {
+  // 💾 Carrega o e-mail salvo se a opção "Lembrar meu e-mail" estiver ativa
+  void _carregarEmailSalvo() {
     final boxUser = Hive.box('box_usuario');
-    return boxUser.get('is_registrado', defaultValue: false) as bool;
+    final emailSalvo = boxUser.get('email_salvo', defaultValue: '') as String;
+    final lembrar = boxUser.get('lembrar_email', defaultValue: true) as bool;
+
+    setState(() {
+      _lembrarEmail = lembrar;
+      if (lembrar && emailSalvo.isNotEmpty) {
+        _emailController.text = emailSalvo;
+      }
+    });
   }
 
-  // 💾 Salva o cadastro localmente no Hive e sincroniza com o PostgreSQL no Render
-  Future<void> _salvarCadastro() async {
+  // 🔍 Retorna o e-mail/api_key do utilizador com sessão ativa
+  String _obterApiKeyAtual() {
     final boxUser = Hive.box('box_usuario');
-    final nome = _nomeController.text.trim();
-    final email = _emailController.text.trim();
-    final cro = _croController.text.trim();
+    return boxUser.get('email', defaultValue: '') as String;
+  }
 
-    // 1. Gravação local no Hive
-    await boxUser.put('nome', nome);
-    await boxUser.put('email', email);
-    await boxUser.put('cro', cro);
-    await boxUser.put('is_registrado', true);
+  bool _usuarioEstaLogado() {
+    return _obterApiKeyAtual().isNotEmpty;
+  }
 
-    // 2. Envio automático para o PostgreSQL no Render (para ver no DBeaver)
-    try {
-      await ApiService.updateProfile('dentista_demo_123', nome, email, cro);
-    } catch (e) {
-      debugPrint('Aviso: Perfil salvo localmente, mas houve falha ao sincronizar com o servidor: $e');
+  // 🚪 Efetua o Logout (Sair da Conta) para permitir trocar de utilizador
+  Future<void> _fazerLogout() async {
+    final boxUser = Hive.box('box_usuario');
+    final emailAnterior = _emailController.text;
+
+    await boxUser.put('is_registrado', false);
+    await boxUser.put('email', ''); // Limpa a sessão ativa
+
+    // Mantém o e-mail no controller se "Lembrar" estiver marcado
+    if (!_lembrarEmail) {
+      _emailController.clear();
+    } else {
+      _emailController.text = emailAnterior;
+    }
+    _senhaController.clear();
+
+    setState(() {});
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Sessão encerrada. Você pode entrar com outra conta.')),
+      );
     }
   }
 
@@ -68,101 +101,234 @@ class _PlansScreenState extends State<PlansScreen> {
     await boxCompras.add(novaCompra);
   }
 
-  // 📋 Exibe o modal de cadastro obrigatório
-  Future<bool> _exibirDialogoCadastro() async {
-    bool cadastradoComSucesso = false;
+  // 🔐 Dialogo de Autenticação / Cadastro Seguro com Senha
+  Future<bool> _exibirDialogoAutenticacao() async {
+    bool autenticadoComSucesso = false;
 
     await showDialog(
       context: context,
-      barrierDismissible: false, // Força o preenchimento para avançar na compra
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Row(
-          children: [
-            Icon(Icons.person_add_alt_1, color: Color(0xFF5C6BC0)),
-            SizedBox(width: 10),
-            Text('Cadastro Rápido', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-          ],
-        ),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'Complete o seu cadastro uma única vez para vincular as suas recargas e emitir relatórios clínicos.',
-                style: TextStyle(fontSize: 13, color: Colors.black54),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: _nomeController,
-                decoration: InputDecoration(
-                  labelText: 'Nome Completo / Clínica',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                  isDense: true,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setModalState) {
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: Row(
+              children: [
+                Icon(
+                  _modoCadastro ? Icons.person_add_alt_1 : Icons.lock_outline,
+                  color: const Color(0xFF5C6BC0),
                 ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _emailController,
-                keyboardType: TextInputType.emailAddress,
-                decoration: InputDecoration(
-                  labelText: 'E-mail ou WhatsApp',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                  isDense: true,
+                const SizedBox(width: 10),
+                Text(
+                  _modoCadastro ? 'Criar Nova Conta' : 'Acesso do Dentista',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
                 ),
+              ],
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    _modoCadastro
+                        ? 'Cadastre-se uma única vez para vincular os seus créditos e emitir relatórios clínicos com segurança.'
+                        : 'Introduza a sua senha para confirmar a sua identidade e vincular a sua recarga.',
+                    style: const TextStyle(fontSize: 13, color: Colors.black54),
+                  ),
+                  const SizedBox(height: 16),
+
+                  if (_modoCadastro) ...[
+                    TextField(
+                      controller: _nomeController,
+                      decoration: InputDecoration(
+                        labelText: 'Nome Completo / Clínica',
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        isDense: true,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+
+                  // Campo E-mail
+                  TextField(
+                    controller: _emailController,
+                    keyboardType: TextInputType.emailAddress,
+                    decoration: InputDecoration(
+                      labelText: 'E-mail do Dentista',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      isDense: true,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  if (_modoCadastro) ...[
+                    TextField(
+                      controller: _croController,
+                      decoration: InputDecoration(
+                        labelText: 'CRO / Registo Profissional (Opcional)',
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        isDense: true,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+
+                  // Campo Senha
+                  TextField(
+                    controller: _senhaController,
+                    obscureText: true,
+                    decoration: InputDecoration(
+                      labelText: 'Sua Senha de Acesso',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      isDense: true,
+                    ),
+                  ),
+
+                  const SizedBox(height: 8),
+
+                  // 📌 Opção de Lembrar E-mail
+                  Row(
+                    children: [
+                      Checkbox(
+                        value: _lembrarEmail,
+                        activeColor: const Color(0xFF5C6BC0),
+                        onChanged: (val) {
+                          setModalState(() {
+                            _lembrarEmail = val ?? true;
+                          });
+                          setState(() {
+                            _lembrarEmail = val ?? true;
+                          });
+                        },
+                      ),
+                      const Expanded(
+                        child: Text(
+                          'Permanecer e-mail na tela',
+                          style: TextStyle(fontSize: 13, color: Colors.black87),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  // Alternar entre Login e Criar Conta
+                  TextButton(
+                    onPressed: () {
+                      setModalState(() {
+                        _modoCadastro = !_modoCadastro;
+                      });
+                    },
+                    child: Text(
+                      _modoCadastro
+                          ? 'Já possui uma conta? Faça Login'
+                          : 'Ainda não tem conta? Cadastre-se aqui',
+                      style: const TextStyle(color: Color(0xFF5C6BC0), fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _croController,
-                decoration: InputDecoration(
-                  labelText: 'CRO / Registo Profissional (Opcional)',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                  isDense: true,
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF5C6BC0),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+                onPressed: () async {
+                  final email = _emailController.text.trim();
+                  final senha = _senhaController.text.trim();
+
+                  if (email.isEmpty || senha.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Por favor, preencha o E-mail e a Senha.')),
+                    );
+                    return;
+                  }
+
+                  // Guarda a preferência de lembrar e-mail
+                  final boxUser = Hive.box('box_usuario');
+                  await boxUser.put('lembrar_email', _lembrarEmail);
+                  if (_lembrarEmail) {
+                    await boxUser.put('email_salvo', email);
+                  } else {
+                    await boxUser.put('email_salvo', '');
+                  }
+
+                  if (_modoCadastro) {
+                    // Fluxo de Cadastro
+                    final res = await ApiService.register(
+                      nome: _nomeController.text.trim(),
+                      email: email,
+                      cro: _croController.text.trim(),
+                      senha: senha,
+                    );
+
+                    if (res['success'] == true) {
+                      await boxUser.put('nome', _nomeController.text.trim());
+                      await boxUser.put('email', email);
+                      await boxUser.put('cro', _croController.text.trim());
+                      await boxUser.put('is_registrado', true);
+                      autenticadoComSucesso = true;
+                      if (ctx.mounted) Navigator.pop(ctx);
+                    } else {
+                      if (ctx.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text(res['error'] ?? 'Erro no cadastro.'), backgroundColor: Colors.red),
+                        );
+                      }
+                    }
+                  } else {
+                    // Fluxo de Login
+                    final res = await ApiService.login(email: email, senha: senha);
+
+                    if (res['success'] == true) {
+                      await boxUser.put('nome', res['nome'] ?? 'Dentista');
+                      await boxUser.put('email', email);
+                      await boxUser.put('is_registrado', true);
+                      autenticadoComSucesso = true;
+                      if (ctx.mounted) Navigator.pop(ctx);
+                    } else {
+                      if (ctx.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(res['error'] ?? 'Erro ao efetuar login.'),
+                            backgroundColor: Colors.red,
+                            duration: const Duration(seconds: 4),
+                          ),
+                        );
+                      }
+                    }
+                  }
+                },
+                child: Text(
+                  _modoCadastro ? 'Cadastrar e Continuar' : 'Entrar e Continuar',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
               ),
             ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF5C6BC0),
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            ),
-            onPressed: () async {
-              if (_nomeController.text.trim().isEmpty || _emailController.text.trim().isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Por favor, preencha o Nome e o E-mail/WhatsApp.')),
-                );
-                return;
-              }
-              await _salvarCadastro();
-              cadastradoComSucesso = true;
-              if (ctx.mounted) Navigator.pop(ctx);
-            },
-            child: const Text('Salvar e Continuar', style: TextStyle(fontWeight: FontWeight.bold)),
-          ),
-        ],
+          );
+        },
       ),
     );
 
-    return cadastradoComSucesso;
+    return autenticadoComSucesso;
   }
 
   // 🛍️ Fluxo Principal de Compra
   Future<void> _comprarPlano(int creditos, String nomePlano, String preco) async {
-    // Passagem 1: Verifica/Garante Cadastro
-    if (!_usuarioPossuiCadastro()) {
-      final confirmouCadastro = await _exibirDialogoCadastro();
-      if (!confirmouCadastro) return; // Cancela a compra se desistir no cadastro
+    // Passagem 1: Garantir Autenticação
+    if (!_usuarioEstaLogado()) {
+      final autenticou = await _exibirDialogoAutenticacao();
+      if (!autenticou) return;
     }
 
     if (!mounted) return;
+
+    final apiKeyAtual = _obterApiKeyAtual();
 
     // Passagem 2: Diálogo de Processamento
     showDialog(
@@ -180,17 +346,15 @@ class _PlansScreenState extends State<PlansScreen> {
       ),
     );
 
-    // Simulação do tempo de resposta da operadora de cartão / PIX
     await Future.delayed(const Duration(seconds: 2));
 
     try {
-      final sucesso = await ApiService.adicionarCreditos('dentista_demo_123', creditos);
+      final sucesso = await ApiService.adicionarCreditos(apiKeyAtual, creditos);
 
       if (!mounted) return;
       Navigator.pop(context); // Fecha diálogo de loading
 
       if (sucesso) {
-        // Regista a compra no histórico local do Hive
         await _registrarHistoricoCompra(nomePlano, creditos, preco);
 
         if (!mounted) return;
@@ -200,7 +364,7 @@ class _PlansScreenState extends State<PlansScreen> {
           builder: (context) => AlertDialog(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             title: const Text('Pagamento Aprovado! 🎉'),
-            content: Text('Foram adicionados $creditos créditos à sua conta com sucesso.'),
+            content: Text('Foram adicionados $creditos créditos à conta de ($apiKeyAtual) com sucesso.'),
             actions: [
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
@@ -208,8 +372,8 @@ class _PlansScreenState extends State<PlansScreen> {
                   foregroundColor: Colors.white,
                 ),
                 onPressed: () {
-                  Navigator.pop(context); // Fecha o diálogo de confirmação
-                  Navigator.pop(context, true); // Retorna à HomeScreen
+                  Navigator.pop(context);
+                  Navigator.pop(context, true);
                 },
                 child: const Text('OK'),
               ),
@@ -221,7 +385,7 @@ class _PlansScreenState extends State<PlansScreen> {
       }
     } catch (e) {
       if (!mounted) return;
-      Navigator.pop(context); // Fecha diálogo de loading em erro
+      Navigator.pop(context);
       _mostrarErro('Erro ao processar a compra: $e');
     }
   }
@@ -324,12 +488,20 @@ class _PlansScreenState extends State<PlansScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final emailAtual = _obterApiKeyAtual();
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Loja de Créditos'),
         backgroundColor: const Color(0xFF5C6BC0),
         foregroundColor: Colors.white,
         actions: [
+          if (_usuarioEstaLogado())
+            IconButton(
+              icon: const Icon(Icons.logout),
+              tooltip: 'Sair / Trocar Conta',
+              onPressed: _fazerLogout,
+            ),
           IconButton(
             icon: const Icon(Icons.receipt_long),
             tooltip: 'Histórico de Compras',
@@ -343,6 +515,29 @@ class _PlansScreenState extends State<PlansScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              if (_usuarioEstaLogado())
+                Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.account_circle, color: Colors.white),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Sessão ativa: $emailAtual',
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
               const Text(
                 'Escolha seu Pacote de Créditos',
                 textAlign: TextAlign.center,
@@ -360,7 +555,6 @@ class _PlansScreenState extends State<PlansScreen> {
               ),
               const SizedBox(height: 12),
 
-              // 🧾 Botão para abrir o Histórico de Recargas
               OutlinedButton.icon(
                 style: OutlinedButton.styleFrom(
                   foregroundColor: Colors.white,
@@ -388,7 +582,7 @@ class _PlansScreenState extends State<PlansScreen> {
               ),
               const SizedBox(height: 16),
 
-              // Plano 2: Profissional (50 créditos) - O mais vantajoso!
+              // Plano 2: Profissional (50 créditos)
               _buildPlanCard(
                 titulo: 'Plano Profissional',
                 creditos: '50 Créditos',
