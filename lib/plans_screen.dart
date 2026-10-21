@@ -41,16 +41,24 @@ class _PlansScreenState extends State<PlansScreen> {
     return emailRegExp.hasMatch(email);
   }
 
-  // 💾 Carrega o e-mail salvo se a opção "Lembrar meu e-mail" estiver ativa
+  // 💾 Carrega os dados da sessão - Mantém zerado se não houver utilizador ativo
   void _carregarEmailSalvo() {
     final boxUser = Hive.box('box_usuario');
-    final emailSalvo = boxUser.get('email_salvo', defaultValue: '') as String;
+    final emailAtivo = boxUser.get('email', defaultValue: '') as String;
     final lembrar = boxUser.get('lembrar_email', defaultValue: true) as bool;
+    final emailSalvo = boxUser.get('email_salvo', defaultValue: '') as String;
 
     setState(() {
       _lembrarEmail = lembrar;
-      if (lembrar && emailSalvo.isNotEmpty) {
-        _emailController.text = emailSalvo;
+      // Se não houver sessão ativa, garante que o campo comece limpo (exceto se lembrar estiver ativo e houver salvo)
+      if (emailAtivo.isEmpty) {
+        if (lembrar && emailSalvo.isNotEmpty) {
+          _emailController.text = emailSalvo;
+        } else {
+          _emailController.clear();
+        }
+      } else {
+        _emailController.text = emailAtivo;
       }
     });
   }
@@ -65,26 +73,24 @@ class _PlansScreenState extends State<PlansScreen> {
     return _obterApiKeyAtual().isNotEmpty;
   }
 
-  // 🚪 Efetua o Logout (Sair da Conta) para permitir trocar de utilizador
+  // 🚪 Efetua o Logout e limpa completamente os campos e a memória local
   Future<void> _fazerLogout() async {
     final boxUser = Hive.box('box_usuario');
-    final emailAnterior = _emailController.text;
 
     await boxUser.put('is_registrado', false);
     await boxUser.put('email', ''); // Limpa a sessão ativa
+    await boxUser.put('email_salvo', ''); // Zera o e-mail guardado em cache
 
-    if (!_lembrarEmail) {
-      _emailController.clear();
-    } else {
-      _emailController.text = emailAnterior;
-    }
+    _emailController.clear();
     _senhaController.clear();
+    _nomeController.clear();
+    _croController.clear();
 
     setState(() {});
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Sessão encerrada. Você pode entrar com outra conta.')),
+        const SnackBar(content: Text('Sessão encerrada. Os campos foram limpos com segurança.')),
       );
     }
   }
@@ -291,7 +297,6 @@ class _PlansScreenState extends State<PlansScreen> {
                       if (ctx.mounted) Navigator.pop(ctx);
                     } else {
                       if (ctx.mounted) {
-                        // Trata erros de SQL para não exibir trechos de código crus
                         String erroMsg = res['error'] ?? 'Erro no cadastro.';
                         if (erroMsg.contains('SELECT') || erroMsg.contains('LINE')) {
                           erroMsg = 'Não foi possível concluir o cadastro. Verifique os dados e tente novamente.';
