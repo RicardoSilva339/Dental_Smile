@@ -19,12 +19,12 @@ def get_db_connection():
     return psycopg2.connect(DATABASE_URL, sslmode='require')
 
 def init_db():
-    """Garante a criação e atualização automática das colunas da tabela de usuários"""
+    """Garante a criação da tabela e adiciona todas as colunas necessárias caso já exista"""
     try:
         conn = get_db_connection()
         cur = conn.cursor()
 
-        # 1. Cria a tabela base se não existir
+        # 1. Cria a tabela base completa caso ela não exista
         cur.execute("""
             CREATE TABLE IF NOT EXISTS usuarios (
                 id SERIAL PRIMARY KEY,
@@ -33,18 +33,23 @@ def init_db():
                 email VARCHAR(100) UNIQUE NOT NULL,
                 cro VARCHAR(50),
                 creditos INTEGER DEFAULT 3,
+                senha VARCHAR(100),
+                tentativas_login INTEGER DEFAULT 0,
                 criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         """)
 
-        # 2. Adiciona as colunas novas caso a tabela já tenha sido criada anteriormente
+        # 2. Garante individualmente que cada coluna existe (caso a tabela seja de uma versão anterior)
+        cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS email VARCHAR(100);")
         cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS senha VARCHAR(100);")
+        cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS cro VARCHAR(50);")
+        cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS creditos INTEGER DEFAULT 3;")
         cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS tentativas_login INTEGER DEFAULT 0;")
 
         conn.commit()
         cur.close()
         conn.close()
-        print("Banco de dados sincronizado e atualizado com sucesso!")
+        print("Banco de dados sincronizado e colunas atualizadas com sucesso!")
     except Exception as e:
         print(f"Erro ao inicializar o banco de dados: {e}")
 
