@@ -3,6 +3,7 @@ import io
 import base64
 import requests
 import psycopg2
+import traceback
 from flask import Flask, request, jsonify
 from PIL import Image
 
@@ -49,7 +50,7 @@ def init_db():
 
 init_db()
 
-# 🔐 Rota de Registo de Novo Dentista
+# 🔐 Rota de Registro de Novo Dentista
 @app.route('/register', methods=['POST'])
 def register():
     data = request.get_json(force=True, silent=True) or {}
@@ -86,6 +87,8 @@ def register():
 
         return jsonify({"success": True, "message": "Conta criada com sucesso com 3 créditos iniciais!"}), 200
     except Exception as e:
+        print(f"ERRO NO CADASTRO: {str(e)}")
+        traceback.print_exc()
         return jsonify({"success": False, "error": f"Erro no banco: {str(e)}"}), 500
 
 # 🔑 Rota de Login com Proteção de Tentativas
@@ -145,6 +148,8 @@ def login():
         }), 200
 
     except Exception as e:
+        print(f"ERRO NO LOGIN: {str(e)}")
+        traceback.print_exc()
         return jsonify({"success": False, "error": str(e)}), 500
 
 # 🔍 Verificar Créditos
