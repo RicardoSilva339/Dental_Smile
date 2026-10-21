@@ -48,6 +48,31 @@ class ApiService {
     return false;
   }
 
+  // 👤 Atualiza o perfil profissional e dados cadastrais no PostgreSQL (Render)
+  static Future<bool> updateProfile(String apiKey, String nome, String email, String cro) async {
+    try {
+      final url = Uri.parse('$baseUrl/update-profile');
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'api_key': apiKey,
+          'nome': nome,
+          'email': email,
+          'cro': cro,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['success'] == true;
+      }
+    } catch (e) {
+      debugPrint("Erro ao atualizar perfil no servidor: $e");
+    }
+    return false;
+  }
+
   // 🪄 Envia a foto em Base64 para o servidor gerar o sorriso e descontar o crédito
   static Future<Map<String, dynamic>> processSmile({
     required File imageFile,

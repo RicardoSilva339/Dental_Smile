@@ -21,7 +21,7 @@ def get_db_connection():
     return psycopg2.connect(DATABASE_URL, sslmode='require')
 
 def init_db():
-    """Cria a tabela de usuários e créditos caso ela ainda não exista"""
+    """Cria a tabela de usuários, créditos, email e CRO caso ela ainda não exista"""
     try:
         conn = get_db_connection()
         cur = conn.cursor()
@@ -30,7 +30,8 @@ def init_db():
                 id SERIAL PRIMARY KEY,
                 api_key VARCHAR(100) UNIQUE NOT NULL,
                 nome VARCHAR(100),
-                sobrenome VARCHAR(100),
+                email VARCHAR(100),
+                cro VARCHAR(50),
                 creditos INTEGER DEFAULT 3,
                 criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
@@ -38,7 +39,7 @@ def init_db():
         conn.commit()
         cur.close()
         conn.close()
-        print("Tabela 'usuarios' verificada/criada com sucesso no PostgreSQL!")
+        print("Tabela 'usuarios' (com email e CRO) verificada/criada com sucesso no PostgreSQL!")
     except Exception as e:
         print(f"Erro ao inicializar o banco de dados: {e}")
 
@@ -100,6 +101,37 @@ def add_credits():
         "message": f"{quantidade} créditos adicionados com sucesso!",
         "novo_saldo": novo_saldo
     }), 200
+
+# 👤 Nova rota para atualizar/salvar os dados cadastrais e CRO do dentista
+@app.route('/update-profile', methods=['POST'])
+def update_profile():
+    data = request.get_json(force=True, silent=True) or {}
+    api_key = data.get('api_key', 'dentista_demo_123')
+    nome = data.get('nome')
+    email = data.get('email')
+    cro = data.get('cro')
+
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        cur.execute("""
+            INSERT INTO usuarios (api_key, nome, email, cro)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (api_key)
+            DO UPDATE SET
+                nome = EXCLUDED.nome,
+                email = EXCLUDED.email,
+                cro = EXCLUDED.cro;
+        """, (api_key, nome, email, cro))
+
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        return jsonify({"success": True, "message": "Perfil atualizado com sucesso no PostgreSQL!"}), 200
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/process-smile', methods=['POST'])
 def process_smile():

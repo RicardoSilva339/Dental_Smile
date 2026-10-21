@@ -30,13 +30,25 @@ class _PlansScreenState extends State<PlansScreen> {
     return boxUser.get('is_registrado', defaultValue: false) as bool;
   }
 
-  // 💾 Salva o cadastro do utilizador no Hive
+  // 💾 Salva o cadastro localmente no Hive e sincroniza com o PostgreSQL no Render
   Future<void> _salvarCadastro() async {
     final boxUser = Hive.box('box_usuario');
-    await boxUser.put('nome', _nomeController.text.trim());
-    await boxUser.put('email', _emailController.text.trim());
-    await boxUser.put('cro', _croController.text.trim());
+    final nome = _nomeController.text.trim();
+    final email = _emailController.text.trim();
+    final cro = _croController.text.trim();
+
+    // 1. Gravação local no Hive
+    await boxUser.put('nome', nome);
+    await boxUser.put('email', email);
+    await boxUser.put('cro', cro);
     await boxUser.put('is_registrado', true);
+
+    // 2. Envio automático para o PostgreSQL no Render (para ver no DBeaver)
+    try {
+      await ApiService.updateProfile('dentista_demo_123', nome, email, cro);
+    } catch (e) {
+      debugPrint('Aviso: Perfil salvo localmente, mas houve falha ao sincronizar com o servidor: $e');
+    }
   }
 
   // 🛒 Regista a transação efetuada no histórico local
