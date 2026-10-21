@@ -67,7 +67,6 @@ class _PlansScreenState extends State<PlansScreen> {
     await boxUser.put('is_registrado', false);
     await boxUser.put('email', ''); // Limpa a sessão ativa
 
-    // Mantém o e-mail no controller se "Lembrar" estiver marcado
     if (!_lembrarEmail) {
       _emailController.clear();
     } else {
@@ -84,12 +83,14 @@ class _PlansScreenState extends State<PlansScreen> {
     }
   }
 
-  // 🛒 Regista a transação efetuada no histórico local
+  // 🛒 Regista a transação efetuada no histórico local vinculando ao e-mail ativo
   Future<void> _registrarHistoricoCompra(String nomePlano, int creditos, String preco) async {
     final boxCompras = Hive.box('box_compras');
+    final emailAtual = _obterApiKeyAtual();
     final agora = DateTime.now();
 
     final novaCompra = {
+      'emailDentista': emailAtual, // 🔒 Vincula diretamente à conta ativa
       'idCompra': 'REC-${agora.millisecondsSinceEpoch}',
       'plano': nomePlano,
       'creditos': creditos,
@@ -149,7 +150,6 @@ class _PlansScreenState extends State<PlansScreen> {
                     const SizedBox(height: 12),
                   ],
 
-                  // Campo E-mail
                   TextField(
                     controller: _emailController,
                     keyboardType: TextInputType.emailAddress,
@@ -173,7 +173,6 @@ class _PlansScreenState extends State<PlansScreen> {
                     const SizedBox(height: 12),
                   ],
 
-                  // Campo Senha
                   TextField(
                     controller: _senhaController,
                     obscureText: true,
@@ -186,7 +185,6 @@ class _PlansScreenState extends State<PlansScreen> {
 
                   const SizedBox(height: 8),
 
-                  // 📌 Opção de Lembrar E-mail
                   Row(
                     children: [
                       Checkbox(
@@ -210,7 +208,6 @@ class _PlansScreenState extends State<PlansScreen> {
                     ],
                   ),
 
-                  // Alternar entre Login e Criar Conta
                   TextButton(
                     onPressed: () {
                       setModalState(() {
@@ -249,7 +246,6 @@ class _PlansScreenState extends State<PlansScreen> {
                     return;
                   }
 
-                  // Guarda a preferência de lembrar e-mail
                   final boxUser = Hive.box('box_usuario');
                   await boxUser.put('lembrar_email', _lembrarEmail);
                   if (_lembrarEmail) {
@@ -259,7 +255,6 @@ class _PlansScreenState extends State<PlansScreen> {
                   }
 
                   if (_modoCadastro) {
-                    // Fluxo de Cadastro
                     final res = await ApiService.register(
                       nome: _nomeController.text.trim(),
                       email: email,
@@ -282,7 +277,6 @@ class _PlansScreenState extends State<PlansScreen> {
                       }
                     }
                   } else {
-                    // Fluxo de Login
                     final res = await ApiService.login(email: email, senha: senha);
 
                     if (res['success'] == true) {
@@ -320,7 +314,6 @@ class _PlansScreenState extends State<PlansScreen> {
 
   // 🛍️ Fluxo Principal de Compra
   Future<void> _comprarPlano(int creditos, String nomePlano, String preco) async {
-    // Passagem 1: Garantir Autenticação
     if (!_usuarioEstaLogado()) {
       final autenticou = await _exibirDialogoAutenticacao();
       if (!autenticou) return;
@@ -330,7 +323,6 @@ class _PlansScreenState extends State<PlansScreen> {
 
     final apiKeyAtual = _obterApiKeyAtual();
 
-    // Passagem 2: Diálogo de Processamento
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -352,7 +344,7 @@ class _PlansScreenState extends State<PlansScreen> {
       final sucesso = await ApiService.adicionarCreditos(apiKeyAtual, creditos);
 
       if (!mounted) return;
-      Navigator.pop(context); // Fecha diálogo de loading
+      Navigator.pop(context);
 
       if (sucesso) {
         await _registrarHistoricoCompra(nomePlano, creditos, preco);
@@ -397,9 +389,18 @@ class _PlansScreenState extends State<PlansScreen> {
     );
   }
 
-  // 📜 Exibe o BottomSheet com o Histórico de Recargas
+  // 📜 Exibe o BottomSheet com o Histórico de Recargas FILTRADO pelo e-mail ativo
   void _exibirHistoricoCompras() {
     final boxCompras = Hive.box('box_compras');
+    final emailAtual = _obterApiKeyAtual();
+
+    if (emailAtual.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Por favor, faça login para ver o seu histórico de recargas.')),
+      );
+      _exibirDialogoAutenticacao();
+      return;
+    }
 
     showModalBottomSheet(
       context: context,
@@ -420,14 +421,21 @@ class _PlansScreenState extends State<PlansScreen> {
               height: 4,
               decoration: BoxDecoration(color: Colors.grey.shade400, borderRadius: BorderRadius.circular(10)),
             ),
-            const Padding(
-              padding: EdgeInsets.all(12.0),
+            Padding(
+              padding: const EdgeInsets.all(12.0),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.history, color: Color(0xFF5C6BC0)),
-                  SizedBox(width: 8),
-                  Text('Histórico de Recargas', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  const Icon(Icons.history, color: Color(0xFF5C6BC0)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Histórico de Recargas',
+                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -436,10 +444,19 @@ class _PlansScreenState extends State<PlansScreen> {
               child: ValueListenableBuilder(
                 valueListenable: boxCompras.listenable(),
                 builder: (context, Box box, _) {
-                  if (box.isEmpty) {
+                  // Filtra apenas as compras correspondentes ao utilizador logado
+                  final comprasDoUsuario = box.values.where((item) {
+                    if (item is Map) {
+                      final mapItem = Map<String, dynamic>.from(item);
+                      return mapItem['emailDentista'] == emailAtual;
+                    }
+                    return false;
+                  }).toList();
+
+                  if (comprasDoUsuario.isEmpty) {
                     return const Center(
                       child: Text(
-                        'Nenhuma recarga encontrada.\nAs suas compras aparecerão aqui.',
+                        'Nenhuma recarga encontrada para esta conta.\nAs suas compras aparecerão aqui.',
                         textAlign: TextAlign.center,
                         style: TextStyle(color: Colors.grey),
                       ),
@@ -449,10 +466,9 @@ class _PlansScreenState extends State<PlansScreen> {
                   return ListView.builder(
                     controller: scrollController,
                     padding: const EdgeInsets.all(16),
-                    itemCount: box.length,
+                    itemCount: comprasDoUsuario.length,
                     itemBuilder: (context, index) {
-                      // ✅ CORRIGIDO: Correção da quebra de linha do índice
-                      final item = Map<String, dynamic>.from(box.getAt(box.length - 1 - index) as Map);
+                      final item = Map<String, dynamic>.from(comprasDoUsuario[comprasDoUsuario.length - 1 - index] as Map);
 
                       return Card(
                         margin: const EdgeInsets.only(bottom: 10),
@@ -570,7 +586,6 @@ class _PlansScreenState extends State<PlansScreen> {
 
               const SizedBox(height: 20),
 
-              // Plano 1: Inicial (10 créditos)
               _buildPlanCard(
                 titulo: 'Plano Inicial',
                 creditos: '10 Créditos',
@@ -583,7 +598,6 @@ class _PlansScreenState extends State<PlansScreen> {
               ),
               const SizedBox(height: 16),
 
-              // Plano 2: Profissional (50 créditos)
               _buildPlanCard(
                 titulo: 'Plano Profissional',
                 creditos: '50 Créditos',
@@ -596,7 +610,6 @@ class _PlansScreenState extends State<PlansScreen> {
               ),
               const SizedBox(height: 16),
 
-              // Plano 3: Master (100 créditos)
               _buildPlanCard(
                 titulo: 'Plano Master',
                 creditos: '100 Créditos',

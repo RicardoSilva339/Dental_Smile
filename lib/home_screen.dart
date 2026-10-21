@@ -73,9 +73,13 @@ class _HomeScreenState extends State<HomeScreen> {
               size: 28,
             ),
             const SizedBox(width: 8),
-            Text(
-              deslogado ? 'Acesso Necessário' : 'Créditos Esgotados',
-              style: const TextStyle(fontWeight: FontWeight.bold),
+            // ✅ Envolvido em Expanded para evitar qualquer overflow de pixéis
+            Expanded(
+              child: Text(
+                deslogado ? 'Acesso Necessário' : 'Créditos Esgotados',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
           ],
         ),
