@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:dental_smile/api_service.dart';
 import 'background.dart';
 
@@ -10,9 +11,148 @@ class PlansScreen extends StatefulWidget {
 }
 
 class _PlansScreenState extends State<PlansScreen> {
+  // 📝 Controllers para o formulário de cadastro do utilizador
+  final TextEditingController _nomeController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _croController = TextEditingController();
 
+  @override
+  void dispose() {
+    _nomeController.dispose();
+    _emailController.dispose();
+    _croController.dispose();
+    super.dispose();
+  }
+
+  // 🔍 Verifica se o utilizador já realizou o cadastro local
+  bool _usuarioPossuiCadastro() {
+    final boxUser = Hive.box('box_usuario');
+    return boxUser.get('is_registrado', defaultValue: false) as bool;
+  }
+
+  // 💾 Salva o cadastro do utilizador no Hive
+  Future<void> _salvarCadastro() async {
+    final boxUser = Hive.box('box_usuario');
+    await boxUser.put('nome', _nomeController.text.trim());
+    await boxUser.put('email', _emailController.text.trim());
+    await boxUser.put('cro', _croController.text.trim());
+    await boxUser.put('is_registrado', true);
+  }
+
+  // 🛒 Regista a transação efetuada no histórico local
+  Future<void> _registrarHistoricoCompra(String nomePlano, int creditos, String preco) async {
+    final boxCompras = Hive.box('box_compras');
+    final agora = DateTime.now();
+
+    final novaCompra = {
+      'idCompra': 'REC-${agora.millisecondsSinceEpoch}',
+      'plano': nomePlano,
+      'creditos': creditos,
+      'preco': preco,
+      'dataIso': agora.toIso8601String(),
+      'dataFormatada': "${agora.day.toString().padLeft(2, '0')}/${agora.month.toString().padLeft(2, '0')}/${agora.year} às ${agora.hour.toString().padLeft(2, '0')}:${agora.minute.toString().padLeft(2, '0')}",
+    };
+
+    await boxCompras.add(novaCompra);
+  }
+
+  // 📋 Exibe o modal de cadastro obrigatório
+  Future<bool> _exibirDialogoCadastro() async {
+    bool cadastradoComSucesso = false;
+
+    await showDialog(
+      context: context,
+      barrierDismissible: false, // Força o preenchimento para avançar na compra
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.person_add_alt_1, color: Color(0xFF5C6BC0)),
+            SizedBox(width: 10),
+            Text('Cadastro Rápido', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Complete o seu cadastro uma única vez para vincular as suas recargas e emitir relatórios clínicos.',
+                style: TextStyle(fontSize: 13, color: Colors.black54),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _nomeController,
+                decoration: InputDecoration(
+                  labelText: 'Nome Completo / Clínica',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _emailController,
+                keyboardType: TextInputType.emailAddress,
+                decoration: InputDecoration(
+                  labelText: 'E-mail ou WhatsApp',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _croController,
+                decoration: InputDecoration(
+                  labelText: 'CRO / Registo Profissional (Opcional)',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  isDense: true,
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF5C6BC0),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () async {
+              if (_nomeController.text.trim().isEmpty || _emailController.text.trim().isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Por favor, preencha o Nome e o E-mail/WhatsApp.')),
+                );
+                return;
+              }
+              await _salvarCadastro();
+              cadastradoComSucesso = true;
+              if (ctx.mounted) Navigator.pop(ctx);
+            },
+            child: const Text('Salvar e Continuar', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    return cadastradoComSucesso;
+  }
+
+  // 🛍️ Fluxo Principal de Compra
   Future<void> _comprarPlano(int creditos, String nomePlano, String preco) async {
-    // Exibe diálogo de carregamento do processamento
+    // Passagem 1: Verifica/Garante Cadastro
+    if (!_usuarioPossuiCadastro()) {
+      final confirmouCadastro = await _exibirDialogoCadastro();
+      if (!confirmouCadastro) return; // Cancela a compra se desistir no cadastro
+    }
+
+    if (!mounted) return;
+
+    // Passagem 2: Diálogo de Processamento
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -35,9 +175,14 @@ class _PlansScreenState extends State<PlansScreen> {
       final sucesso = await ApiService.adicionarCreditos('dentista_demo_123', creditos);
 
       if (!mounted) return;
-      Navigator.pop(context); // Fecha o diálogo de loading
+      Navigator.pop(context); // Fecha diálogo de loading
 
       if (sucesso) {
+        // Regista a compra no histórico local do Hive
+        await _registrarHistoricoCompra(nomePlano, creditos, preco);
+
+        if (!mounted) return;
+
         showDialog(
           context: context,
           builder: (context) => AlertDialog(
@@ -51,8 +196,8 @@ class _PlansScreenState extends State<PlansScreen> {
                   foregroundColor: Colors.white,
                 ),
                 onPressed: () {
-                  Navigator.pop(context); // Fecha diálogo de confirmação
-                  Navigator.pop(context, true); // Retorna para a HomeScreen atualizando os créditos
+                  Navigator.pop(context); // Fecha o diálogo de confirmação
+                  Navigator.pop(context, true); // Retorna à HomeScreen
                 },
                 child: const Text('OK'),
               ),
@@ -64,7 +209,7 @@ class _PlansScreenState extends State<PlansScreen> {
       }
     } catch (e) {
       if (!mounted) return;
-      Navigator.pop(context); // Fecha o diálogo de loading em caso de erro
+      Navigator.pop(context); // Fecha diálogo de loading em erro
       _mostrarErro('Erro ao processar a compra: $e');
     }
   }
@@ -76,6 +221,95 @@ class _PlansScreenState extends State<PlansScreen> {
     );
   }
 
+  // 📜 Exibe o BottomSheet com o Histórico de Recargas
+  void _exibirHistoricoCompras() {
+    final boxCompras = Hive.box('box_compras');
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.6,
+        minChildSize: 0.3,
+        maxChildSize: 0.85,
+        expand: false,
+        builder: (_, scrollController) => Column(
+          children: [
+            Container(
+              margin: const EdgeInsets.symmetric(vertical: 10),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(color: Colors.grey.shade400, borderRadius: BorderRadius.circular(10)),
+            ),
+            const Padding(
+              padding: EdgeInsets.all(12.0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.history, color: Color(0xFF5C6BC0)),
+                  SizedBox(width: 8),
+                  Text('Histórico de Recargas', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: ValueListenableBuilder(
+                valueListenable: boxCompras.listenable(),
+                builder: (context, Box box, _) {
+                  if (box.isEmpty) {
+                    return const Center(
+                      child: Text(
+                        'Nenhuma recarga encontrada.\nAs suas compras aparecerão aqui.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Colors.grey),
+                      ),
+                    );
+                  }
+
+                  return ListView.builder(
+                    controller: scrollController,
+                    padding: const EdgeInsets.all(16),
+                    itemCount: box.length,
+                    itemBuilder: (context, index) {
+                      final item = Map<String, dynamic>.from(box.getAt(box.length - 1 - index) as Map);
+
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 10),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        child: ListTile(
+                          leading: CircleAvatar(
+                            backgroundColor: const Color(0xFF5C6BC0).withValues(alpha: 0.15),
+                            child: const Icon(Icons.add_shopping_cart, color: Color(0xFF5C6BC0)),
+                          ),
+                          title: Text(
+                            '${item['plano']} (+${item['creditos']} créditos)',
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                          ),
+                          subtitle: Text(
+                            'Data: ${item['dataFormatada'] ?? "-"}',
+                            style: const TextStyle(fontSize: 12, color: Colors.grey),
+                          ),
+                          trailing: Text(
+                            '${item['preco']}',
+                            style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green, fontSize: 14),
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -83,6 +317,13 @@ class _PlansScreenState extends State<PlansScreen> {
         title: const Text('Loja de Créditos'),
         backgroundColor: const Color(0xFF5C6BC0),
         foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.receipt_long),
+            tooltip: 'Histórico de Compras',
+            onPressed: _exibirHistoricoCompras,
+          ),
+        ],
       ),
       body: Background(
         child: SingleChildScrollView(
@@ -105,7 +346,22 @@ class _PlansScreenState extends State<PlansScreen> {
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 14, color: Colors.white70),
               ),
-              const SizedBox(height: 25),
+              const SizedBox(height: 12),
+
+              // 🧾 Botão para abrir o Histórico de Recargas
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  side: const BorderSide(color: Colors.white70),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                ),
+                onPressed: _exibirHistoricoCompras,
+                icon: const Icon(Icons.history, size: 18),
+                label: const Text('Ver Meu Histórico de Recargas', style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+
+              const SizedBox(height: 20),
 
               // Plano 1: Inicial (10 créditos)
               _buildPlanCard(

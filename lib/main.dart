@@ -14,11 +14,13 @@ import 'compare_screen.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Inicializa o Hive para armazenamento local do histórico
+  // Inicializa o Hive para armazenamento local
   await Hive.initFlutter();
 
-  // Abre a box 'simulacoes' antes de iniciar o aplicativo
-  await Hive.openBox('simulacoes');
+  // 📦 Abre as boxes necessárias para o funcionamento completo do app
+  await Hive.openBox('simulacoes');  // Histórico de simulações com IA
+  await Hive.openBox('box_usuario'); // Cadastro e dados do dentista
+  await Hive.openBox('box_compras'); // Histórico de recargas de créditos
 
   runApp(const MyApp());
 }
