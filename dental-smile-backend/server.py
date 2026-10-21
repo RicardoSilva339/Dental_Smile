@@ -18,10 +18,12 @@ def get_db_connection():
     return psycopg2.connect(DATABASE_URL, sslmode='require')
 
 def init_db():
-    """Cria a tabela de usuários com suporte a email, senha, CRO e controle de tentativas de login"""
+    """Garante a criação e atualização automática das colunas da tabela de usuários"""
     try:
         conn = get_db_connection()
         cur = conn.cursor()
+
+        # 1. Cria a tabela base se não existir
         cur.execute("""
             CREATE TABLE IF NOT EXISTS usuarios (
                 id SERIAL PRIMARY KEY,
@@ -29,16 +31,19 @@ def init_db():
                 nome VARCHAR(100),
                 email VARCHAR(100) UNIQUE NOT NULL,
                 cro VARCHAR(50),
-                senha VARCHAR(100) NOT NULL,
                 creditos INTEGER DEFAULT 3,
-                tentativas_login INTEGER DEFAULT 0,
                 criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         """)
+
+        # 2. Adiciona as colunas novas caso a tabela já tenha sido criada anteriormente
+        cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS senha VARCHAR(100);")
+        cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS tentativas_login INTEGER DEFAULT 0;")
+
         conn.commit()
         cur.close()
         conn.close()
-        print("Tabela 'usuarios' (com autenticação e segurança) criada com sucesso!")
+        print("Banco de dados sincronizado e atualizado com sucesso!")
     except Exception as e:
         print(f"Erro ao inicializar o banco de dados: {e}")
 
@@ -48,45 +53,47 @@ init_db()
 @app.route('/register', methods=['POST'])
 def register():
     data = request.get_json(force=True, silent=True) or {}
-    nome = data.get('nome')
+    nome = data.get('nome', '')
     email = data.get('email', '').strip().lower()
-    cro = data.get('cro')
-    senha = data.get('senha')
+    cro = data.get('cro', '')
+    senha = data.get('senha', '')
 
     if not email or not senha:
         return jsonify({"success": False, "error": "E-mail e senha são obrigatórios."}), 400
 
-    api_key = email # Usamos o e-mail como identificador único da conta
+    api_key = email  # O e-mail é a chave única
 
     try:
         conn = get_db_connection()
         cur = conn.cursor()
 
+        # Verifica se o e-mail já existe
+        cur.execute("SELECT id FROM usuarios WHERE email = %s;", (email,))
+        if cur.fetchone():
+            cur.close()
+            conn.close()
+            return jsonify({"success": False, "error": "Este e-mail já está cadastrado."}), 400
+
+        # Insere o novo usuário
         cur.execute("""
-            INSERT INTO usuarios (api_key, nome, email, cro, senha, creditos)
-            VALUES (%s, %s, %s, %s, %s, 3)
-            ON CONFLICT (email) DO NOTHING
-            RETURNING id;
+            INSERT INTO usuarios (api_key, nome, email, cro, senha, creditos, tentativas_login)
+            VALUES (%s, %s, %s, %s, %s, 3, 0);
         """, (api_key, nome, email, cro, senha))
 
-        res = cur.fetchone()
         conn.commit()
         cur.close()
         conn.close()
 
-        if not res:
-            return jsonify({"success": False, "error": "Este e-mail já está registado."}), 400
-
         return jsonify({"success": True, "message": "Conta criada com sucesso com 3 créditos iniciais!"}), 200
     except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+        return jsonify({"success": False, "error": f"Erro no banco: {str(e)}"}), 500
 
-# 🔑 Rota de Login com Proteção de Tentativas de Senha
+# 🔑 Rota de Login com Proteção de Tentativas
 @app.route('/login', methods=['POST'])
 def login():
     data = request.get_json(force=True, silent=True) or {}
     email = data.get('email', '').strip().lower()
-    senha = data.get('senha')
+    senha = data.get('senha', '')
 
     try:
         conn = get_db_connection()
@@ -101,19 +108,18 @@ def login():
             return jsonify({"success": False, "error": "E-mail não encontrado."}), 404
 
         user_id, senha_correta, tentativas, creditos, nome = user
+        tentativas = tentativas or 0
 
-        # Verifica se excedeu o limite de tentativas (Ex: 4 erros)
         if tentativas >= 4:
             cur.close()
             conn.close()
             return jsonify({
                 "success": False,
                 "bloqueado": True,
-                "error": "Conta temporariamente bloqueada por excesso de tentativas incorretas. Por favor, redefina a sua senha."
+                "error": "Conta temporariamente bloqueada por excesso de tentativas. Redefina a senha."
             }), 403
 
         if senha != senha_correta:
-            # Incrementa as tentativas incorretas
             novas_tentativas = tentativas + 1
             cur.execute("UPDATE usuarios SET tentativas_login = %s WHERE id = %s;", (novas_tentativas, user_id))
             conn.commit()
@@ -121,15 +127,10 @@ def login():
             conn.close()
 
             restantes = 4 - novas_tentativas
-            msg = "Senha incorreta."
-            if restantes > 0:
-                msg += f" Restam {restantes} tentativas antes do bloqueio."
-            else:
-                msg += " A sua conta foi bloqueada por segurança."
-
+            msg = f"Senha incorreta. Restam {restantes} tentativas." if restantes > 0 else "Conta bloqueada por segurança."
             return jsonify({"success": False, "error": msg}), 401
 
-        # Login bem-sucedido: reseta as tentativas para 0
+        # Reset de tentativas após login correto
         cur.execute("UPDATE usuarios SET tentativas_login = 0 WHERE id = %s;", (user_id,))
         conn.commit()
         cur.close()
@@ -150,13 +151,13 @@ def login():
 @app.route('/check-credits', methods=['POST'])
 def check_credits():
     data = request.get_json(force=True, silent=True) or {}
-    api_key = data.get('api_key', 'dentista_demo_123')
+    api_key = data.get('api_key', '').strip().lower()
 
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute("SELECT creditos FROM usuarios WHERE api_key = %s;", (api_key,))
+    cur.execute("SELECT creditos FROM usuarios WHERE api_key = %s OR email = %s;", (api_key, api_key))
     user = cur.fetchone()
-    creditos = user[0] if user else 3
+    creditos = user[0] if user else 0
 
     cur.close()
     conn.close()
@@ -166,14 +167,19 @@ def check_credits():
 @app.route('/add-credits', methods=['POST'])
 def add_credits():
     data = request.get_json(force=True, silent=True) or {}
-    api_key = data.get('api_key', 'dentista_demo_123')
+    api_key = data.get('api_key', '').strip().lower()
     quantidade = data.get('quantidade', 10)
 
     conn = get_db_connection()
     cur = conn.cursor()
+
+    # Atualiza tanto por api_key quanto por email
     cur.execute("""
-        UPDATE usuarios SET creditos = creditos + %s WHERE api_key = %s RETURNING creditos;
-    """, (quantidade, api_key))
+        UPDATE usuarios
+        SET creditos = creditos + %s
+        WHERE api_key = %s OR email = %s
+        RETURNING creditos;
+    """, (quantidade, api_key, api_key))
 
     res = cur.fetchone()
     novo_saldo = res[0] if res else quantidade
@@ -187,11 +193,11 @@ def add_credits():
 @app.route('/process-smile', methods=['POST'])
 def process_smile():
     data = request.get_json(force=True, silent=True) or {}
-    api_key = data.get('api_key', 'dentista_demo_123')
+    api_key = data.get('api_key', '').strip().lower()
 
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute("SELECT creditos FROM usuarios WHERE api_key = %s;", (api_key,))
+    cur.execute("SELECT creditos FROM usuarios WHERE api_key = %s OR email = %s;", (api_key, api_key))
     user = cur.fetchone()
     creditos_atuais = user[0] if user else 0
 
@@ -230,7 +236,7 @@ def process_smile():
         ai_image_resized.save(buffered, format="JPEG")
         processed_b64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
 
-        cur.execute("UPDATE usuarios SET creditos = creditos - 1 WHERE api_key = %s RETURNING creditos;", (api_key,))
+        cur.execute("UPDATE usuarios SET creditos = creditos - 1 WHERE api_key = %s OR email = %s RETURNING creditos;", (api_key, api_key))
         novo_saldo = cur.fetchone()[0]
         conn.commit()
 

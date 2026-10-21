@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:dental_smile/api_service.dart';
 import 'background.dart';
-import 'plans_screen.dart'; // 🛒 Importação necessária para o ecrã de planos
+import 'plans_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -20,36 +21,69 @@ class _HomeScreenState extends State<HomeScreen> {
     _buscarCreditos();
   }
 
-  // Busca o saldo de créditos atualizado no servidor Render
+  // 🔍 Retorna a chave do utilizador logado no Hive (e-mail) ou string vazia se deslogado
+  String _obterApiKeyAtual() {
+    final boxUser = Hive.box('box_usuario');
+    return boxUser.get('email', defaultValue: '') as String;
+  }
+
+  // 🔄 Busca o saldo de créditos do e-mail ativo no servidor Render
   Future<void> _buscarCreditos() async {
+    final apiKey = _obterApiKeyAtual();
+
+    // Se não houver utilizador logado, zera o saldo no ecrã
+    if (apiKey.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _creditos = 0;
+          _isLoadingCredits = false;
+        });
+      }
+      return;
+    }
+
     setState(() => _isLoadingCredits = true);
-    final resultado = await ApiService.checkCredits('dentista_demo_123');
+    final resultado = await ApiService.checkCredits(apiKey);
     if (mounted) {
       setState(() {
         if (resultado['success'] == true) {
           _creditos = resultado['creditos'];
+        } else {
+          _creditos = 0;
         }
         _isLoadingCredits = false;
       });
     }
   }
 
-  // 🚨 Modal quando tenta iniciar simulação sem créditos
-  void _mostrarAlertaCreditosEsgotados() {
+  // 🚨 Modal para obrigatoriedade de Login/Cadastro caso tente usar deslogado ou sem saldo
+  void _mostrarAlertaNecessarioLoginOuCreditos() {
+    final apiKey = _obterApiKeyAtual();
+    final bool deslogado = apiKey.isEmpty;
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Row(
+        title: Row(
           children: [
-            Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 28),
-            SizedBox(width: 8),
-            Text('Créditos Esgotados', style: TextStyle(fontWeight: FontWeight.bold)),
+            Icon(
+              deslogado ? Icons.lock_outline : Icons.warning_amber_rounded,
+              color: deslogado ? const Color(0xFF5C6BC0) : Colors.redAccent,
+              size: 28,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              deslogado ? 'Acesso Necessário' : 'Créditos Esgotados',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
           ],
         ),
-        content: const Text(
-          'Você não possui créditos suficientes para gerar uma nova simulação com IA.\n\nRecarregue seu plano para continuar encantando seus pacientes!',
-          style: TextStyle(fontSize: 15),
+        content: Text(
+          deslogado
+              ? 'Por favor, entre com a sua conta de dentista ou cadastre-se para iniciar simulações e gerir os seus créditos.'
+              : 'Você não possui créditos suficientes para gerar uma nova simulação com IA.\n\nRecarregue o seu plano para continuar!',
+          style: const TextStyle(fontSize: 15),
         ),
         actions: [
           TextButton(
@@ -64,15 +98,17 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             onPressed: () async {
               Navigator.pop(context); // Fecha o alerta
-              // ✅ CORRIGIDO: Navegação direta para PlansScreen
               await Navigator.push(
                 context,
                 MaterialPageRoute(builder: (context) => const PlansScreen()),
               );
-              _buscarCreditos(); // Atualiza após voltar da compra
+              _buscarCreditos(); // Recarrega saldo e sessão após voltar
             },
-            icon: const Icon(Icons.shopping_cart, size: 18),
-            label: const Text('Comprar Créditos', style: TextStyle(fontWeight: FontWeight.bold)),
+            icon: Icon(deslogado ? Icons.login : Icons.shopping_cart, size: 18),
+            label: Text(
+              deslogado ? 'Entrar / Cadastrar' : 'Comprar Créditos',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
           ),
         ],
       ),
@@ -101,7 +137,6 @@ class _HomeScreenState extends State<HomeScreen> {
           label: 'RECARREGAR',
           textColor: Colors.amber,
           onPressed: () async {
-            // ✅ CORRIGIDO: Navegação direta para PlansScreen
             await Navigator.push(
               context,
               MaterialPageRoute(builder: (context) => const PlansScreen()),
@@ -115,18 +150,24 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // Handler do clique no botão "Nova Simulação"
   void _aoClicarNovaSimulacao() {
-    if (_creditos != null && _creditos! <= 0) {
-      _mostrarAlertaCreditosEsgotados();
-    } else {
-      if (_creditos != null && _creditos! == 1) {
-        _mostrarAvisoUltimoCredito();
-      }
-      Navigator.pushNamed(context, '/capture').then((_) => _buscarCreditos());
+    final apiKey = _obterApiKeyAtual();
+
+    // Bloqueia caso o dentista esteja deslogado ou sem créditos
+    if (apiKey.isEmpty || (_creditos != null && _creditos! <= 0)) {
+      _mostrarAlertaNecessarioLoginOuCreditos();
+      return;
     }
+
+    if (_creditos == 1) {
+      _mostrarAvisoUltimoCredito();
+    }
+
+    Navigator.pushNamed(context, '/capture').then((_) => _buscarCreditos());
   }
 
   @override
   Widget build(BuildContext context) {
+    final apiKeyAtual = _obterApiKeyAtual();
     final bool saldoBaixo = _creditos != null && _creditos! <= 5;
 
     return Scaffold(
@@ -136,7 +177,7 @@ class _HomeScreenState extends State<HomeScreen> {
         child: SafeArea(
           child: Column(
             children: [
-              // 💎 Topo com o Badge de Créditos Clicável
+              // 💎 Topo com o Badge de Créditos e Utilizador Clicável
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 12.0),
                 child: Row(
@@ -150,10 +191,9 @@ class _HomeScreenState extends State<HomeScreen> {
                         color: Colors.white,
                       ),
                     ),
-                    // Distintivo com mudança dinâmica de cor para vermelho se <= 5 créditos
+                    // Distintivo de Créditos / Acesso
                     GestureDetector(
                       onTap: () async {
-                        // ✅ CORRIGIDO: Navegação direta para PlansScreen
                         await Navigator.push(
                           context,
                           MaterialPageRoute(builder: (context) => const PlansScreen()),
@@ -177,8 +217,10 @@ class _HomeScreenState extends State<HomeScreen> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(
-                              saldoBaixo ? Icons.warning_amber_rounded : Icons.monetization_on,
-                              color: saldoBaixo ? Colors.redAccent : Colors.amber,
+                              apiKeyAtual.isEmpty
+                                  ? Icons.person_off
+                                  : (saldoBaixo ? Icons.warning_amber_rounded : Icons.monetization_on),
+                              color: apiKeyAtual.isEmpty ? Colors.white70 : (saldoBaixo ? Colors.redAccent : Colors.amber),
                               size: 18,
                             ),
                             const SizedBox(width: 6),
@@ -194,7 +236,9 @@ class _HomeScreenState extends State<HomeScreen> {
                                 : Row(
                               children: [
                                 Text(
-                                  '${_creditos ?? 0} Créditos',
+                                  apiKeyAtual.isEmpty
+                                      ? 'Entrar'
+                                      : '${_creditos ?? 0} Créditos',
                                   style: TextStyle(
                                     color: saldoBaixo ? Colors.red.shade100 : Colors.white,
                                     fontWeight: FontWeight.bold,
@@ -203,9 +247,9 @@ class _HomeScreenState extends State<HomeScreen> {
                                 ),
                                 const SizedBox(width: 6),
                                 Icon(
-                                  Icons.shopping_cart,
-                                  color: saldoBaixo ? Colors.redAccent : Colors.amber,
-                                  size: 16,
+                                  apiKeyAtual.isEmpty ? Icons.arrow_forward_ios : Icons.shopping_cart,
+                                  color: apiKeyAtual.isEmpty ? Colors.white70 : (saldoBaixo ? Colors.redAccent : Colors.amber),
+                                  size: 14,
                                 ),
                               ],
                             ),

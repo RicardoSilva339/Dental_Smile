@@ -102,7 +102,7 @@ class ApiService {
     required String color,
     required String shape,
     required String size,
-    String apiKey = 'dentista_demo_123',
+    required String apiKey, // ✅ Ajustado para obrigatório, garantindo o e-mail atual do dentista
   }) async {
     try {
       final url = Uri.parse('$baseUrl/process-smile');

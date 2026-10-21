@@ -1,8 +1,9 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:dental_smile/api_service.dart';
 import 'background.dart';
-import 'plans_screen.dart'; // Certifique-se de importar a tela de planos se necessário
+import 'plans_screen.dart';
 
 class AdjustSmileScreen extends StatefulWidget {
   final File image;
@@ -58,12 +59,21 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
     _selectedShape = widget.initialShape ?? 'oval';
     _selectedSize = widget.initialSize ?? 'medio';
 
-    // Busca os créditos ao abrir o ecrã
+    // Busca os créditos do utilizador ativo ao abrir o ecrã
     _carregarCreditos();
   }
 
+  // 🔍 Retorna o e-mail/api_key do utilizador logado no Hive
+  String _obterApiKeyAtual() {
+    final boxUser = Hive.box('box_usuario');
+    return boxUser.get('email', defaultValue: '') as String;
+  }
+
   Future<void> _carregarCreditos() async {
-    final resultado = await ApiService.checkCredits('dentista_demo_123');
+    final apiKey = _obterApiKeyAtual();
+    if (apiKey.isEmpty) return;
+
+    final resultado = await ApiService.checkCredits(apiKey);
     if (resultado['success'] == true && mounted) {
       setState(() {
         _creditos = resultado['creditos'] ?? 0;
@@ -72,17 +82,26 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
   }
 
   Future<void> _handleProcessSmile() async {
+    final apiKey = _obterApiKeyAtual();
+    if (apiKey.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Sessão expirada. Faça login novamente.')),
+      );
+      return;
+    }
+
     setState(() => _isProcessing = true);
 
     String? processedImagePath;
 
     try {
-      // O ApiService.processSmile agora retorna um Map com o resultado e os créditos atualizados
+      // ✅ Passa obrigatoriamente o apiKey atual do dentista logado
       final resultado = await ApiService.processSmile(
         imageFile: widget.image,
         color: _selectedColor,
         shape: _selectedShape,
         size: _selectedSize,
+        apiKey: apiKey,
       );
 
       if (resultado['success'] == true) {
@@ -90,7 +109,7 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
 
         if (mounted) {
           setState(() {
-            // Atualiza os créditos na tela instantaneamente (ex: descendo de 13 para 12)
+            // Atualiza os créditos na tela instantaneamente
             _creditos = resultado['creditos_restantes'] ?? _creditos;
           });
         }
@@ -184,12 +203,10 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
             child: Center(
               child: GestureDetector(
                 onTap: () async {
-                  // Abre o ecrã de planos e aguarda o retorno para atualizar os créditos se houver compra
                   await Navigator.push(
                     context,
                     MaterialPageRoute(builder: (context) => const PlansScreen()),
                   );
-                  // Atualiza os créditos ao voltar da tela de planos
                   _carregarCreditos();
                 },
                 child: Container(

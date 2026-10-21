@@ -451,6 +451,7 @@ class _PlansScreenState extends State<PlansScreen> {
                     padding: const EdgeInsets.all(16),
                     itemCount: box.length,
                     itemBuilder: (context, index) {
+                      // ✅ CORRIGIDO: Correção da quebra de linha do índice
                       final item = Map<String, dynamic>.from(box.getAt(box.length - 1 - index) as Map);
 
                       return Card(
