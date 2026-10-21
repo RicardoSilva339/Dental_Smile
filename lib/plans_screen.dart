@@ -35,6 +35,12 @@ class _PlansScreenState extends State<PlansScreen> {
     super.dispose();
   }
 
+  // 📧 Validador de formato de e-mail via Expressão Regular (Regex)
+  bool _emailEhValido(String email) {
+    final emailRegExp = RegExp(r"^[a-zA-Z0-9.a-zA-Z0-9.!#$%&'*+-/=?^_`{|}~]+@[a-zA-Z0-9]+\.[a-zA-Z]+");
+    return emailRegExp.hasMatch(email);
+  }
+
   // 💾 Carrega o e-mail salvo se a opção "Lembrar meu e-mail" estiver ativa
   void _carregarEmailSalvo() {
     final boxUser = Hive.box('box_usuario');
@@ -90,7 +96,7 @@ class _PlansScreenState extends State<PlansScreen> {
     final agora = DateTime.now();
 
     final novaCompra = {
-      'emailDentista': emailAtual, // 🔒 Vincula diretamente à conta ativa
+      'emailDentista': emailAtual,
       'idCompra': 'REC-${agora.millisecondsSinceEpoch}',
       'plano': nomePlano,
       'creditos': creditos,
@@ -120,9 +126,12 @@ class _PlansScreenState extends State<PlansScreen> {
                   color: const Color(0xFF5C6BC0),
                 ),
                 const SizedBox(width: 10),
-                Text(
-                  _modoCadastro ? 'Criar Nova Conta' : 'Acesso do Dentista',
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                Expanded(
+                  child: Text(
+                    _modoCadastro ? 'Criar Nova Conta' : 'Acesso do Dentista',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ],
             ),
@@ -246,6 +255,17 @@ class _PlansScreenState extends State<PlansScreen> {
                     return;
                   }
 
+                  // 🚨 VALIDAÇÃO DE SEGURANÇA DO FORMATO DO E-MAIL
+                  if (!_emailEhValido(email)) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Por favor, insira um e-mail válido (ex: usuario@dominio.com).'),
+                        backgroundColor: Colors.orange,
+                      ),
+                    );
+                    return;
+                  }
+
                   final boxUser = Hive.box('box_usuario');
                   await boxUser.put('lembrar_email', _lembrarEmail);
                   if (_lembrarEmail) {
@@ -271,8 +291,13 @@ class _PlansScreenState extends State<PlansScreen> {
                       if (ctx.mounted) Navigator.pop(ctx);
                     } else {
                       if (ctx.mounted) {
+                        // Trata erros de SQL para não exibir trechos de código crus
+                        String erroMsg = res['error'] ?? 'Erro no cadastro.';
+                        if (erroMsg.contains('SELECT') || erroMsg.contains('LINE')) {
+                          erroMsg = 'Não foi possível concluir o cadastro. Verifique os dados e tente novamente.';
+                        }
                         ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text(res['error'] ?? 'Erro no cadastro.'), backgroundColor: Colors.red),
+                          SnackBar(content: Text(erroMsg), backgroundColor: Colors.red),
                         );
                       }
                     }
@@ -287,9 +312,13 @@ class _PlansScreenState extends State<PlansScreen> {
                       if (ctx.mounted) Navigator.pop(ctx);
                     } else {
                       if (ctx.mounted) {
+                        String erroMsg = res['error'] ?? 'Erro ao efetuar login.';
+                        if (erroMsg.contains('SELECT') || erroMsg.contains('LINE')) {
+                          erroMsg = 'Falha na autenticação. Verifique seu e-mail e senha.';
+                        }
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
-                            content: Text(res['error'] ?? 'Erro ao efetuar login.'),
+                            content: Text(erroMsg),
                             backgroundColor: Colors.red,
                             duration: const Duration(seconds: 4),
                           ),
@@ -444,7 +473,6 @@ class _PlansScreenState extends State<PlansScreen> {
               child: ValueListenableBuilder(
                 valueListenable: boxCompras.listenable(),
                 builder: (context, Box box, _) {
-                  // Filtra apenas as compras correspondentes ao utilizador logado
                   final comprasDoUsuario = box.values.where((item) {
                     if (item is Map) {
                       final mapItem = Map<String, dynamic>.from(item);
