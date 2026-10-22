@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
-import 'package:device_info_plus/device_info_plus.dart'; // ✅ Necessário para capturar o ID do aparelho
+import 'package:device_info_plus/device_info_plus.dart';
 
 class ApiService {
   static const String baseUrl = 'https://dental-smile-backend-iso3.onrender.com';
@@ -14,7 +14,7 @@ class ApiService {
     try {
       if (Platform.isAndroid) {
         final AndroidDeviceInfo androidInfo = await deviceInfo.androidInfo;
-        return androidInfo.id; // ID único do Android
+        return androidInfo.id.isNotEmpty ? androidInfo.id : (androidInfo.device ?? 'android_device');
       } else if (Platform.isIOS) {
         final IosDeviceInfo iosInfo = await deviceInfo.iosInfo;
         return iosInfo.identifierForVendor ?? 'unknown_ios';
@@ -26,7 +26,7 @@ class ApiService {
   }
 
   // 🛡️ Verifica ou registra o dispositivo no servidor (Garante os 3 créditos de cortesia por aparelho)
-  static Future<int> checkOrRegisterDevice() async {
+  static Future<dynamic> checkOrRegisterDevice() async {
     try {
       final String deviceId = await _getDeviceId();
       final url = Uri.parse('$baseUrl/check-device');
@@ -40,13 +40,13 @@ class ApiService {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true) {
-          return data['creditos'] ?? 3;
+          return data; // Retorna o map completo {'success': true, 'creditos': X, 'novo': bool}
         }
       }
     } catch (e) {
       debugPrint("Erro ao verificar dispositivo: $e");
     }
-    return 3; // Fallback de segurança
+    return {'success': false, 'creditos': 3}; // Fallback de segurança
   }
 
   // 📝 Registo de novo utilizador com senha
@@ -138,7 +138,7 @@ class ApiService {
     return false;
   }
 
-  // 🪄 Envia a foto em Base64 para o servidor gerar o sorriso e descontar o crédito
+  // 🪄 Envia a foto em Base64 para o servidor gerar o sorriso, descontar o crédito e aceitar Device ID
   static Future<Map<String, dynamic>> processSmile({
     required File imageFile,
     required String color,
@@ -152,6 +152,12 @@ class ApiService {
       List<int> imageBytes = await imageFile.readAsBytes();
       String base64Image = base64Encode(imageBytes);
 
+      // 📱 Se a apiKey estiver vazia, captura o device_id do aparelho atual
+      String deviceId = '';
+      if (apiKey.isEmpty) {
+        deviceId = await _getDeviceId();
+      }
+
       String customPrompt = 'perfect white smile, color $color, shape $shape, size $size, professional cosmetic dentistry, highly detailed';
 
       final response = await http.post(
@@ -159,6 +165,7 @@ class ApiService {
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'api_key': apiKey,
+          'device_id': deviceId, // 👈 Enviado para o backend conseguir abater o crédito do convidado!
           'image': base64Image,
           'prompt': customPrompt,
         }),
