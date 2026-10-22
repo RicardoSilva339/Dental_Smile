@@ -24,7 +24,6 @@ def init_db():
         conn = get_db_connection()
         cur = conn.cursor()
 
-        # Cria a tabela base completa caso ela não exista
         cur.execute("""
             CREATE TABLE IF NOT EXISTS usuarios (
                 id SERIAL PRIMARY KEY,
@@ -39,7 +38,6 @@ def init_db():
             );
         """)
 
-        # Garante individualmente que cada coluna existe
         cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS email VARCHAR(100);")
         cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS senha VARCHAR(100);")
         cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS cro VARCHAR(50);")
@@ -94,7 +92,6 @@ def check_device():
         if row:
             creditos = row[0]
         else:
-            # Primeiro acesso deste telemóvel: ganha 3 créditos de cortesia
             cur.execute("""
                 INSERT INTO dispositivos (device_id, creditos)
                 VALUES (%s, 3)
@@ -190,7 +187,6 @@ def login():
             conn.close()
 
             restantes = 4 - novas_tentativas
-
             msg = f"Senha incorreta. Restam {restantes} tentativas." if restantes > 0 else "Conta bloqueada por segurança."
             return jsonify({"success": False, "error": msg}), 401
 
@@ -228,32 +224,47 @@ def check_credits():
     conn.close()
     return jsonify({"success": True, "creditos": creditos}), 200
 
-# 💳 Adicionar Créditos
+# 💳 Adicionar Créditos (Blindado para somar exatamente ao saldo correto)
 @app.route('/add-credits', methods=['POST'])
 def add_credits():
     data = request.get_json(force=True, silent=True) or {}
     api_key = data.get('api_key', '').strip().lower()
-    quantidade = data.get('quantidade', 10)
+    device_id = data.get('device_id', '').strip()
+    quantidade = int(data.get('quantidade', 10))
 
     conn = get_db_connection()
     cur = conn.cursor()
 
-    cur.execute("""
-        UPDATE usuarios
-        SET creditos = creditos + %s
-        WHERE api_key = %s OR email = %s
-        RETURNING creditos;
-    """, (quantidade, api_key, api_key))
+    novo_saldo = quantidade
 
-    res = cur.fetchone()
-    novo_saldo = res[0] if res else quantidade
+    if api_key:
+        cur.execute("""
+            UPDATE usuarios
+            SET creditos = creditos + %s
+            WHERE api_key = %s OR email = %s
+            RETURNING creditos;
+        """, (quantidade, api_key, api_key))
+        res = cur.fetchone()
+        if res:
+            novo_saldo = res[0]
+    elif device_id:
+        cur.execute("""
+            UPDATE dispositivos
+            SET creditos = creditos + %s
+            WHERE device_id = %s
+            RETURNING creditos;
+        """, (quantidade, device_id))
+        res = cur.fetchone()
+        if res:
+            novo_saldo = res[0]
+
     conn.commit()
     cur.close()
     conn.close()
 
     return jsonify({"success": True, "novo_saldo": novo_saldo}), 200
 
-# 🪄 Processar Sorriso (Suporta Utilizador Logado ou Convidado via Device ID)
+# 🪄 Processar Sorriso
 @app.route('/process-smile', methods=['POST'])
 def process_smile():
     data = request.get_json(force=True, silent=True) or {}
@@ -302,7 +313,7 @@ def process_smile():
         try:
             payload = {"inputs": prompt_custom, "parameters": {"strength": 0.45}}
             response = requests.post(HF_API_URL, headers=HEADERS, files={"image": image_data}, json=payload, timeout=30)
-            if response.status_code == 200:
+            if response.status_color == 200:
                 ai_image = Image.open(io.BytesIO(response.content))
                 ai_image_resized = ai_image.resize((orig_width, orig_height), Image.Resampling.LANCZOS)
         except Exception:
@@ -315,7 +326,6 @@ def process_smile():
         ai_image_resized.save(buffered, format="JPEG")
         processed_b64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
 
-        # Decrementa o crédito do lugar correto (usuário ou dispositivo)
         if is_convidado:
             cur.execute("UPDATE dispositivos SET creditos = creditos - 1 WHERE device_id = %s RETURNING creditos;", (device_id,))
         else:

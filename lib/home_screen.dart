@@ -45,7 +45,6 @@ class _HomeScreenState extends State<HomeScreen> {
             _creditos = resDevice['creditos'] ?? 0;
             final bool ehNovoServidor = resDevice['novo'] ?? false;
 
-            // 🎁 Exibe se o backend indicar que é novo OU se o Hive nunca exibiu neste aparelho
             if (!jaExibiuPopupLocal || ehNovoServidor) {
               boxUser.put('ja_exibiu_popup', true);
               WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -134,6 +133,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // 🚨 Modal quando o utilizador tenta simular e está com saldo zerado
   void _mostrarAlertaCreditosEsgotados() {
+    final bool estaLogado = _obterApiKeyAtual().isNotEmpty;
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -151,9 +152,11 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ],
         ),
-        content: const Text(
-          'Você utilizou todas as suas simulações de cortesia.\n\nAdquira um novo pacote para continuar gerando simulações de sorriso!',
-          style: TextStyle(fontSize: 15),
+        content: Text(
+          estaLogado
+              ? 'Você utilizou todas as suas simulações. Adquira um novo pacote para continuar!'
+              : 'Seus 3 créditos gratuitos acabaram.\n\nAcesse sua conta ou adquira um pacote de simulações.',
+          style: const TextStyle(fontSize: 15),
         ),
         actions: [
           TextButton(
@@ -175,42 +178,35 @@ class _HomeScreenState extends State<HomeScreen> {
               _inicializarECarregarCreditos();
             },
             icon: const Icon(Icons.shopping_cart, size: 18),
-            label: const Text('Comprar Créditos', style: TextStyle(fontWeight: FontWeight.bold)),
+            label: const Text('Acessar Loja / Conta', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
     );
   }
 
-  // ⚠️ Aviso discreto quando restando apenas 1 crédito
+  // ⚠️ Aviso discreto e dinâmico que desaparece sozinho em 3 segundos
   void _mostrarAvisoUltimoCredito() {
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: const Row(
           children: [
-            Icon(Icons.info_outline, color: Colors.amber),
+            Icon(Icons.info_outline, color: Colors.amber, size: 20),
             SizedBox(width: 10),
             Expanded(
               child: Text(
                 'Atenção: Esta é a sua última simulação disponível!',
-                style: TextStyle(fontWeight: FontWeight.bold),
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
               ),
             ),
           ],
         ),
         backgroundColor: Colors.red.shade800,
-        duration: const Duration(seconds: 3),
-        action: SnackBarAction(
-          label: 'RECARREGAR',
-          textColor: Colors.amber,
-          onPressed: () async {
-            await Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => const PlansScreen()),
-            );
-            _inicializarECarregarCreditos();
-          },
-        ),
+        duration: const Duration(seconds: 3), // ⏱️ Desaparece automaticamente em 3 segundos!
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
     );
   }
@@ -242,7 +238,7 @@ class _HomeScreenState extends State<HomeScreen> {
         child: SafeArea(
           child: Column(
             children: [
-              // 💎 Topo Inteligente com Badge de Créditos e Botão Entrar
+              // 💎 Topo Inteligente com Badge de Créditos e Botão Entrar / Conta
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 12.0),
                 child: Row(
@@ -257,7 +253,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
 
-                    // 🏷️ Pílula Interativa de Créditos + Entrar
+                    // 🏷️ Pílula Interativa de Créditos + Entrar / Conta
                     Container(
                       decoration: BoxDecoration(
                         color: saldoZerado
@@ -272,7 +268,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          // 🛒 Lado Esquerdo: Saldo de Créditos (Clica e vai para a Loja)
+                          // 🛒 Lado Esquerdo: Saldo de Créditos
                           InkWell(
                             borderRadius: const BorderRadius.horizontal(left: Radius.circular(20)),
                             onTap: () async {
@@ -317,7 +313,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           // Divisória vertical sutil
                           Container(height: 16, width: 1, color: Colors.white30),
 
-                          // 🔐 Lado Direito: Acesso / Login
+                          // 🔐 Lado Direito: Acessa a PlansScreen para gerenciar conta ou recarregar
                           InkWell(
                             borderRadius: const BorderRadius.horizontal(right: Radius.circular(20)),
                             onTap: () async {
