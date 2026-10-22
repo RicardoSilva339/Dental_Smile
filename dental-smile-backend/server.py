@@ -190,6 +190,7 @@ def login():
             conn.close()
 
             restantes = 4 - novas_tentativas
+
             msg = f"Senha incorreta. Restam {restantes} tentativas." if restantes > 0 else "Conta bloqueada por segurança."
             return jsonify({"success": False, "error": msg}), 401
 
@@ -252,17 +253,32 @@ def add_credits():
 
     return jsonify({"success": True, "novo_saldo": novo_saldo}), 200
 
-# 🪄 Processar Sorriso
+# 🪄 Processar Sorriso (Suporta Utilizador Logado ou Convidado via Device ID)
 @app.route('/process-smile', methods=['POST'])
 def process_smile():
     data = request.get_json(force=True, silent=True) or {}
     api_key = data.get('api_key', '').strip().lower()
+    device_id = data.get('device_id', '').strip()
 
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute("SELECT creditos FROM usuarios WHERE api_key = %s OR email = %s;", (api_key, api_key))
-    user = cur.fetchone()
-    creditos_atuais = user[0] if user else 0
+
+    creditos_atuais = 0
+    is_convidado = False
+
+    if api_key:
+        cur.execute("SELECT creditos FROM usuarios WHERE api_key = %s OR email = %s;", (api_key, api_key))
+        user = cur.fetchone()
+        creditos_atuais = user[0] if user else 0
+    elif device_id:
+        is_convidado = True
+        cur.execute("SELECT creditos FROM dispositivos WHERE device_id = %s;", (device_id,))
+        row = cur.fetchone()
+        creditos_atuais = row[0] if row else 0
+    else:
+        cur.close()
+        conn.close()
+        return jsonify({"success": False, "error": "Identificação inválida."}), 400
 
     if creditos_atuais <= 0:
         cur.close()
@@ -299,7 +315,12 @@ def process_smile():
         ai_image_resized.save(buffered, format="JPEG")
         processed_b64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
 
-        cur.execute("UPDATE usuarios SET creditos = creditos - 1 WHERE api_key = %s OR email = %s RETURNING creditos;", (api_key, api_key))
+        # Decrementa o crédito do lugar correto (usuário ou dispositivo)
+        if is_convidado:
+            cur.execute("UPDATE dispositivos SET creditos = creditos - 1 WHERE device_id = %s RETURNING creditos;", (device_id,))
+        else:
+            cur.execute("UPDATE usuarios SET creditos = creditos - 1 WHERE api_key = %s OR email = %s RETURNING creditos;", (api_key, api_key))
+
         novo_saldo = cur.fetchone()[0]
         conn.commit()
 

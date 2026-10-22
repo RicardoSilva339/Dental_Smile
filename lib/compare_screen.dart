@@ -6,8 +6,6 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'background.dart';
 import 'adjust_smile_screen.dart';
-import 'plans_screen.dart'; // 🛒 Importação necessária para a tela de planos
-import 'api_service.dart';    // 🌐 Importação para buscar os créditos do PostgreSQL
 
 class CompareScreen extends StatefulWidget {
   const CompareScreen({super.key});
@@ -27,7 +25,6 @@ class _CompareScreenState extends State<CompareScreen> {
   String? _selectedSize;
   String? _simulationId;
 
-  int _creditos = 0; // 💳 Variável para armazenar o saldo atual de créditos
   bool _isInit = true;
 
   @override
@@ -39,8 +36,8 @@ class _CompareScreenState extends State<CompareScreen> {
         _originalPath = args['originalPath'] ?? args['original'];
         _processedPath = args['processedPath'] ?? args['processed'] ?? args['image'] ?? args['resultPath'];
 
-        _selectedColor = args['color'] ?? 'A1';
-        _selectedShape = args['shape'] ?? 'Natural';
+        _selectedColor = args['color'] ?? 'Natural';
+        _selectedShape = args['shape'] ?? 'Oval';
         _selectedSize = args['size'] ?? 'Médio';
         _simulationId = args['simulationId'] ?? 'DS-${DateTime.now().millisecondsSinceEpoch.toString().substring(5)}';
 
@@ -50,17 +47,6 @@ class _CompareScreenState extends State<CompareScreen> {
         }
       }
       _isInit = false;
-      _carregarCreditos(); // 🔄 Busca os créditos assim que abre a tela
-    }
-  }
-
-  // 🔍 Função para buscar os créditos atualizados do PostgreSQL
-  Future<void> _carregarCreditos() async {
-    final resultado = await ApiService.checkCredits('dentista_demo_123');
-    if (resultado['success'] == true && mounted) {
-      setState(() {
-        _creditos = resultado['creditos'] ?? 0;
-      });
     }
   }
 
@@ -136,7 +122,7 @@ class _CompareScreenState extends State<CompareScreen> {
             ),
             pw.Divider(height: 16, thickness: 1, color: PdfColors.grey400),
             pw.Text(
-              'Parâmetros do Planeamento:',
+              'Parâmetros do Planejamento:',
               style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold),
             ),
             pw.SizedBox(height: 4),
@@ -286,47 +272,7 @@ class _CompareScreenState extends State<CompareScreen> {
         backgroundColor: const Color(0xFF5C6BC0),
         foregroundColor: Colors.white,
         actions: [
-          // 🛒 Botão de Créditos / Carrinho interativo no topo
-          Padding(
-            padding: const EdgeInsets.only(right: 12.0),
-            child: Center(
-              child: GestureDetector(
-                onTap: () async {
-                  await Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => const PlansScreen()),
-                  );
-                  // Atualiza os créditos ao voltar da tela de planos
-                  _carregarCreditos();
-                },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.3),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Colors.amber.withValues(alpha: 0.6)),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.monetization_on, color: Colors.amber, size: 18),
-                      const SizedBox(width: 6),
-                      Text(
-                        '$_creditos Créditos',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      const Icon(Icons.shopping_cart, color: Colors.amber, size: 16),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
+          // 🏠 Apenas o botão Home, limpo e direto para a tela inicial
           IconButton(
             icon: const Icon(Icons.home),
             onPressed: () => Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false),
@@ -343,7 +289,7 @@ class _CompareScreenState extends State<CompareScreen> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                   decoration: BoxDecoration(
-                    color: Colors.indigo.withValues(alpha: 0.1),
+                    color: Colors.indigo.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
@@ -380,7 +326,7 @@ class _CompareScreenState extends State<CompareScreen> {
                         borderRadius: BorderRadius.circular(16),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.15),
+                            color: Colors.black.withOpacity(0.15),
                             blurRadius: 10,
                             offset: const Offset(0, 4),
                           ),
@@ -446,7 +392,7 @@ class _CompareScreenState extends State<CompareScreen> {
                                         shape: BoxShape.circle,
                                         boxShadow: [
                                           BoxShadow(
-                                            color: Colors.black.withValues(alpha: 0.3),
+                                            color: Colors.black.withOpacity(0.3),
                                             blurRadius: 6,
                                           )
                                         ],
@@ -468,7 +414,7 @@ class _CompareScreenState extends State<CompareScreen> {
                               child: Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                 decoration: BoxDecoration(
-                                  color: Colors.black.withValues(alpha: 0.65),
+                                  color: Colors.black.withOpacity(0.65),
                                   borderRadius: BorderRadius.circular(6),
                                 ),
                                 child: const Text(
@@ -484,7 +430,7 @@ class _CompareScreenState extends State<CompareScreen> {
                               child: Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                 decoration: BoxDecoration(
-                                  color: Colors.indigo.withValues(alpha: 0.85),
+                                  color: Colors.indigo.withOpacity(0.85),
                                   borderRadius: BorderRadius.circular(6),
                                 ),
                                 child: const Text(
@@ -513,7 +459,7 @@ class _CompareScreenState extends State<CompareScreen> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   filled: true,
-                  fillColor: Colors.white.withValues(alpha: 0.9),
+                  fillColor: Colors.white.withOpacity(0.9),
                 ),
               ),
 

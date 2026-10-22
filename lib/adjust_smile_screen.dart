@@ -60,7 +60,7 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
     _selectedShape = widget.initialShape ?? 'oval';
     _selectedSize = widget.initialSize ?? 'medio';
 
-    // Busca os créditos do utilizador ativo ou do dispositivo ao abrir a tela
+    // Busca os créditos ativos ao abrir a tela
     _carregarCreditos();
   }
 
@@ -106,7 +106,7 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
   Future<void> _handleProcessSmile() async {
     final apiKey = _obterApiKeyAtual();
 
-    // Se estiver deslogado e zerado de créditos, direciona para os planos
+    // Se estiver deslogado e zerado de créditos, direciona para a compra
     if (apiKey.isEmpty && _creditos <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -127,7 +127,7 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
     String? processedImagePath;
 
     try {
-      // ✅ Envia apiKey se logado ou string vazia se convidado (Device ID)
+      // Envia a chamada de processamento da IA
       final resultado = await ApiService.processSmile(
         imageFile: widget.image,
         color: _selectedColor,
@@ -141,14 +141,19 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
 
         if (mounted) {
           setState(() {
-            _creditos = resultado['creditos_restantes'] ?? (_creditos > 0 ? _creditos - 1 : 0);
+            // Se o backend retornou os créditos restantes de forma válida, usa ele; senão decrementa 1 localmente
+            if (resultado['creditos_restantes'] != null && resultado['creditos_restantes'] is int) {
+              _creditos = resultado['creditos_restantes'];
+            } else if (_creditos > 0) {
+              _creditos = _creditos - 1;
+            }
           });
         }
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(resultado['error'] ?? 'Erro ao processar simulação'),
+              content: Text(resultado['error'] ?? 'Créditos insuficientes ou falha na simulação.'),
               backgroundColor: Colors.redAccent,
             ),
           );
@@ -233,63 +238,48 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
         backgroundColor: const Color(0xFF5C6BC0),
         foregroundColor: Colors.white,
         actions: [
-          // 🛒 Botão de Créditos / Carrinho interativo no topo
+          // 🛡️ Apenas Exibição Informativa (Estática, sem clique/redirecionamento)
           Padding(
             padding: const EdgeInsets.only(right: 12.0),
             child: Center(
-              child: GestureDetector(
-                onTap: () async {
-                  await Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => const PlansScreen()),
-                  );
-                  _carregarCreditos();
-                },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: saldoZerado
-                        ? Colors.red.shade900.withOpacity(0.8)
-                        : Colors.black.withOpacity(0.3),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: saldoZerado ? Colors.redAccent : Colors.amber.withOpacity(0.6),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: saldoZerado
+                      ? Colors.red.shade900.withOpacity(0.8)
+                      : Colors.black.withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: saldoZerado ? Colors.redAccent : Colors.amber.withOpacity(0.6),
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      saldoZerado ? Icons.warning_amber_rounded : Icons.stars,
+                      color: saldoZerado ? Colors.redAccent : Colors.amber,
+                      size: 18,
                     ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        saldoZerado ? Icons.add_shopping_cart : Icons.stars,
-                        color: saldoZerado ? Colors.redAccent : Colors.amber,
-                        size: 18,
+                    const SizedBox(width: 6),
+                    _isLoadingCredits
+                        ? const SizedBox(
+                      width: 12,
+                      height: 12,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
                       ),
-                      const SizedBox(width: 6),
-                      _isLoadingCredits
-                          ? const SizedBox(
-                        width: 12,
-                        height: 12,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                          : Text(
-                        '$_creditos CR',
-                        style: TextStyle(
-                          color: saldoZerado ? Colors.red.shade100 : Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
-                        ),
+                    )
+                        : Text(
+                      '$_creditos CR',
+                      style: TextStyle(
+                        color: saldoZerado ? Colors.red.shade100 : Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
                       ),
-                      const SizedBox(width: 6),
-                      Icon(
-                        Icons.shopping_cart,
-                        color: saldoZerado ? Colors.redAccent : Colors.amber,
-                        size: 16,
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
             ),
