@@ -28,6 +28,7 @@ class AdjustSmileScreen extends StatefulWidget {
 class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
   bool _isProcessing = false;
   int _creditos = 0; // Armazena o saldo atual de créditos
+  bool _isLoadingCredits = true;
 
   late String _selectedColor;
   late String _selectedShape;
@@ -59,7 +60,7 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
     _selectedShape = widget.initialShape ?? 'oval';
     _selectedSize = widget.initialSize ?? 'medio';
 
-    // Busca os créditos do utilizador ativo ao abrir o ecrã
+    // Busca os créditos do utilizador ativo ou do dispositivo ao abrir a tela
     _carregarCreditos();
   }
 
@@ -69,24 +70,55 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
     return boxUser.get('email', defaultValue: '') as String;
   }
 
+  // 🔄 Busca créditos via e-mail ou via Device ID se estiver deslogado
   Future<void> _carregarCreditos() async {
-    final apiKey = _obterApiKeyAtual();
-    if (apiKey.isEmpty) return;
+    if (!mounted) return;
+    setState(() => _isLoadingCredits = true);
 
-    final resultado = await ApiService.checkCredits(apiKey);
-    if (resultado['success'] == true && mounted) {
-      setState(() {
-        _creditos = resultado['creditos'] ?? 0;
-      });
+    final apiKey = _obterApiKeyAtual();
+
+    if (apiKey.isNotEmpty) {
+      final resultado = await ApiService.checkCredits(apiKey);
+      if (mounted && resultado['success'] == true) {
+        setState(() {
+          _creditos = resultado['creditos'] ?? 0;
+          _isLoadingCredits = false;
+        });
+      }
+    } else {
+      // Convidado: busca os créditos do aparelho via Device ID
+      final dynamic resDevice = await ApiService.checkOrRegisterDevice();
+      if (mounted) {
+        setState(() {
+          if (resDevice is Map<String, dynamic> && resDevice['success'] == true) {
+            _creditos = resDevice['creditos'] ?? 0;
+          } else if (resDevice is int) {
+            _creditos = resDevice;
+          } else {
+            _creditos = 0;
+          }
+          _isLoadingCredits = false;
+        });
+      }
     }
   }
 
   Future<void> _handleProcessSmile() async {
     final apiKey = _obterApiKeyAtual();
-    if (apiKey.isEmpty) {
+
+    // Se estiver deslogado e zerado de créditos, direciona para os planos
+    if (apiKey.isEmpty && _creditos <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Sessão expirada. Faça login novamente.')),
+        const SnackBar(
+          content: Text('Seus créditos de cortesia acabaram. Adquira um pacote para continuar!'),
+          backgroundColor: Colors.redAccent,
+        ),
       );
+      await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const PlansScreen()),
+      );
+      _carregarCreditos();
       return;
     }
 
@@ -95,13 +127,13 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
     String? processedImagePath;
 
     try {
-      // ✅ Passa obrigatoriamente o apiKey atual do dentista logado
+      // ✅ Envia apiKey se logado ou string vazia se convidado (Device ID)
       final resultado = await ApiService.processSmile(
         imageFile: widget.image,
         color: _selectedColor,
         shape: _selectedShape,
         size: _selectedSize,
-        apiKey: apiKey,
+        apiKey: apiKey.isNotEmpty ? apiKey : '',
       );
 
       if (resultado['success'] == true) {
@@ -109,14 +141,16 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
 
         if (mounted) {
           setState(() {
-            // Atualiza os créditos na tela instantaneamente
-            _creditos = resultado['creditos_restantes'] ?? _creditos;
+            _creditos = resultado['creditos_restantes'] ?? (_creditos > 0 ? _creditos - 1 : 0);
           });
         }
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(resultado['error'] ?? 'Erro ao processar simulação')),
+            SnackBar(
+              content: Text(resultado['error'] ?? 'Erro ao processar simulação'),
+              backgroundColor: Colors.redAccent,
+            ),
           );
         }
       }
@@ -172,7 +206,7 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
                   label: Text(entry.value),
                   selected: isSelected,
                   selectedColor: const Color(0xFF5C6BC0),
-                  backgroundColor: Colors.white.withValues(alpha: 0.85),
+                  backgroundColor: Colors.white.withOpacity(0.85),
                   labelStyle: TextStyle(
                     color: isSelected ? Colors.white : Colors.black87,
                     fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
@@ -191,6 +225,8 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final bool saldoZerado = _creditos <= 0;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Personalize o Sorriso'),
@@ -212,25 +248,46 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.3),
+                    color: saldoZerado
+                        ? Colors.red.shade900.withOpacity(0.8)
+                        : Colors.black.withOpacity(0.3),
                     borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Colors.amber.withValues(alpha: 0.6)),
+                    border: Border.all(
+                      color: saldoZerado ? Colors.redAccent : Colors.amber.withOpacity(0.6),
+                    ),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.monetization_on, color: Colors.amber, size: 18),
+                      Icon(
+                        saldoZerado ? Icons.add_shopping_cart : Icons.stars,
+                        color: saldoZerado ? Colors.redAccent : Colors.amber,
+                        size: 18,
+                      ),
                       const SizedBox(width: 6),
-                      Text(
-                        '$_creditos Créditos',
-                        style: const TextStyle(
+                      _isLoadingCredits
+                          ? const SizedBox(
+                        width: 12,
+                        height: 12,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
                           color: Colors.white,
+                        ),
+                      )
+                          : Text(
+                        '$_creditos CR',
+                        style: TextStyle(
+                          color: saldoZerado ? Colors.red.shade100 : Colors.white,
                           fontWeight: FontWeight.bold,
                           fontSize: 13,
                         ),
                       ),
                       const SizedBox(width: 6),
-                      const Icon(Icons.shopping_cart, color: Colors.amber, size: 16),
+                      Icon(
+                        Icons.shopping_cart,
+                        color: saldoZerado ? Colors.redAccent : Colors.amber,
+                        size: 16,
+                      ),
                     ],
                   ),
                 ),

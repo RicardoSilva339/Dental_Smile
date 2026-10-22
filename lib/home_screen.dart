@@ -32,6 +32,8 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() => _isLoadingCredits = true);
 
     final apiKey = _obterApiKeyAtual();
+    final boxUser = Hive.box('box_usuario');
+    final bool jaExibiuPopupLocal = boxUser.get('ja_exibiu_popup', defaultValue: false) as bool;
 
     if (apiKey.isEmpty) {
       // 📱 Utilizador Convidado: Registra/Verifica o Device ID na nuvem e busca os créditos do aparelho
@@ -41,16 +43,23 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() {
           if (resDevice is Map<String, dynamic> && resDevice['success'] == true) {
             _creditos = resDevice['creditos'] ?? 0;
-            final bool ehNovoAparelho = resDevice['novo'] ?? false;
+            final bool ehNovoServidor = resDevice['novo'] ?? false;
 
-            // 🎁 Dispara o Pop-up de Boas-Vindas didático no primeiro acesso do aparelho
-            if (ehNovoAparelho) {
+            // 🎁 Exibe se o backend indicar que é novo OU se o Hive nunca exibiu neste aparelho
+            if (!jaExibiuPopupLocal || ehNovoServidor) {
+              boxUser.put('ja_exibiu_popup', true);
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 _exibirPopupBoasVindas();
               });
             }
           } else if (resDevice is int) {
             _creditos = resDevice;
+            if (!jaExibiuPopupLocal) {
+              boxUser.put('ja_exibiu_popup', true);
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                _exibirPopupBoasVindas();
+              });
+            }
           } else {
             _creditos = 0;
           }
