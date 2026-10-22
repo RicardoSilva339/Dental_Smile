@@ -50,7 +50,6 @@ class _PlansScreenState extends State<PlansScreen> {
 
     setState(() {
       _lembrarEmail = lembrar;
-      // Se não houver sessão ativa, garante que o campo comece limpo (exceto se lembrar estiver ativo e houver salvo)
       if (emailAtivo.isEmpty) {
         if (lembrar && emailSalvo.isNotEmpty) {
           _emailController.text = emailSalvo;
@@ -78,8 +77,8 @@ class _PlansScreenState extends State<PlansScreen> {
     final boxUser = Hive.box('box_usuario');
 
     await boxUser.put('is_registrado', false);
-    await boxUser.put('email', ''); // Limpa a sessão ativa
-    await boxUser.put('email_salvo', ''); // Zera o e-mail guardado em cache
+    await boxUser.put('email', '');
+    await boxUser.put('email_salvo', '');
 
     _emailController.clear();
     _senhaController.clear();
@@ -261,7 +260,6 @@ class _PlansScreenState extends State<PlansScreen> {
                     return;
                   }
 
-                  // 🚨 VALIDAÇÃO DE SEGURANÇA DO FORMATO DO E-MAIL
                   if (!_emailEhValido(email)) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(

@@ -3,9 +3,51 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
+import 'package:device_info_plus/device_info_plus.dart'; // ✅ Necessário para capturar o ID do aparelho
 
 class ApiService {
   static const String baseUrl = 'https://dental-smile-backend-iso3.onrender.com';
+
+  // 📱 Obtém o ID único do dispositivo físico (Anti-Reinstalação)
+  static Future<String> _getDeviceId() async {
+    final DeviceInfoPlugin deviceInfo = DeviceInfoPlugin();
+    try {
+      if (Platform.isAndroid) {
+        final AndroidDeviceInfo androidInfo = await deviceInfo.androidInfo;
+        return androidInfo.id; // ID único do Android
+      } else if (Platform.isIOS) {
+        final IosDeviceInfo iosInfo = await deviceInfo.iosInfo;
+        return iosInfo.identifierForVendor ?? 'unknown_ios';
+      }
+    } catch (e) {
+      debugPrint("Erro ao obter Device ID: $e");
+    }
+    return 'unknown_device';
+  }
+
+  // 🛡️ Verifica ou registra o dispositivo no servidor (Garante os 3 créditos de cortesia por aparelho)
+  static Future<int> checkOrRegisterDevice() async {
+    try {
+      final String deviceId = await _getDeviceId();
+      final url = Uri.parse('$baseUrl/check-device');
+
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'device_id': deviceId}),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true) {
+          return data['creditos'] ?? 3;
+        }
+      }
+    } catch (e) {
+      debugPrint("Erro ao verificar dispositivo: $e");
+    }
+    return 3; // Fallback de segurança
+  }
 
   // 📝 Registo de novo utilizador com senha
   static Future<Map<String, dynamic>> register({
@@ -102,7 +144,7 @@ class ApiService {
     required String color,
     required String shape,
     required String size,
-    required String apiKey, // ✅ Ajustado para obrigatório, garantindo o e-mail atual do dentista
+    required String apiKey,
   }) async {
     try {
       final url = Uri.parse('$baseUrl/process-smile');

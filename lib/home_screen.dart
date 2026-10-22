@@ -12,82 +12,139 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  int? _creditos;
+  int _creditos = 0;
   bool _isLoadingCredits = true;
 
   @override
   void initState() {
     super.initState();
-    _buscarCreditos();
+    _inicializarECarregarCreditos();
   }
 
-  // 🔍 Retorna a chave do utilizador logado no Hive (e-mail) ou string vazia se deslogado
+  // 🔍 Retorna a chave do utilizador logado no Hive (e-mail) ou string vazia se deslogado (convidado)
   String _obterApiKeyAtual() {
     final boxUser = Hive.box('box_usuario');
     return boxUser.get('email', defaultValue: '') as String;
   }
 
-  // 🔄 Busca o saldo de créditos do e-mail ativo no servidor Render
-  Future<void> _buscarCreditos() async {
+  // 🚀 Inicializa o dispositivo no backend e exibe o modal de boas-vindas se for o primeiro acesso
+  Future<void> _inicializarECarregarCreditos() async {
+    setState(() => _isLoadingCredits = true);
+
     final apiKey = _obterApiKeyAtual();
 
-    // Se não houver utilizador logado, zera o saldo no ecrã
     if (apiKey.isEmpty) {
+      // 📱 Utilizador Convidado: Registra/Verifica o Device ID na nuvem e busca os créditos do aparelho
+      final dynamic resDevice = await ApiService.checkOrRegisterDevice();
+
       if (mounted) {
         setState(() {
-          _creditos = 0;
+          if (resDevice is Map<String, dynamic> && resDevice['success'] == true) {
+            _creditos = resDevice['creditos'] ?? 0;
+            final bool ehNovoAparelho = resDevice['novo'] ?? false;
+
+            // 🎁 Dispara o Pop-up de Boas-Vindas didático no primeiro acesso do aparelho
+            if (ehNovoAparelho) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                _exibirPopupBoasVindas();
+              });
+            }
+          } else if (resDevice is int) {
+            _creditos = resDevice;
+          } else {
+            _creditos = 0;
+          }
           _isLoadingCredits = false;
         });
       }
-      return;
-    }
-
-    setState(() => _isLoadingCredits = true);
-    final resultado = await ApiService.checkCredits(apiKey);
-    if (mounted) {
-      setState(() {
-        if (resultado['success'] == true) {
-          _creditos = resultado['creditos'];
-        } else {
-          _creditos = 0;
-        }
-        _isLoadingCredits = false;
-      });
+    } else {
+      // 👤 Utilizador Logado: Consulta os créditos vinculados à conta dele
+      final resultado = await ApiService.checkCredits(apiKey);
+      if (mounted) {
+        setState(() {
+          if (resultado['success'] == true) {
+            _creditos = resultado['creditos'] ?? 0;
+          } else {
+            _creditos = 0;
+          }
+          _isLoadingCredits = false;
+        });
+      }
     }
   }
 
-  // 🚨 Modal para obrigatoriedade de Login/Cadastro caso tente usar deslogado ou sem saldo
-  void _mostrarAlertaNecessarioLoginOuCreditos() {
-    final apiKey = _obterApiKeyAtual();
-    final bool deslogado = apiKey.isEmpty;
+  // 🎁 Modal de Boas-Vindas Didático (Aparece no primeiro acesso do aparelho)
+  void _exibirPopupBoasVindas() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.card_giftcard, color: Color(0xFF5C6BC0), size: 28),
+            SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Boas-vindas ao Dental Smile! 🎉',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+              ),
+            ),
+          ],
+        ),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Você ganhou 3 Simulações Gratuitas para testar o aplicativo agora mesmo em sua clínica!',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.black87),
+            ),
+            SizedBox(height: 12),
+            Text(
+              'Como usar:\n1. Clique em "Nova Simulação".\n2. Tire ou escolha a foto do paciente.\n3. Visualize o resultado incrível e encante o seu paciente!',
+              style: TextStyle(fontSize: 13, color: Colors.black54, height: 1.4),
+            ),
+          ],
+        ),
+        actions: [
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF5C6BC0),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            ),
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Começar a Usar', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
 
+  // 🚨 Modal quando o utilizador tenta simular e está com saldo zerado
+  void _mostrarAlertaCreditosEsgotados() {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
+        title: const Row(
           children: [
-            Icon(
-              deslogado ? Icons.lock_outline : Icons.warning_amber_rounded,
-              color: deslogado ? const Color(0xFF5C6BC0) : Colors.redAccent,
-              size: 28,
-            ),
-            const SizedBox(width: 8),
-            // ✅ Envolvido em Expanded para evitar qualquer overflow de pixéis
+            Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 28),
+            SizedBox(width: 8),
             Expanded(
               child: Text(
-                deslogado ? 'Acesso Necessário' : 'Créditos Esgotados',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                'Créditos Esgotados',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
                 overflow: TextOverflow.ellipsis,
               ),
             ),
           ],
         ),
-        content: Text(
-          deslogado
-              ? 'Por favor, entre com a sua conta de dentista ou cadastre-se para iniciar simulações e gerir os seus créditos.'
-              : 'Você não possui créditos suficientes para gerar uma nova simulação com IA.\n\nRecarregue o seu plano para continuar!',
-          style: const TextStyle(fontSize: 15),
+        content: const Text(
+          'Você utilizou todas as suas simulações de cortesia.\n\nAdquira um novo pacote para continuar gerando simulações de sorriso!',
+          style: TextStyle(fontSize: 15),
         ),
         actions: [
           TextButton(
@@ -101,18 +158,15 @@ class _HomeScreenState extends State<HomeScreen> {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
             onPressed: () async {
-              Navigator.pop(context); // Fecha o alerta
+              Navigator.pop(context);
               await Navigator.push(
                 context,
                 MaterialPageRoute(builder: (context) => const PlansScreen()),
               );
-              _buscarCreditos(); // Recarrega saldo e sessão após voltar
+              _inicializarECarregarCreditos();
             },
-            icon: Icon(deslogado ? Icons.login : Icons.shopping_cart, size: 18),
-            label: Text(
-              deslogado ? 'Entrar / Cadastrar' : 'Comprar Créditos',
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
+            icon: const Icon(Icons.shopping_cart, size: 18),
+            label: const Text('Comprar Créditos', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -145,7 +199,7 @@ class _HomeScreenState extends State<HomeScreen> {
               context,
               MaterialPageRoute(builder: (context) => const PlansScreen()),
             );
-            _buscarCreditos();
+            _inicializarECarregarCreditos();
           },
         ),
       ),
@@ -154,11 +208,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // Handler do clique no botão "Nova Simulação"
   void _aoClicarNovaSimulacao() {
-    final apiKey = _obterApiKeyAtual();
-
-    // Bloqueia caso o dentista esteja deslogado ou sem créditos
-    if (apiKey.isEmpty || (_creditos != null && _creditos! <= 0)) {
-      _mostrarAlertaNecessarioLoginOuCreditos();
+    if (_creditos <= 0) {
+      _mostrarAlertaCreditosEsgotados();
       return;
     }
 
@@ -166,13 +217,14 @@ class _HomeScreenState extends State<HomeScreen> {
       _mostrarAvisoUltimoCredito();
     }
 
-    Navigator.pushNamed(context, '/capture').then((_) => _buscarCreditos());
+    Navigator.pushNamed(context, '/capture').then((_) => _inicializarECarregarCreditos());
   }
 
   @override
   Widget build(BuildContext context) {
     final apiKeyAtual = _obterApiKeyAtual();
-    final bool saldoBaixo = _creditos != null && _creditos! <= 5;
+    final bool estaLogado = apiKeyAtual.isNotEmpty;
+    final bool saldoZerado = _creditos <= 0;
 
     return Scaffold(
       body: Background(
@@ -181,7 +233,7 @@ class _HomeScreenState extends State<HomeScreen> {
         child: SafeArea(
           child: Column(
             children: [
-              // 💎 Topo com o Badge de Créditos e Utilizador Clicável
+              // 💎 Topo Inteligente com Badge de Créditos e Botão Entrar
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 12.0),
                 child: Row(
@@ -195,70 +247,100 @@ class _HomeScreenState extends State<HomeScreen> {
                         color: Colors.white,
                       ),
                     ),
-                    // Distintivo de Créditos / Acesso
-                    GestureDetector(
-                      onTap: () async {
-                        await Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (context) => const PlansScreen()),
-                        );
-                        _buscarCreditos();
-                      },
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 300),
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: saldoBaixo
-                              ? Colors.red.shade900.withValues(alpha: 0.75)
-                              : Colors.black.withValues(alpha: 0.35),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                            color: saldoBaixo ? Colors.redAccent : Colors.white.withValues(alpha: 0.5),
-                            width: saldoBaixo ? 1.8 : 1.0,
-                          ),
+
+                    // 🏷️ Pílula Interativa de Créditos + Entrar
+                    Container(
+                      decoration: BoxDecoration(
+                        color: saldoZerado
+                            ? Colors.red.shade900.withOpacity(0.8)
+                            : Colors.black.withOpacity(0.45),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: saldoZerado ? Colors.redAccent : Colors.white.withOpacity(0.5),
+                          width: saldoZerado ? 1.5 : 1.0,
                         ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              apiKeyAtual.isEmpty
-                                  ? Icons.person_off
-                                  : (saldoBaixo ? Icons.warning_amber_rounded : Icons.monetization_on),
-                              color: apiKeyAtual.isEmpty ? Colors.white70 : (saldoBaixo ? Colors.redAccent : Colors.amber),
-                              size: 18,
-                            ),
-                            const SizedBox(width: 6),
-                            _isLoadingCredits
-                                ? const SizedBox(
-                              width: 12,
-                              height: 12,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                                : Row(
-                              children: [
-                                Text(
-                                  apiKeyAtual.isEmpty
-                                      ? 'Entrar'
-                                      : '${_creditos ?? 0} Créditos',
-                                  style: TextStyle(
-                                    color: saldoBaixo ? Colors.red.shade100 : Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 13,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // 🛒 Lado Esquerdo: Saldo de Créditos (Clica e vai para a Loja)
+                          InkWell(
+                            borderRadius: const BorderRadius.horizontal(left: Radius.circular(20)),
+                            onTap: () async {
+                              await Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (context) => const PlansScreen()),
+                              );
+                              _inicializarECarregarCreditos();
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    saldoZerado ? Icons.add_shopping_cart : Icons.stars,
+                                    color: saldoZerado ? Colors.redAccent : Colors.amber,
+                                    size: 16,
                                   ),
-                                ),
-                                const SizedBox(width: 6),
-                                Icon(
-                                  apiKeyAtual.isEmpty ? Icons.arrow_forward_ios : Icons.shopping_cart,
-                                  color: apiKeyAtual.isEmpty ? Colors.white70 : (saldoBaixo ? Colors.redAccent : Colors.amber),
-                                  size: 14,
-                                ),
-                              ],
+                                  const SizedBox(width: 5),
+                                  _isLoadingCredits
+                                      ? const SizedBox(
+                                    width: 12,
+                                    height: 12,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                      : Text(
+                                    '$_creditos CR',
+                                    style: TextStyle(
+                                      color: saldoZerado ? Colors.red.shade100 : Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
-                          ],
-                        ),
+                          ),
+
+                          // Divisória vertical sutil
+                          Container(height: 16, width: 1, color: Colors.white30),
+
+                          // 🔐 Lado Direito: Acesso / Login
+                          InkWell(
+                            borderRadius: const BorderRadius.horizontal(right: Radius.circular(20)),
+                            onTap: () async {
+                              await Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (context) => const PlansScreen()),
+                              );
+                              _inicializarECarregarCreditos();
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    estaLogado ? Icons.account_circle : Icons.login,
+                                    color: Colors.white,
+                                    size: 16,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    estaLogado ? 'Conta' : 'Entrar',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],

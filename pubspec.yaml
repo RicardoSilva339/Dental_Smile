@@ -11,6 +11,7 @@ dependencies:
   http: ^1.2.0                         # Adicionado para resolver os imports de http
   google_mlkit_face_detection: ^0.15.1 # Detecção facial automática
   camera: ^0.10.5+9                    # Câmera customizada com guia
+  device_info_plus: ^13.3.0            # 📱 Versão compatível com o win32 e share_plus
 
   cupertino_icons: ^1.0.8
   image_picker: ^1.0.4

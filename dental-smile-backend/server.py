@@ -19,12 +19,12 @@ def get_db_connection():
     return psycopg2.connect(DATABASE_URL, sslmode='require')
 
 def init_db():
-    """Garante a criação da tabela e adiciona todas as colunas necessárias caso já exista"""
+    """Garante a criação da tabela de usuários e adiciona colunas necessárias caso já exista"""
     try:
         conn = get_db_connection()
         cur = conn.cursor()
 
-        # 1. Cria a tabela base completa caso ela não exista
+        # Cria a tabela base completa caso ela não exista
         cur.execute("""
             CREATE TABLE IF NOT EXISTS usuarios (
                 id SERIAL PRIMARY KEY,
@@ -39,7 +39,7 @@ def init_db():
             );
         """)
 
-        # 2. Garante individualmente que cada coluna existe (caso a tabela seja de uma versão anterior)
+        # Garante individualmente que cada coluna existe
         cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS email VARCHAR(100);")
         cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS senha VARCHAR(100);")
         cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS cro VARCHAR(50);")
@@ -49,11 +49,68 @@ def init_db():
         conn.commit()
         cur.close()
         conn.close()
-        print("Banco de dados sincronizado e colunas atualizadas com sucesso!")
+        print("Banco de dados de usuários sincronizado com sucesso!")
     except Exception as e:
-        print(f"Erro ao inicializar o banco de dados: {e}")
+        print(f"Erro ao inicializar o banco de usuários: {e}")
+
+def init_device_db():
+    """Garante a criação da tabela de controle de dispositivos (Anti-Reinstalação)"""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS dispositivos (
+                device_id VARCHAR(255) PRIMARY KEY,
+                creditos INTEGER DEFAULT 3,
+                criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+        conn.commit()
+        cur.close()
+        conn.close()
+        print("Banco de dados de dispositivos sincronizado com sucesso!")
+    except Exception as e:
+        print(f"Erro ao inicializar tabela de dispositivos: {e}")
 
 init_db()
+init_device_db()
+
+# 📱 Rota de Verificação de Dispositivo (Anti-Reinstalação)
+@app.route('/check-device', methods=['POST'])
+def check_device():
+    data = request.get_json(force=True, silent=True) or {}
+    device_id = data.get('device_id', '').strip()
+
+    if not device_id:
+        return jsonify({"success": False, "error": "Device ID obrigatório."}), 400
+
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        cur.execute("SELECT creditos FROM dispositivos WHERE device_id = %s;", (device_id,))
+        row = cur.fetchone()
+
+        if row:
+            creditos = row[0]
+        else:
+            # Primeiro acesso deste telemóvel: ganha 3 créditos de cortesia
+            cur.execute("""
+                INSERT INTO dispositivos (device_id, creditos)
+                VALUES (%s, 3)
+                ON CONFLICT (device_id) DO NOTHING;
+            """, (device_id,))
+            conn.commit()
+            creditos = 3
+
+        cur.close()
+        conn.close()
+        return jsonify({"success": True, "creditos": creditos}), 200
+
+    except Exception as e:
+        print(f"ERRO NO CHECK-DEVICE: {str(e)}")
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
 
 # 🔐 Rota de Registro de Novo Dentista
 @app.route('/register', methods=['POST'])
@@ -67,20 +124,18 @@ def register():
     if not email or not senha:
         return jsonify({"success": False, "error": "E-mail e senha são obrigatórios."}), 400
 
-    api_key = email  # O e-mail é a chave única
+    api_key = email
 
     try:
         conn = get_db_connection()
         cur = conn.cursor()
 
-        # Verifica se o e-mail já existe
         cur.execute("SELECT id FROM usuarios WHERE email = %s;", (email,))
         if cur.fetchone():
             cur.close()
             conn.close()
             return jsonify({"success": False, "error": "Este e-mail já está cadastrado."}), 400
 
-        # Insere o novo usuário
         cur.execute("""
             INSERT INTO usuarios (api_key, nome, email, cro, senha, creditos, tentativas_login)
             VALUES (%s, %s, %s, %s, %s, 3, 0);
@@ -138,7 +193,6 @@ def login():
             msg = f"Senha incorreta. Restam {restantes} tentativas." if restantes > 0 else "Conta bloqueada por segurança."
             return jsonify({"success": False, "error": msg}), 401
 
-        # Reset de tentativas após login correto
         cur.execute("UPDATE usuarios SET tentativas_login = 0 WHERE id = %s;", (user_id,))
         conn.commit()
         cur.close()
@@ -183,7 +237,6 @@ def add_credits():
     conn = get_db_connection()
     cur = conn.cursor()
 
-    # Atualiza tanto por api_key quanto por email
     cur.execute("""
         UPDATE usuarios
         SET creditos = creditos + %s
