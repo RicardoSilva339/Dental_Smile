@@ -131,7 +131,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // 🧭 Menu de Escolha: Separa o Acesso à Conta Existente da Loja de Créditos
+  // 🧭 Menu de Escolha Inteligente: Separa Login, Cadastro e Loja
   void _mostrarMenuAcessoOuLoja() {
     final bool estaLogado = _obterApiKeyAtual().isNotEmpty;
 
@@ -144,7 +144,7 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
-    // Se NÃO estiver logado, apresenta as opções transparentes de Acesso e Vendas
+    // Se NÃO estiver logado, apresenta as opções transparentes
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -157,13 +157,13 @@ class _HomeScreenState extends State<HomeScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const Text(
-              'Acesso do Dentista / Loja',
+              'Acesso do Dentista / Cadastro',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
             const Text(
-              'Escolha como deseja prosseguir:',
+              'Como você deseja acessar o aplicativo?',
               style: TextStyle(fontSize: 13, color: Colors.black54),
               textAlign: TextAlign.center,
             ),
@@ -186,25 +186,57 @@ class _HomeScreenState extends State<HomeScreen> {
                 Navigator.pop(context);
                 await Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (context) => const PlansScreen()),
+                  MaterialPageRoute(
+                    builder: (context) => const PlansScreen(
+                      abrirLoginDireto: true, // 👈 Abre direto na janela de LOGIN
+                    ),
+                  ),
                 );
                 _inicializarECarregarCreditos();
               },
             ),
             const SizedBox(height: 12),
 
-            // Opção 2: Acessar a Loja de Planos
+            // Opção 2: Criar Nova Conta de Dentista
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.teal.shade600,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              icon: const Icon(Icons.person_add_alt_1),
+              label: const Text(
+                'Criar Nova Conta de Dentista',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+              ),
+              onPressed: () async {
+                Navigator.pop(context);
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const PlansScreen(
+                      abrirCadastroDireto: true, // 👈 Abre direto na janela de CADASTRO
+                    ),
+                  ),
+                );
+                _inicializarECarregarCreditos();
+              },
+            ),
+            const SizedBox(height: 12),
+
+            // Opção 3: Apenas Navegar pela Loja de Planos
             OutlinedButton.icon(
               style: OutlinedButton.styleFrom(
                 foregroundColor: const Color(0xFF5C6BC0),
                 side: const BorderSide(color: Color(0xFF5C6BC0), width: 1.5),
-                padding: const EdgeInsets.symmetric(vertical: 14),
+                padding: const EdgeInsets.symmetric(vertical: 12),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
               icon: const Icon(Icons.shopping_cart_outlined),
               label: const Text(
-                'Ver Pacotes e Criar Conta',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                'Apenas Ver Pacotes de Créditos',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
               ),
               onPressed: () async {
                 Navigator.pop(context);

@@ -4,7 +4,14 @@ import 'package:dental_smile/api_service.dart';
 import 'background.dart';
 
 class PlansScreen extends StatefulWidget {
-  const PlansScreen({super.key});
+  final bool abrirCadastroDireto;
+  final bool abrirLoginDireto;
+
+  const PlansScreen({
+    super.key,
+    this.abrirCadastroDireto = false,
+    this.abrirLoginDireto = false,
+  });
 
   @override
   State<PlansScreen> createState() => _PlansScreenState();
@@ -17,13 +24,23 @@ class _PlansScreenState extends State<PlansScreen> {
   final TextEditingController _croController = TextEditingController();
   final TextEditingController _senhaController = TextEditingController();
 
-  bool _lembrarEmail = true;
-  bool _modoCadastro = false; // Alterna entre Login (false) e Cadastro (true)
+  bool _lembrarEmail = false; // 👈 Desmarcado por padrão para novos cadastros
+  bool _modoCadastro = false; // Alterna entre Login (false) and Cadastro (true)
 
   @override
   void initState() {
     super.initState();
     _carregarEmailSalvo();
+
+    // 🚀 Verifica se deve abrir o diálogo de Cadastro ou Login imediatamente ao carregar a tela
+    if ((widget.abrirCadastroDireto || widget.abrirLoginDireto) && !_usuarioEstaLogado()) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        setState(() {
+          _modoCadastro = widget.abrirCadastroDireto;
+        });
+        _exibirDialogoAutenticacao();
+      });
+    }
   }
 
   @override
@@ -45,7 +62,7 @@ class _PlansScreenState extends State<PlansScreen> {
   void _carregarEmailSalvo() {
     final boxUser = Hive.box('box_usuario');
     final emailAtivo = boxUser.get('email', defaultValue: '') as String;
-    final lembrar = boxUser.get('lembrar_email', defaultValue: true) as bool;
+    final lembrar = boxUser.get('lembrar_email', defaultValue: false) as bool;
     final emailSalvo = boxUser.get('email_salvo', defaultValue: '') as String;
 
     setState(() {
@@ -206,10 +223,10 @@ class _PlansScreenState extends State<PlansScreen> {
                         activeColor: const Color(0xFF5C6BC0),
                         onChanged: (val) {
                           setModalState(() {
-                            _lembrarEmail = val ?? true;
+                            _lembrarEmail = val ?? false;
                           });
                           setState(() {
-                            _lembrarEmail = val ?? true;
+                            _lembrarEmail = val ?? false;
                           });
                         },
                       ),
