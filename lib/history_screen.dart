@@ -19,7 +19,13 @@ class _HistoryScreenState extends State<HistoryScreen> {
     _box = Hive.box('simulacoes');
   }
 
-  // 🧹 Menu inteligente de opções de limpeza (Filtro por tempo ou limpeza total)
+  // 🔍 Retorna a chave do utilizador logado no Hive (e-mail) ou string vazia se deslogado (convidado)
+  String _obterEmailUsuarioAtual() {
+    final boxUser = Hive.box('box_usuario');
+    return boxUser.get('email', defaultValue: '') as String;
+  }
+
+  // 🧹 Menu inteligente de opções de limpeza (Filtro por tempo ou limpeza total da conta)
   void _mostrarOpcoesLimpeza() {
     showDialog(
       context: context,
@@ -47,8 +53,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
             const Divider(),
             ListTile(
               leading: const Icon(Icons.delete_sweep, color: Colors.red),
-              title: const Text('Limpar Tudo'),
-              subtitle: const Text('Apaga todo o histórico de simulações'),
+              title: const Text('Limpar Meu Histórico'),
+              subtitle: const Text('Apaga as simulações salvas na conta ativa'),
               onTap: () {
                 Navigator.pop(ctx);
                 _confirmarLimpezaTotal();
@@ -60,8 +66,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
     );
   }
 
-  // ⏳ Filtra e apaga apenas os registos mais antigos com base nos dias limite
+  // ⏳ Filtra e apaga apenas os registos mais antigos do e-mail ativo
   Future<void> _apagarSimulacoesAntigas(int diasLimite) async {
+    final emailAtual = _obterEmailUsuarioAtual();
     final agora = DateTime.now();
     final chavesParaApagar = <dynamic>[];
 
@@ -69,15 +76,20 @@ class _HistoryScreenState extends State<HistoryScreen> {
       final rawItem = _box.get(key);
       if (rawItem is Map) {
         final item = Map<String, dynamic>.from(rawItem);
-        final dateStr = item['date'] ?? '';
-        if (dateStr.isNotEmpty) {
-          try {
-            final dataSimulacao = DateTime.parse(dateStr);
-            final diferenca = agora.difference(dataSimulacao).inDays;
-            if (diferenca > diasLimite) {
-              chavesParaApagar.add(key);
-            }
-          } catch (_) {}
+        final emailDono = item['userEmail'] ?? item['email'] ?? '';
+
+        // Filtra pelo e-mail da sessão ativa
+        if (emailDono == emailAtual) {
+          final dateStr = item['date'] ?? '';
+          if (dateStr.isNotEmpty) {
+            try {
+              final dataSimulacao = DateTime.parse(dateStr);
+              final diferenca = agora.difference(dataSimulacao).inDays;
+              if (diferenca > diasLimite) {
+                chavesParaApagar.add(key);
+              }
+            } catch (_) {}
+          }
         }
       }
     }
@@ -98,14 +110,16 @@ class _HistoryScreenState extends State<HistoryScreen> {
     }
   }
 
-  // ⚠️ Confirmação antes de apagar todo o banco de histórico
+  // ⚠️ Confirmação antes de apagar todo o histórico do e-mail ativo
   void _confirmarLimpezaTotal() {
+    final emailAtual = _obterEmailUsuarioAtual();
+
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Apagar Todo o Histórico?'),
-        content: const Text('Esta ação não pode ser desfeita. Deseja realmente apagar todas as simulações salvas?'),
+        title: const Text('Apagar Histórico Ativo?'),
+        content: const Text('Esta ação apagará todas as simulações salvas nesta sessão. Deseja continuar?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
@@ -118,8 +132,24 @@ class _HistoryScreenState extends State<HistoryScreen> {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
             onPressed: () async {
-              await _box.clear();
-              Navigator.pop(ctx);
+              final chavesParaApagar = <dynamic>[];
+
+              for (var key in _box.keys) {
+                final rawItem = _box.get(key);
+                if (rawItem is Map) {
+                  final item = Map<String, dynamic>.from(rawItem);
+                  final emailDono = item['userEmail'] ?? item['email'] ?? '';
+                  if (emailDono == emailAtual) {
+                    chavesParaApagar.add(key);
+                  }
+                }
+              }
+
+              if (chavesParaApagar.isNotEmpty) {
+                await _box.deleteAll(chavesParaApagar);
+              }
+
+              if (ctx.mounted) Navigator.pop(ctx);
               if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Histórico limpo com sucesso!')),
@@ -135,6 +165,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final emailAtual = _obterEmailUsuarioAtual();
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Histórico de Simulações'),
@@ -152,33 +184,50 @@ class _HistoryScreenState extends State<HistoryScreen> {
         child: ValueListenableBuilder(
           valueListenable: _box.listenable(),
           builder: (context, Box box, _) {
-            if (box.isEmpty) {
-              return const Center(
-                child: Text(
-                  'Nenhuma simulação salva no histórico.',
-                  style: TextStyle(fontSize: 16, color: Colors.white70),
+            // 🔒 Filtra dinamicamente as simulações pertencentes ao e-mail logado
+            final simuFiltradas = <Map<String, dynamic>>[];
+
+            for (var i = 0; i < box.length; i++) {
+              final rawItem = box.getAt(i);
+              if (rawItem is Map) {
+                final item = Map<String, dynamic>.from(rawItem);
+                final emailDono = item['userEmail'] ?? item['email'] ?? '';
+                final key = box.keyAt(i);
+
+                if (emailDono == emailAtual) {
+                  item['hiveKey'] = key; // Anexa a chave para exclusão
+                  simuFiltradas.add(item);
+                }
+              }
+            }
+
+            if (simuFiltradas.isEmpty) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(20.0),
+                  child: Text(
+                    emailAtual.isEmpty
+                        ? 'Nenhuma simulação no modo visitante.\nFaça login para acessar o seu histórico.'
+                        : 'Nenhuma simulação encontrada para a conta:\n$emailAtual',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 16, color: Colors.white70),
+                  ),
                 ),
               );
             }
 
             return ListView.builder(
               padding: const EdgeInsets.all(16),
-              itemCount: box.length,
+              itemCount: simuFiltradas.length,
               itemBuilder: (context, index) {
-                final rawItem = box.getAt(index);
-
-                if (rawItem is! Map) {
-                  return const SizedBox.shrink();
-                }
-
-                final item = Map<String, dynamic>.from(rawItem);
+                // Inverte para exibir as simulações mais recentes no topo
+                final item = simuFiltradas[simuFiltradas.length - 1 - index];
                 final simulationId = item['simulationId'] ?? 'DS-SemID';
                 final dateStr = item['date'] ?? '';
                 final processedPath = item['processedPath'];
                 final notes = item['notes'] ?? 'Sem observações';
-                final key = box.keyAt(index);
+                final key = item['hiveKey'];
 
-                // ✅ Envolve o Card em um Dismissible para apagar individualmente arrastando para o lado
                 return Dismissible(
                   key: Key(key.toString()),
                   direction: DismissDirection.endToStart,
