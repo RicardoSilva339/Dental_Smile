@@ -11,6 +11,8 @@ class AdjustSmileScreen extends StatefulWidget {
   final String? initialColor;
   final String? initialShape;
   final String? initialSize;
+  final String? simulationId;
+  final String? userEmail;
 
   const AdjustSmileScreen({
     super.key,
@@ -19,6 +21,8 @@ class AdjustSmileScreen extends StatefulWidget {
     this.initialColor,
     this.initialShape,
     this.initialSize,
+    this.simulationId,
+    this.userEmail,
   });
 
   @override
@@ -66,6 +70,9 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
 
   // 🔍 Retorna o e-mail/api_key do utilizador logado no Hive
   String _obterApiKeyAtual() {
+    if (widget.userEmail != null && widget.userEmail!.isNotEmpty) {
+      return widget.userEmail!;
+    }
     final boxUser = Hive.box('box_usuario');
     return boxUser.get('email', defaultValue: '') as String;
   }
@@ -169,6 +176,7 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
 
     setState(() => _isProcessing = false);
 
+    // 🚀 Repassa o simulationId e userEmail para a CompareScreen gravar no Hive com o e-mail correto!
     Navigator.pushReplacementNamed(
       context,
       '/compare',
@@ -178,6 +186,8 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
         'color': _colors[_selectedColor] ?? _selectedColor,
         'shape': _shapes[_selectedShape] ?? _selectedShape,
         'size': _sizes[_selectedSize] ?? _selectedSize,
+        'simulationId': widget.simulationId ?? 'DS-${DateTime.now().millisecondsSinceEpoch}',
+        'userEmail': apiKey, // 👈 E-mail ativo para salvar a simulação com dono!
       },
     );
   }

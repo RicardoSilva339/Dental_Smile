@@ -24,6 +24,7 @@ class _CompareScreenState extends State<CompareScreen> {
   String? _selectedShape;
   String? _selectedSize;
   String? _simulationId;
+  String? _userEmail;
 
   bool _isInit = true;
 
@@ -41,11 +42,21 @@ class _CompareScreenState extends State<CompareScreen> {
         _selectedSize = args['size'] ?? 'Médio';
         _simulationId = args['simulationId'] ?? 'DS-${DateTime.now().millisecondsSinceEpoch.toString().substring(5)}';
 
+        // 🔍 Extrai o e-mail do usuário ativo
+        _userEmail = args['userEmail'];
+
         final existingNotes = args['notes'] ?? args['note'];
         if (existingNotes != null) {
           _notesController.text = existingNotes;
         }
       }
+
+      // Fallback: Se não veio via argumentos, consulta o e-mail da sessão diretamente no Hive
+      if (_userEmail == null || _userEmail!.isEmpty) {
+        final boxUser = Hive.box('box_usuario');
+        _userEmail = boxUser.get('email', defaultValue: '') as String;
+      }
+
       _isInit = false;
     }
   }
@@ -199,9 +210,15 @@ class _CompareScreenState extends State<CompareScreen> {
     return pdf;
   }
 
-  // Salva no Hive para o Histórico
+  // 💾 Salva no Hive para o Histórico (Gravando o userEmail do dono da conta!)
   Future<void> _salvarNoHistorico(String noteText) async {
     final box = Hive.box('simulacoes');
+
+    // Se por acaso _userEmail ainda estiver vazio, pega da sessão ativa do Hive
+    final String emailDono = (_userEmail != null && _userEmail!.isNotEmpty)
+        ? _userEmail!
+        : Hive.box('box_usuario').get('email', defaultValue: '') as String;
+
     final simulationData = {
       'simulationId': _simulationId ?? 'DS-${DateTime.now().millisecondsSinceEpoch.toString().substring(5)}',
       'date': DateTime.now().toIso8601String(),
@@ -211,6 +228,7 @@ class _CompareScreenState extends State<CompareScreen> {
       'shape': _selectedShape,
       'size': _selectedSize,
       'notes': noteText,
+      'userEmail': emailDono, // 👈 ESSENCIAL: Salva o e-mail para vincular ao histórico do dentista!
     };
     await box.add(simulationData);
   }

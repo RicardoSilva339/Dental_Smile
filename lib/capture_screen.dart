@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'background.dart';
 
 class CaptureScreen extends StatefulWidget {
@@ -27,9 +28,16 @@ class _CaptureScreenState extends State<CaptureScreen> {
     return 'DS-$timestamp';
   }
 
+  // 🔍 Obtém o e-mail do utilizador logado no momento da captura
+  String _obterEmailUsuarioAtual() {
+    final boxUser = Hive.box('box_usuario');
+    return boxUser.get('email', defaultValue: '') as String;
+  }
+
   void _goToAnalysis() {
     if (_image != null) {
       final simulationId = _gerarSimulationId();
+      final userEmail = _obterEmailUsuarioAtual(); // 👈 Captura o e-mail ativo
 
       Navigator.pushNamed(
         context,
@@ -37,6 +45,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
         arguments: {
           'image': _image!.path,
           'simulationId': simulationId,
+          'userEmail': userEmail, // 👈 Passa o e-mail para a próxima tela salvar com dono!
         },
       );
     } else {

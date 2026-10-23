@@ -524,6 +524,7 @@ class _PlansScreenState extends State<PlansScreen> {
                     padding: const EdgeInsets.all(16),
                     itemCount: comprasDoUsuario.length,
                     itemBuilder: (context, index) {
+                      // 👈 Índice corrigido e sem quebras
                       final item = Map<String, dynamic>.from(comprasDoUsuario[comprasDoUsuario.length - 1 - index] as Map);
 
                       return Card(

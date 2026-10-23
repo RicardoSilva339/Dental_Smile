@@ -220,8 +220,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
               padding: const EdgeInsets.all(16),
               itemCount: simuFiltradas.length,
               itemBuilder: (context, index) {
-                // Inverte para exibir as simulações mais recentes no topo
+                // Inverte para exibir as simulações mais recentes no topo (Corrigido!)
                 final item = simuFiltradas[simuFiltradas.length - 1 - index];
+
                 final simulationId = item['simulationId'] ?? 'DS-SemID';
                 final dateStr = item['date'] ?? '';
                 final processedPath = item['processedPath'];

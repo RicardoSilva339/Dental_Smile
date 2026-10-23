@@ -11,6 +11,8 @@ class AnalysisScreen extends StatefulWidget {
 class _AnalysisScreenState extends State<AnalysisScreen> {
   bool _isLoading = true;
   File? _imageFile;
+  String _simulationId = '';
+  String _userEmail = '';
   bool _isInit = true;
 
   @override
@@ -26,6 +28,10 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
         } else if (path is File) {
           _imageFile = path;
         }
+
+        // 🔍 Extrai o ID da simulação e o e-mail do usuário ativo
+        _simulationId = args['simulationId'] ?? '';
+        _userEmail = args['userEmail'] ?? '';
       } else if (args is String && args.isNotEmpty) {
         _imageFile = File(args);
       } else if (args is File) {
@@ -130,6 +136,8 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                       arguments: {
                         'imagePath': _imageFile!.path,
                         'image': _imageFile,
+                        'simulationId': _simulationId, // 👈 Repassa o ID
+                        'userEmail': _userEmail,       // 👈 Repassa o e-mail do usuário
                       },
                     );
                   }
