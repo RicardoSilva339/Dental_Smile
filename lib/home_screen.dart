@@ -110,7 +110,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             SizedBox(height: 12),
             Text(
-              'Como usar:\n1. Clique em "Nova Simulação".\n2. Tire ou escolha a foto do paciente.\n3. Visualize o resultado incrível e encante o seu paciente!',
+              '1. Como usar:\nClique em "Nova Simulação".\n2. Tire ou escolha a foto do paciente.\n3. Visualize o resultado incrível e encante o seu paciente!',
               style: TextStyle(fontSize: 13, color: Colors.black54, height: 1.4),
             ),
           ],
@@ -127,6 +127,96 @@ class _HomeScreenState extends State<HomeScreen> {
             child: const Text('Começar a Usar', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
+      ),
+    );
+  }
+
+  // 🧭 Menu de Escolha: Separa o Acesso à Conta Existente da Loja de Créditos
+  void _mostrarMenuAcessoOuLoja() {
+    final bool estaLogado = _obterApiKeyAtual().isNotEmpty;
+
+    if (estaLogado) {
+      // Se já estiver logado, abre a PlansScreen diretamente para ver conta/compras
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const PlansScreen()),
+      ).then((_) => _inicializarECarregarCreditos());
+      return;
+    }
+
+    // Se NÃO estiver logado, apresenta as opções transparentes de Acesso e Vendas
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'Acesso do Dentista / Loja',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Escolha como deseja prosseguir:',
+              style: TextStyle(fontSize: 13, color: Colors.black54),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 20),
+
+            // Opção 1: Fazer Login na Conta Existente
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF5C6BC0),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              icon: const Icon(Icons.login),
+              label: const Text(
+                'Já tenho conta / Fazer Login',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+              ),
+              onPressed: () async {
+                Navigator.pop(context);
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const PlansScreen()),
+                );
+                _inicializarECarregarCreditos();
+              },
+            ),
+            const SizedBox(height: 12),
+
+            // Opção 2: Acessar a Loja de Planos
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF5C6BC0),
+                side: const BorderSide(color: Color(0xFF5C6BC0), width: 1.5),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              icon: const Icon(Icons.shopping_cart_outlined),
+              label: const Text(
+                'Ver Pacotes e Criar Conta',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+              ),
+              onPressed: () async {
+                Navigator.pop(context);
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const PlansScreen()),
+                );
+                _inicializarECarregarCreditos();
+              },
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -169,16 +259,12 @@ class _HomeScreenState extends State<HomeScreen> {
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
-            onPressed: () async {
+            onPressed: () {
               Navigator.pop(context);
-              await Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const PlansScreen()),
-              );
-              _inicializarECarregarCreditos();
+              _mostrarMenuAcessoOuLoja();
             },
-            icon: const Icon(Icons.shopping_cart, size: 18),
-            label: const Text('Acessar Loja / Conta', style: TextStyle(fontWeight: FontWeight.bold)),
+            icon: const Icon(Icons.account_circle, size: 18),
+            label: const Text('Acessar Conta / Loja', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -203,7 +289,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
         backgroundColor: Colors.red.shade800,
-        duration: const Duration(seconds: 3), // ⏱️ Desaparece automaticamente em 3 segundos!
+        duration: const Duration(seconds: 3),
         behavior: SnackBarBehavior.floating,
         margin: const EdgeInsets.all(12),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -271,13 +357,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           // 🛒 Lado Esquerdo: Saldo de Créditos
                           InkWell(
                             borderRadius: const BorderRadius.horizontal(left: Radius.circular(20)),
-                            onTap: () async {
-                              await Navigator.push(
-                                context,
-                                MaterialPageRoute(builder: (context) => const PlansScreen()),
-                              );
-                              _inicializarECarregarCreditos();
-                            },
+                            onTap: _mostrarMenuAcessoOuLoja,
                             child: Padding(
                               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                               child: Row(
@@ -313,16 +393,10 @@ class _HomeScreenState extends State<HomeScreen> {
                           // Divisória vertical sutil
                           Container(height: 16, width: 1, color: Colors.white30),
 
-                          // 🔐 Lado Direito: Acessa a PlansScreen para gerenciar conta ou recarregar
+                          // 🔐 Lado Direito: Acessa o menu de conta / login
                           InkWell(
                             borderRadius: const BorderRadius.horizontal(right: Radius.circular(20)),
-                            onTap: () async {
-                              await Navigator.push(
-                                context,
-                                MaterialPageRoute(builder: (context) => const PlansScreen()),
-                              );
-                              _inicializarECarregarCreditos();
-                            },
+                            onTap: _mostrarMenuAcessoOuLoja,
                             child: Padding(
                               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                               child: Row(
