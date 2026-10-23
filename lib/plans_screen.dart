@@ -24,21 +24,21 @@ class _PlansScreenState extends State<PlansScreen> {
   final TextEditingController _croController = TextEditingController();
   final TextEditingController _senhaController = TextEditingController();
 
-  bool _lembrarEmail = false; // 👈 Desmarcado por padrão para novos cadastros
-  bool _modoCadastro = false; // Alterna entre Login (false) and Cadastro (true)
+  bool _lembrarEmail = false; // Desmarcado por padrão
+  bool _modoCadastro = false; // Alterna entre Login (false) e Cadastro (true)
 
   @override
   void initState() {
     super.initState();
     _carregarEmailSalvo();
 
-    // 🚀 Verifica se deve abrir o diálogo de Cadastro ou Login imediatamente ao carregar a tela
+    // 🚀 Se veio de uma opção direta de Login ou Cadastro do menu, abre o modal IMEDIATAMENTE
     if ((widget.abrirCadastroDireto || widget.abrirLoginDireto) && !_usuarioEstaLogado()) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         setState(() {
           _modoCadastro = widget.abrirCadastroDireto;
         });
-        _exibirDialogoAutenticacao();
+        _exibirDialogoAutenticacaoApenas();
       });
     }
   }
@@ -58,7 +58,7 @@ class _PlansScreenState extends State<PlansScreen> {
     return emailRegExp.hasMatch(email);
   }
 
-  // 💾 Carrega os dados da sessão - Mantém zerado se não houver utilizador ativo
+  // 💾 Carrega os dados da sessão
   void _carregarEmailSalvo() {
     final boxUser = Hive.box('box_usuario');
     final emailAtivo = boxUser.get('email', defaultValue: '') as String;
@@ -89,7 +89,7 @@ class _PlansScreenState extends State<PlansScreen> {
     return _obterApiKeyAtual().isNotEmpty;
   }
 
-  // 🚪 Efetua o Logout e limpa completamente os campos e a memória local
+  // 🚪 Efetua o Logout e limpa a memória local
   Future<void> _fazerLogout() async {
     final boxUser = Hive.box('box_usuario');
 
@@ -106,12 +106,12 @@ class _PlansScreenState extends State<PlansScreen> {
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Sessão encerrada. Os campos foram limpos com segurança.')),
+        const SnackBar(content: Text('Sessão encerrada com sucesso.')),
       );
     }
   }
 
-  // 🛒 Regista a transação efetuada no histórico local vinculando ao e-mail ativo
+  // 🛒 Registra a transação efetuada no histórico local
   Future<void> _registrarHistoricoCompra(String nomePlano, int creditos, String preco) async {
     final boxCompras = Hive.box('box_compras');
     final emailAtual = _obterApiKeyAtual();
@@ -130,8 +130,8 @@ class _PlansScreenState extends State<PlansScreen> {
     await boxCompras.add(novaCompra);
   }
 
-  // 🔐 Dialogo de Autenticação / Cadastro Seguro com Senha
-  Future<bool> _exibirDialogoAutenticacao() async {
+  // 🔐 Diálogo de Autenticação / Cadastro Puro (SEM disparar compra de pacote)
+  Future<bool> _exibirDialogoAutenticacaoApenas() async {
     bool autenticadoComSucesso = false;
 
     await showDialog(
@@ -163,8 +163,8 @@ class _PlansScreenState extends State<PlansScreen> {
                 children: [
                   Text(
                     _modoCadastro
-                        ? 'Cadastre-se uma única vez para vincular os seus créditos e emitir relatórios clínicos com segurança.'
-                        : 'Introduza a sua senha para confirmar a sua identidade e vincular a sua recarga.',
+                        ? 'Cadastre-se para vincular os seus créditos e gerenciar sua conta.'
+                        : 'Digite seu e-mail e senha para acessar sua conta.',
                     style: const TextStyle(fontSize: 13, color: Colors.black54),
                   ),
                   const SizedBox(height: 16),
@@ -196,7 +196,7 @@ class _PlansScreenState extends State<PlansScreen> {
                     TextField(
                       controller: _croController,
                       decoration: InputDecoration(
-                        labelText: 'CRO / Registo Profissional (Opcional)',
+                        labelText: 'CRO / Registro Profissional (Opcional)',
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                         isDense: true,
                       ),
@@ -280,7 +280,7 @@ class _PlansScreenState extends State<PlansScreen> {
                   if (!_emailEhValido(email)) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
-                        content: Text('Por favor, insira um e-mail válido (ex: usuario@dominio.com).'),
+                        content: Text('Por favor, insira um e-mail válido.'),
                         backgroundColor: Colors.orange,
                       ),
                     );
@@ -309,12 +309,18 @@ class _PlansScreenState extends State<PlansScreen> {
                       await boxUser.put('cro', _croController.text.trim());
                       await boxUser.put('is_registrado', true);
                       autenticadoComSucesso = true;
+                      setState(() {});
                       if (ctx.mounted) Navigator.pop(ctx);
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Conta criada com sucesso!'), backgroundColor: Colors.green),
+                        );
+                      }
                     } else {
                       if (ctx.mounted) {
                         String erroMsg = res['error'] ?? 'Erro no cadastro.';
                         if (erroMsg.contains('SELECT') || erroMsg.contains('LINE')) {
-                          erroMsg = 'Não foi possível concluir o cadastro. Verifique os dados e tente novamente.';
+                          erroMsg = 'Não foi possível concluir o cadastro. Verifique os dados.';
                         }
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(content: Text(erroMsg), backgroundColor: Colors.red),
@@ -329,26 +335,28 @@ class _PlansScreenState extends State<PlansScreen> {
                       await boxUser.put('email', email);
                       await boxUser.put('is_registrado', true);
                       autenticadoComSucesso = true;
+                      setState(() {});
                       if (ctx.mounted) Navigator.pop(ctx);
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Login efetuado com sucesso!'), backgroundColor: Colors.green),
+                        );
+                      }
                     } else {
                       if (ctx.mounted) {
                         String erroMsg = res['error'] ?? 'Erro ao efetuar login.';
                         if (erroMsg.contains('SELECT') || erroMsg.contains('LINE')) {
-                          erroMsg = 'Falha na autenticação. Verifique seu e-mail e senha.';
+                          erroMsg = 'Falha na autenticação. Verifique e-mail e senha.';
                         }
                         ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(erroMsg),
-                            backgroundColor: Colors.red,
-                            duration: const Duration(seconds: 4),
-                          ),
+                          SnackBar(content: Text(erroMsg), backgroundColor: Colors.red),
                         );
                       }
                     }
                   }
                 },
                 child: Text(
-                  _modoCadastro ? 'Cadastrar e Continuar' : 'Entrar e Continuar',
+                  _modoCadastro ? 'Cadastrar' : 'Entrar',
                   style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
               ),
@@ -361,10 +369,10 @@ class _PlansScreenState extends State<PlansScreen> {
     return autenticadoComSucesso;
   }
 
-  // 🛍️ Fluxo Principal de Compra
+  // 🛍️ Fluxo Principal de Compra (Iniciado ao clicar nos cards de planos)
   Future<void> _comprarPlano(int creditos, String nomePlano, String preco) async {
     if (!_usuarioEstaLogado()) {
-      final autenticou = await _exibirDialogoAutenticacao();
+      final autenticou = await _exibirDialogoAutenticacaoApenas();
       if (!autenticou) return;
     }
 
@@ -438,16 +446,16 @@ class _PlansScreenState extends State<PlansScreen> {
     );
   }
 
-  // 📜 Exibe o BottomSheet com o Histórico de Recargas FILTRADO pelo e-mail ativo
+  // 📜 Exibe o Histórico de Recargas
   void _exibirHistoricoCompras() {
     final boxCompras = Hive.box('box_compras');
     final emailAtual = _obterApiKeyAtual();
 
     if (emailAtual.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Por favor, faça login para ver o seu histórico de recargas.')),
+        const SnackBar(content: Text('Por favor, faça login para ver o seu histórico.')),
       );
-      _exibirDialogoAutenticacao();
+      _exibirDialogoAutenticacaoApenas();
       return;
     }
 
