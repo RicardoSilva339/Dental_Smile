@@ -524,7 +524,6 @@ class _PlansScreenState extends State<PlansScreen> {
                     padding: const EdgeInsets.all(16),
                     itemCount: comprasDoUsuario.length,
                     itemBuilder: (context, index) {
-                      // 👈 Índice corrigido e sem quebras
                       final item = Map<String, dynamic>.from(comprasDoUsuario[comprasDoUsuario.length - 1 - index] as Map);
 
                       return Card(
@@ -712,14 +711,15 @@ class _PlansScreenState extends State<PlansScreen> {
                 ),
                 if (isPopular)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    // 👈 Padding ajustado e mais compacto para não estourar em telas menores
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
                       color: Colors.amber,
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(8),
                     ),
                     child: const Text(
                       'MAIS VENDIDO 🌟',
-                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.black87),
+                      style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.black87),
                     ),
                   ),
               ],
