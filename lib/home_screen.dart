@@ -27,16 +27,15 @@ class _HomeScreenState extends State<HomeScreen> {
     return boxUser.get('email', defaultValue: '') as String;
   }
 
-  // 🚀 Inicializa o dispositivo no backend e exibe o modal de boas-vindas se for o primeiro acesso
+  // 🚀 Inicializa o dispositivo no backend e exibe o modal de boas-vindas APENAS se o aparelho for estritamente novo
   Future<void> _inicializarECarregarCreditos() async {
     setState(() => _isLoadingCredits = true);
 
     final apiKey = _obterApiKeyAtual();
     final boxUser = Hive.box('box_usuario');
-    final bool jaExibiuPopupLocal = boxUser.get('ja_exibiu_popup', defaultValue: false) as bool;
 
     if (apiKey.isEmpty) {
-      // 📱 Utilizador Convidado: Registra/Verifica o Device ID na nuvem e busca os créditos do aparelho
+      // 📱 Utilizador Convidado: Registra/Verifica o Device ID na nuvem
       final dynamic resDevice = await ApiService.checkOrRegisterDevice();
 
       if (mounted) {
@@ -45,7 +44,8 @@ class _HomeScreenState extends State<HomeScreen> {
             _creditos = resDevice['creditos'] ?? 0;
             final bool ehNovoServidor = resDevice['novo'] ?? false;
 
-            if (!jaExibiuPopupLocal || ehNovoServidor) {
+            // 🎯 O Pop-up SÓ aparece se for a primeira vez do APARELHO no banco de dados
+            if (ehNovoServidor) {
               boxUser.put('ja_exibiu_popup', true);
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 _exibirPopupBoasVindas();
@@ -53,12 +53,6 @@ class _HomeScreenState extends State<HomeScreen> {
             }
           } else if (resDevice is int) {
             _creditos = resDevice;
-            if (!jaExibiuPopupLocal) {
-              boxUser.put('ja_exibiu_popup', true);
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                _exibirPopupBoasVindas();
-              });
-            }
           } else {
             _creditos = 0;
           }
@@ -66,7 +60,7 @@ class _HomeScreenState extends State<HomeScreen> {
         });
       }
     } else {
-      // 👤 Utilizador Logado: Consulta os créditos vinculados à conta dele
+      // 👤 Utilizador Logado: Consulta os créditos vinculados à conta dele na nuvem
       final resultado = await ApiService.checkCredits(apiKey);
       if (mounted) {
         setState(() {
@@ -81,7 +75,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // 🎁 Modal de Boas-Vindas Didático (Aparece no primeiro acesso do aparelho)
+  // 🎁 Modal de Boas-Vindas Didático (Exibido estritamente para aparelhos virgens no banco)
   void _exibirPopupBoasVindas() {
     showDialog(
       context: context,
@@ -136,7 +130,6 @@ class _HomeScreenState extends State<HomeScreen> {
     final bool estaLogado = _obterApiKeyAtual().isNotEmpty;
 
     if (estaLogado) {
-      // Se já estiver logado, abre a PlansScreen diretamente para ver conta/compras
       Navigator.push(
         context,
         MaterialPageRoute(builder: (context) => const PlansScreen()),
@@ -144,7 +137,6 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
-    // Se NÃO estiver logado, apresenta as opções transparentes
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -169,7 +161,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 20),
 
-            // Opção 1: Fazer Login na Conta Existente
+            // Opção 1: Fazer Login
             ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF5C6BC0),
@@ -187,9 +179,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 await Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => const PlansScreen(
-                      abrirLoginDireto: true, // 👈 Abre direto na janela de LOGIN
-                    ),
+                    builder: (context) => const PlansScreen(abrirLoginDireto: true),
                   ),
                 );
                 _inicializarECarregarCreditos();
@@ -197,7 +187,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 12),
 
-            // Opção 2: Criar Nova Conta de Dentista
+            // Opção 2: Criar Nova Conta
             ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.teal.shade600,
@@ -215,9 +205,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 await Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => const PlansScreen(
-                      abrirCadastroDireto: true, // 👈 Abre direto na janela de CADASTRO
-                    ),
+                    builder: (context) => const PlansScreen(abrirCadastroDireto: true),
                   ),
                 );
                 _inicializarECarregarCreditos();
@@ -225,7 +213,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 12),
 
-            // Opção 3: Apenas Navegar pela Loja de Planos
+            // Opção 3: Ver Pacotes
             OutlinedButton.icon(
               style: OutlinedButton.styleFrom(
                 foregroundColor: const Color(0xFF5C6BC0),
@@ -303,7 +291,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ⚠️ Aviso discreto e dinâmico que desaparece sozinho em 3 segundos
   void _mostrarAvisoUltimoCredito() {
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
@@ -329,7 +316,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // Handler do clique no botão "Nova Simulação"
   void _aoClicarNovaSimulacao() {
     if (_creditos <= 0) {
       _mostrarAlertaCreditosEsgotados();
@@ -356,7 +342,7 @@ class _HomeScreenState extends State<HomeScreen> {
         child: SafeArea(
           child: Column(
             children: [
-              // 💎 Topo Inteligente com Badge de Créditos e Botão Entrar / Conta
+              // Topo com Badge de Créditos
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 12.0),
                 child: Row(
@@ -370,8 +356,6 @@ class _HomeScreenState extends State<HomeScreen> {
                         color: Colors.white,
                       ),
                     ),
-
-                    // 🏷️ Pílula Interativa de Créditos + Entrar / Conta
                     Container(
                       decoration: BoxDecoration(
                         color: saldoZerado
@@ -386,7 +370,6 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          // 🛒 Lado Esquerdo: Saldo de Créditos
                           InkWell(
                             borderRadius: const BorderRadius.horizontal(left: Radius.circular(20)),
                             onTap: _mostrarMenuAcessoOuLoja,
@@ -421,11 +404,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                             ),
                           ),
-
-                          // Divisória vertical sutil
                           Container(height: 16, width: 1, color: Colors.white30),
-
-                          // 🔐 Lado Direito: Acessa o menu de conta / login
                           InkWell(
                             borderRadius: const BorderRadius.horizontal(right: Radius.circular(20)),
                             onTap: _mostrarMenuAcessoOuLoja,

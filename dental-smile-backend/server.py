@@ -91,6 +91,7 @@ def check_device():
 
         if row:
             creditos = row[0]
+            novo = False
         else:
             cur.execute("""
                 INSERT INTO dispositivos (device_id, creditos)
@@ -99,10 +100,11 @@ def check_device():
             """, (device_id,))
             conn.commit()
             creditos = 3
+            novo = True
 
         cur.close()
         conn.close()
-        return jsonify({"success": True, "creditos": creditos}), 200
+        return jsonify({"success": True, "creditos": creditos, "novo": novo}), 200
 
     except Exception as e:
         print(f"ERRO NO CHECK-DEVICE: {str(e)}")
@@ -117,6 +119,7 @@ def register():
     email = data.get('email', '').strip().lower()
     cro = data.get('cro', '')
     senha = data.get('senha', '')
+    device_id = data.get('device_id', '').strip()
 
     if not email or not senha:
         return jsonify({"success": False, "error": "E-mail e senha são obrigatórios."}), 400
@@ -133,16 +136,24 @@ def register():
             conn.close()
             return jsonify({"success": False, "error": "Este e-mail já está cadastrado."}), 400
 
+        # Trava de segurança: Se o aparelho já existe no banco e já consumiu os créditos, a nova conta nasce com 0 créditos
+        creditos_iniciais = 3
+        if device_id:
+            cur.execute("SELECT creditos FROM dispositivos WHERE device_id = %s;", (device_id,))
+            dev_row = cur.fetchone()
+            if dev_row and dev_row[0] <= 0:
+                creditos_iniciais = 0
+
         cur.execute("""
             INSERT INTO usuarios (api_key, nome, email, cro, senha, creditos, tentativas_login)
-            VALUES (%s, %s, %s, %s, %s, 3, 0);
-        """, (api_key, nome, email, cro, senha))
+            VALUES (%s, %s, %s, %s, %s, %s, 0);
+        """, (api_key, nome, email, cro, senha, creditos_iniciais))
 
         conn.commit()
         cur.close()
         conn.close()
 
-        return jsonify({"success": True, "message": "Conta criada com sucesso com 3 créditos iniciais!"}), 200
+        return jsonify({"success": True, "message": "Conta criada com sucesso!"}), 200
     except Exception as e:
         print(f"ERRO NO CADASTRO: {str(e)}")
         traceback.print_exc()
@@ -176,7 +187,7 @@ def login():
             return jsonify({
                 "success": False,
                 "bloqueado": True,
-                "error": "Conta temporariamente bloqueada por excesso de tentativas. Redefina a senha."
+                "error": "Conta temporariamente bloqueada por excesso de tentativas."
             }), 403
 
         if senha != senha_correta:
@@ -224,7 +235,7 @@ def check_credits():
     conn.close()
     return jsonify({"success": True, "creditos": creditos}), 200
 
-# 💳 Adicionar Créditos (Blindado para somar exatamente ao saldo correto)
+# 💳 Adicionar Créditos
 @app.route('/add-credits', methods=['POST'])
 def add_credits():
     data = request.get_json(force=True, silent=True) or {}
@@ -313,7 +324,7 @@ def process_smile():
         try:
             payload = {"inputs": prompt_custom, "parameters": {"strength": 0.45}}
             response = requests.post(HF_API_URL, headers=HEADERS, files={"image": image_data}, json=payload, timeout=30)
-            if response.status_color == 200:
+            if response.status_code == 200:
                 ai_image = Image.open(io.BytesIO(response.content))
                 ai_image_resized = ai_image.resize((orig_width, orig_height), Image.Resampling.LANCZOS)
         except Exception:

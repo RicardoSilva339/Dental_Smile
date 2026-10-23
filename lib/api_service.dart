@@ -46,10 +46,10 @@ class ApiService {
     } catch (e) {
       debugPrint("Erro ao verificar dispositivo: $e");
     }
-    return {'success': false, 'creditos': 3}; // Fallback de segurança
+    return {'success': false, 'creditos': 3, 'novo': false}; // Fallback de segurança
   }
 
-  // 📝 Registo de novo utilizador com senha
+  // 📝 Registo de novo utilizador com senha (Enviando o device_id para travar o trial por aparelho)
   static Future<Map<String, dynamic>> register({
     required String nome,
     required String email,
@@ -57,7 +57,9 @@ class ApiService {
     required String senha,
   }) async {
     try {
+      final String deviceId = await _getDeviceId(); // 👈 Obtém o ID do aparelho para enviar ao backend
       final url = Uri.parse('$baseUrl/register');
+
       final response = await http.post(
         url,
         headers: {'Content-Type': 'application/json'},
@@ -66,6 +68,7 @@ class ApiService {
           'email': email,
           'cro': cro,
           'senha': senha,
+          'device_id': deviceId, // 👈 Blindagem anti-fraude: envia o device_id no registro
         }),
       );
       return jsonDecode(response.body);
