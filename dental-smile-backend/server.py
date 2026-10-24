@@ -5,7 +5,7 @@ import requests
 import psycopg2
 import traceback
 from flask import Flask, request, jsonify
-from PIL import Image
+from PIL import Image, ImageOps
 
 app = Flask(__name__)
 
@@ -136,13 +136,13 @@ def register():
             conn.close()
             return jsonify({"success": False, "error": "Este e-mail já está cadastrado."}), 400
 
-        # Trava de segurança: Se o aparelho já existe no banco e já consumiu os créditos, a nova conta nasce com 0 créditos
+        # 🛡️ Herança Exata de Créditos do Aparelho: A conta nova herda exatamente o saldo remanescente do device_id
         creditos_iniciais = 3
         if device_id:
             cur.execute("SELECT creditos FROM dispositivos WHERE device_id = %s;", (device_id,))
             dev_row = cur.fetchone()
-            if dev_row and dev_row[0] <= 0:
-                creditos_iniciais = 0
+            if dev_row:
+                creditos_iniciais = dev_row[0]
 
         cur.execute("""
             INSERT INTO usuarios (api_key, nome, email, cro, senha, creditos, tentativas_login)
@@ -198,6 +198,7 @@ def login():
             conn.close()
 
             restantes = 4 - novas_tentativas
+
             msg = f"Senha incorreta. Restam {restantes} tentativas." if restantes > 0 else "Conta bloqueada por segurança."
             return jsonify({"success": False, "error": msg}), 401
 
@@ -318,6 +319,10 @@ def process_smile():
     try:
         image_data = base64.b64decode(image_b64)
         orig_image = Image.open(io.BytesIO(image_data))
+
+        # 🔄 Correção automática de rotação EXIF (Resolve fotos de lado de qualquer celular)
+        orig_image = ImageOps.exif_transpose(orig_image) or orig_image
+
         orig_width, orig_height = orig_image.size
 
         ai_image_resized = None
@@ -326,6 +331,7 @@ def process_smile():
             response = requests.post(HF_API_URL, headers=HEADERS, files={"image": image_data}, json=payload, timeout=30)
             if response.status_code == 200:
                 ai_image = Image.open(io.BytesIO(response.content))
+                ai_image = ImageOps.exif_transpose(ai_image) or ai_image # Garante que a resposta da IA também fique correta
                 ai_image_resized = ai_image.resize((orig_width, orig_height), Image.Resampling.LANCZOS)
         except Exception:
             pass
