@@ -57,7 +57,7 @@ class ApiService {
     required String senha,
   }) async {
     try {
-      final String deviceId = await _getDeviceId(); // 👈 Obtém o ID do aparelho para enviar ao backend
+      final String deviceId = await _getDeviceId();
       final url = Uri.parse('$baseUrl/register');
 
       final response = await http.post(
@@ -68,7 +68,7 @@ class ApiService {
           'email': email,
           'cro': cro,
           'senha': senha,
-          'device_id': deviceId, // 👈 Blindagem anti-fraude: envia o device_id no registro
+          'device_id': deviceId,
         }),
       );
       return jsonDecode(response.body);
@@ -78,13 +78,12 @@ class ApiService {
     }
   }
 
-  // 🔑 Login do utilizador (Enviando o device_id para sincronizar o saldo exato consumido no aparelho)
+  // 🔑 Login do utilizador (Soberania absoluta: Sem enviar device_id, busca direto o saldo da conta)
   static Future<Map<String, dynamic>> login({
     required String email,
     required String senha,
   }) async {
     try {
-      final String deviceId = await _getDeviceId(); // 👈 Captura o device_id atual
       final url = Uri.parse('$baseUrl/login');
       final response = await http.post(
         url,
@@ -92,7 +91,7 @@ class ApiService {
         body: jsonEncode({
           'email': email,
           'senha': senha,
-          'device_id': deviceId, // 👈 Enviado para o backend sincronizar e retornar o saldo correto!
+          // 👈 Removido o device_id daqui! O login agora é puramente a conta do usuário.
         }),
       );
       return jsonDecode(response.body);
@@ -143,7 +142,7 @@ class ApiService {
     return false;
   }
 
-  // 🪄 Envia a foto em Base64 para o servidor gerar o sorriso e sincronizar o Device ID em qualquer cenário
+  // 🪄 Envia a foto em Base64 para o servidor gerar o sorriso (Mantém o device_id apenas se for convidado/processo avulso)
   static Future<Map<String, dynamic>> processSmile({
     required File imageFile,
     required String color,
@@ -157,7 +156,6 @@ class ApiService {
       List<int> imageBytes = await imageFile.readAsBytes();
       String base64Image = base64Encode(imageBytes);
 
-      // 📱 SEMPRE captura o device_id do aparelho atual para garantir sincronia total no backend
       String deviceId = await _getDeviceId();
 
       String customPrompt = 'perfect white smile, color $color, shape $shape, size $size, professional cosmetic dentistry, highly detailed';
@@ -167,7 +165,7 @@ class ApiService {
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'api_key': apiKey,
-          'device_id': deviceId, // 👈 Sempre enviado para o backend atualizar as duas tabelas (usuário e aparelho)!
+          'device_id': deviceId,
           'image': base64Image,
           'prompt': customPrompt,
         }),

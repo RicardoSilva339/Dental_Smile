@@ -698,21 +698,24 @@ class _PlansScreenState extends State<PlansScreen> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       color: corCard,
       child: Padding(
-        padding: const EdgeInsets.all(20.0),
+        padding: const EdgeInsets.all(16.0), // 👈 Otimizado para evitar qualquer overflow vertical
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  titulo,
-                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.indigo),
+                Expanded( // 👈 Expanded garante que o título se acomode e nunca cause overflow
+                  child: Text(
+                    titulo,
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.indigo),
+                  ),
                 ),
                 if (isPopular)
                   Container(
-                    // 👈 Padding ajustado e mais compacto para não estourar em telas menores
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    margin: const EdgeInsets.only(left: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
                       color: Colors.amber,
                       borderRadius: BorderRadius.circular(8),

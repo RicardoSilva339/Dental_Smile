@@ -136,6 +136,7 @@ def register():
             conn.close()
             return jsonify({"success": False, "error": "Este e-mail já está cadastrado."}), 400
 
+        # No registro, se o aparelho já tiver créditos de device, herda; senão começa com 3
         creditos_iniciais = 3
         if device_id:
             cur.execute("SELECT creditos FROM dispositivos WHERE device_id = %s;", (device_id,))
@@ -198,13 +199,14 @@ def login():
 
             restantes = 4 - novas_tentativas
             msg = f"Senha incorreta. Restam {restantes} tentativas." if restantes > 0 else "Conta bloqueada por segurança."
-            return jsonify({"success": False,="error": msg}), 401
+            return jsonify({"success": False, "error": msg}), 401
 
         cur.execute("UPDATE usuarios SET tentativas_login = 0 WHERE id = %s;", (user_id,))
         conn.commit()
         cur.close()
         conn.close()
 
+        # Retorna estritamente o saldo real do banco de dados do usuário
         return jsonify({
             "success": True,
             "message": "Login efetuado com sucesso!",
@@ -257,7 +259,6 @@ def add_credits():
         res = cur.fetchone()
         if res:
             novo_saldo = res[0]
-            cur.execute("UPDATE dispositivos SET creditos = %s;", (novo_saldo,))
     elif device_id:
         cur.execute("""
             UPDATE dispositivos
@@ -313,7 +314,7 @@ def process_smile():
     if not image_b64:
         cur.close()
         conn.close()
-        return jsonify({"success": False, "error": "Nenhuma imagem enviada."}), 400
+        return jsonify({"success": False,="error": "Nenhuma imagem enviada."}), 400
 
     try:
         image_data = base64.b64decode(image_b64)
@@ -340,16 +341,13 @@ def process_smile():
         ai_image_resized.save(buffered, format="JPEG")
         processed_b64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
 
+        # Deduz estritamente do lugar certo (ou do device se convidado, ou do usuario se logado)
         if is_convidado:
             cur.execute("UPDATE dispositivos SET creditos = creditos - 1 WHERE device_id = %s RETURNING creditos;", (device_id,))
             novo_saldo = cur.fetchone()[0]
         else:
             cur.execute("UPDATE usuarios SET creditos = creditos - 1 WHERE api_key = %s OR email = %s RETURNING creditos;", (api_key, api_key))
             novo_saldo = cur.fetchone()[0]
-            if device_id:
-                cur.execute("UPDATE dispositivos SET creditos = %s WHERE device_id = %s;", (novo_saldo, device_id))
-            else:
-                cur.execute("UPDATE dispositivos SET creditos = %s;", (novo_saldo,))
 
         conn.commit()
         cur.close()
