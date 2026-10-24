@@ -31,7 +31,7 @@ def init_db():
                 nome VARCHAR(100),
                 email VARCHAR(100) UNIQUE NOT NULL,
                 cro VARCHAR(50),
-                creditos INTEGER DEFAULT 3,
+                creditos INTEGER DEFAULT 0,
                 senha VARCHAR(100),
                 tentativas_login INTEGER DEFAULT 0,
                 criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -41,7 +41,7 @@ def init_db():
         cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS email VARCHAR(100);")
         cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS senha VARCHAR(100);")
         cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS cro VARCHAR(50);")
-        cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS creditos INTEGER DEFAULT 3;")
+        cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS creditos INTEGER DEFAULT 0;")
         cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS tentativas_login INTEGER DEFAULT 0;")
 
         conn.commit()
@@ -111,7 +111,7 @@ def check_device():
         traceback.print_exc()
         return jsonify({"success": False, "error": str(e)}), 500
 
-# 🔐 Rota de Registro de Novo Dentista
+# 🔐 Rota de Registro de Novo Dentista (Conta nova nasce com ZERO créditos)
 @app.route('/register', methods=['POST'])
 def register():
     data = request.get_json(force=True, silent=True) or {}
@@ -119,7 +119,6 @@ def register():
     email = data.get('email', '').strip().lower()
     cro = data.get('cro', '')
     senha = data.get('senha', '')
-    device_id = data.get('device_id', '').strip()
 
     if not email or not senha:
         return jsonify({"success": False, "error": "E-mail e senha são obrigatórios."}), 400
@@ -136,13 +135,9 @@ def register():
             conn.close()
             return jsonify({"success": False, "error": "Este e-mail já está cadastrado."}), 400
 
-        # No registro, se o aparelho já tiver créditos de device, herda; senão começa com 3
-        creditos_iniciais = 3
-        if device_id:
-            cur.execute("SELECT creditos FROM dispositivos WHERE device_id = %s;", (device_id,))
-            dev_row = cur.fetchone()
-            if dev_row:
-                creditos_iniciais = dev_row[0]
+        # 🛡️ REGRA DE OURO: Conta nova nasce SEMPRE com 0 créditos.
+        # O trial de 3 créditos pertence exclusivamente ao aparelho (modo convidado).
+        creditos_iniciais = 0
 
         cur.execute("""
             INSERT INTO usuarios (api_key, nome, email, cro, senha, creditos, tentativas_login)
@@ -159,7 +154,7 @@ def register():
         traceback.print_exc()
         return jsonify({"success": False, "error": f"Erro no banco: {str(e)}"}), 500
 
-# 🔑 Rota de Login (Soberania Absoluta da Conta - Sem misturar com o device)
+# 🔑 Rota de Login (Soberania Absoluta da Conta)
 @app.route('/login', methods=['POST'])
 def login():
     data = request.get_json(force=True, silent=True) or {}
@@ -206,7 +201,6 @@ def login():
         cur.close()
         conn.close()
 
-        # Retorna estritamente o saldo real do banco de dados do usuário
         return jsonify({
             "success": True,
             "message": "Login efetuado com sucesso!",
@@ -314,7 +308,7 @@ def process_smile():
     if not image_b64:
         cur.close()
         conn.close()
-        return jsonify({"success": False,="error": "Nenhuma imagem enviada."}), 400
+        return jsonify({"success": False, "error": "Nenhuma imagem enviada."}), 400
 
     try:
         image_data = base64.b64decode(image_b64)
@@ -341,7 +335,6 @@ def process_smile():
         ai_image_resized.save(buffered, format="JPEG")
         processed_b64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
 
-        # Deduz estritamente do lugar certo (ou do device se convidado, ou do usuario se logado)
         if is_convidado:
             cur.execute("UPDATE dispositivos SET creditos = creditos - 1 WHERE device_id = %s RETURNING creditos;", (device_id,))
             novo_saldo = cur.fetchone()[0]
