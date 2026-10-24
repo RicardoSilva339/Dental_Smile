@@ -315,7 +315,7 @@ class _CompareScreenState extends State<CompareScreen> {
                 ),
               const SizedBox(height: 12),
 
-              // ÁREA DE COMPARAÇÃO SOBREPOSTA (SLIDER COM PROPORÇÃO ESTABILIZADA)
+              // ÁREA DE COMPARAÇÃO SOBREPOSTA (SLIDER COM TELA CHEIA / COVER)
               LayoutBuilder(
                 builder: (context, constraints) {
                   final containerWidth = constraints.maxWidth;
@@ -340,7 +340,7 @@ class _CompareScreenState extends State<CompareScreen> {
                       width: containerWidth,
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(16),
-                        color: Colors.black, // Fundo neutro para evitar piscar branco
+                        color: Colors.indigo.shade50, // Fundo suave caso haja transição
                         boxShadow: [
                           BoxShadow(
                             color: Colors.black.withOpacity(0.15),
@@ -354,20 +354,20 @@ class _CompareScreenState extends State<CompareScreen> {
                         child: Stack(
                           fit: StackFit.expand,
                           children: [
-                            // 🖼️ IMAGEM PROCESSADA (Com cacheWidth otimizado para evitar estouro de memória e zoom brusco)
+                            // 🖼️ IMAGEM PROCESSADA (Preenchendo todo o espaço com BoxFit.cover)
                             if (processedFile != null && processedFile.existsSync())
                               Image.file(
                                 processedFile,
                                 width: containerWidth,
                                 height: containerHeight,
-                                fit: BoxFit.contain, // 👈 Alterado para contain para manter proporção exata sem saltos
+                                fit: BoxFit.cover, // 👈 Preenche totalmente sem abas pretas nas laterais
                                 alignment: Alignment.center,
                                 cacheWidth: 1000,
                               )
                             else
-                              const Center(child: Text('Erro ao carregar imagem processada', style: TextStyle(color: Colors.white))),
+                              const Center(child: Text('Erro ao carregar imagem processada')),
 
-                            // 🖼️ IMAGEM ORIGINAL (Sobreposta com o slider)
+                            // 🖼️ IMAGEM ORIGINAL (Sobreposta com o slider em BoxFit.cover)
                             if (originalFile != null && originalFile.existsSync())
                               Align(
                                 alignment: Alignment.centerLeft,
@@ -385,7 +385,7 @@ class _CompareScreenState extends State<CompareScreen> {
                                         originalFile,
                                         width: containerWidth,
                                         height: containerHeight,
-                                        fit: BoxFit.contain, // 👈 Mantém alinhado com a processada
+                                        fit: BoxFit.cover, // 👈 Sincronizado para preencher todo o container
                                         alignment: Alignment.center,
                                         cacheWidth: 1000,
                                       ),
