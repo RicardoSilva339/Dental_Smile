@@ -9,8 +9,6 @@ class AdjustSmileScreen extends StatefulWidget {
   final File image;
   final Map<String, dynamic>? region;
   final String? initialColor;
-  final String? initialShape;
-  final String? initialSize;
   final String? simulationId;
   final String? userEmail;
 
@@ -19,8 +17,6 @@ class AdjustSmileScreen extends StatefulWidget {
     required this.image,
     this.region,
     this.initialColor,
-    this.initialShape,
-    this.initialSize,
     this.simulationId,
     this.userEmail,
   });
@@ -35,34 +31,20 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
   bool _isLoadingCredits = true;
 
   late String _selectedColor;
-  late String _selectedShape;
-  late String _selectedSize;
 
+  // 🦷 Cores baseadas exclusivamente na Escala Profissional Bleach (BL1 a BL4)
   final Map<String, String> _colors = {
-    'natural': 'Natural',
-    'brilhante': 'Brilhante',
-    'perolado': 'Perolado',
-  };
-
-  final Map<String, String> _shapes = {
-    'oval': 'Oval',
-    'quadrado': 'Quadrado',
-    'retangular': 'Retangular',
-    'triangular': 'Triangular',
-  };
-
-  final Map<String, String> _sizes = {
-    'curto': 'Curto',
-    'medio': 'Médio',
-    'longo': 'Longo',
+    'bl1': 'BL1 (Ultra Branco)',
+    'bl2': 'BL2 (Branco Intenso)',
+    'bl3': 'BL3 (Natural Claro)',
+    'bl4': 'BL4 (Suave)',
   };
 
   @override
   void initState() {
     super.initState();
-    _selectedColor = widget.initialColor ?? 'brilhante';
-    _selectedShape = widget.initialShape ?? 'oval';
-    _selectedSize = widget.initialSize ?? 'medio';
+    // Valor inicial padrão ajustado para bl2 (um dos mais buscados) caso não venha definido
+    _selectedColor = widget.initialColor ?? 'bl2';
 
     // Busca os créditos ativos ao abrir a tela
     _carregarCreditos();
@@ -134,12 +116,13 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
     String? processedImagePath;
 
     try {
-      // Envia a chamada de processamento da IA
+      // Envia a chamada de processamento da IA passando a cor selecionada da Escala Bleach
+      // Mantemos parâmetros neutros de shape e size fixos para a IA preservar a anatomia natural
       final resultado = await ApiService.processSmile(
         imageFile: widget.image,
         color: _selectedColor,
-        shape: _selectedShape,
-        size: _selectedSize,
+        shape: 'natural',
+        size: 'medio',
         apiKey: apiKey.isNotEmpty ? apiKey : '',
       );
 
@@ -148,7 +131,6 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
 
         if (mounted) {
           setState(() {
-            // Se o backend retornou os créditos restantes de forma válida, usa ele; senão decrementa 1 localmente
             if (resultado['creditos_restantes'] != null && resultado['creditos_restantes'] is int) {
               _creditos = resultado['creditos_restantes'];
             } else if (_creditos > 0) {
@@ -184,28 +166,23 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
         'originalPath': widget.image.path,
         'processedPath': processedImagePath,
         'color': _colors[_selectedColor] ?? _selectedColor,
-        'shape': _shapes[_selectedShape] ?? _selectedShape,
-        'size': _sizes[_selectedSize] ?? _selectedSize,
+        'shape': 'Natural',
+        'size': 'Padrão',
         'simulationId': widget.simulationId ?? 'DS-${DateTime.now().millisecondsSinceEpoch}',
-        'userEmail': apiKey, // 👈 E-mail ativo para salvar a simulação com dono!
+        'userEmail': apiKey,
       },
     );
   }
 
-  Widget _buildChipGroup({
-    required String title,
-    required Map<String, String> options,
-    required String selectedValue,
-    required ValueChanged<String> onSelected,
-  }) {
+  Widget _buildColorChipGroup() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
           child: Text(
-            title,
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white),
+            'Selecione a Tonalidade (Escala Bleach):',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white),
           ),
         ),
         SingleChildScrollView(
@@ -213,8 +190,8 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 12.0),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
-            children: options.entries.map((entry) {
-              final isSelected = selectedValue == entry.key;
+            children: _colors.entries.map((entry) {
+              final isSelected = _selectedColor == entry.key;
               return Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 4.0),
                 child: ChoiceChip(
@@ -227,7 +204,7 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
                     fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                   ),
                   onSelected: (selected) {
-                    if (selected) onSelected(entry.key);
+                    if (selected) setState(() => _selectedColor = entry.key);
                   },
                 ),
               );
@@ -244,11 +221,10 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Personalize o Sorriso'),
+        title: const Text('Escolha a Cor do Clareamento'),
         backgroundColor: const Color(0xFF5C6BC0),
         foregroundColor: Colors.white,
         actions: [
-          // 🛡️ Apenas Exibição Informativa (Estática, sem clique/redirecionamento)
           Padding(
             padding: const EdgeInsets.only(right: 12.0),
             child: Center(
@@ -312,27 +288,9 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
                 ),
               ),
             ),
-            _buildChipGroup(
-              title: 'Cor:',
-              options: _colors,
-              selectedValue: _selectedColor,
-              onSelected: (val) => setState(() => _selectedColor = val),
-            ),
-            const SizedBox(height: 8),
-            _buildChipGroup(
-              title: 'Formato:',
-              options: _shapes,
-              selectedValue: _selectedShape,
-              onSelected: (val) => setState(() => _selectedShape = val),
-            ),
-            const SizedBox(height: 8),
-            _buildChipGroup(
-              title: 'Tamanho:',
-              options: _sizes,
-              selectedValue: _selectedSize,
-              onSelected: (val) => setState(() => _selectedSize = val),
-            ),
-            const SizedBox(height: 16),
+            // 🦷 Apenas o seletor de cores da Escala Bleach limpo e direto ao ponto
+            _buildColorChipGroup(),
+            const SizedBox(height: 24),
             Padding(
               padding: const EdgeInsets.fromLTRB(16.0, 0.0, 16.0, 24.0),
               child: ElevatedButton.icon(
@@ -343,7 +301,7 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
                   child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
                 )
                     : const Icon(Icons.auto_awesome),
-                label: Text(_isProcessing ? 'Processando com IA...' : 'Aplicar Sorriso'),
+                label: Text(_isProcessing ? 'Processando com IA...' : 'Aplicar Clareamento'),
                 style: ElevatedButton.styleFrom(
                   minimumSize: const Size(double.infinity, 52),
                   backgroundColor: const Color(0xFF5C6BC0),
