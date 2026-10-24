@@ -158,13 +158,12 @@ def register():
         traceback.print_exc()
         return jsonify({"success": False, "error": f"Erro no banco: {str(e)}"}), 500
 
-# 🔑 Rota de Login com Soma Inteligente de Créditos (Dispositivo + Conta)
+# 🔑 Rota de Login (Soberania Absoluta da Conta - Sem misturar com o device)
 @app.route('/login', methods=['POST'])
 def login():
     data = request.get_json(force=True, silent=True) or {}
     email = data.get('email', '').strip().lower()
     senha = data.get('senha', '')
-    device_id = data.get('device_id', '').strip()
 
     try:
         conn = get_db_connection()
@@ -199,30 +198,9 @@ def login():
 
             restantes = 4 - novas_tentativas
             msg = f"Senha incorreta. Restam {restantes} tentativas." if restantes > 0 else "Conta bloqueada por segurança."
-            return jsonify({"success": False, "error": msg}), 401
+            return jsonify({"success": False,="error": msg}), 401
 
         cur.execute("UPDATE usuarios SET tentativas_login = 0 WHERE id = %s;", (user_id,))
-
-        # 🔗 SOMA INTELIGENTE NO LOGIN: Soma o saldo da conta com os créditos do novo aparelho
-        if device_id:
-            cur.execute("SELECT creditos FROM dispositivos WHERE device_id = %s;", (device_id,))
-            dev_row = cur.fetchone()
-            if dev_row:
-                dev_creditos = dev_row[0]
-
-                # Se o aparelho tem saldo positivo (ex: 3 créditos de cortesia novos), soma com o da conta!
-                # (Evita somar se o device já foi zerado antes para não duplicar infinitamente)
-                if dev_creditos > 0:
-                    novo_saldo_total = creditos + dev_creditos
-
-                    # Atualiza usuário e dispositivo com a soma justa
-                    cur.execute("UPDATE usuarios SET creditos = %s WHERE id = %s;", (novo_saldo_total, user_id))
-                    cur.execute("UPDATE dispositivos SET creditos = %s WHERE device_id = %s;", (0, device_id)) # Zera o device para já estar incorporado na conta
-                    creditos = novo_saldo_total
-                else:
-                    # Se o device já está zerado, o usuário assume o controle com o saldo da conta dele
-                    cur.execute("UPDATE dispositivos SET creditos = %s WHERE device_id = %s;", (creditos, device_id))
-
         conn.commit()
         cur.close()
         conn.close()
@@ -238,7 +216,7 @@ def login():
     except Exception as e:
         print(f"ERRO NO LOGIN: {str(e)}")
         traceback.print_exc()
-        return jsonify({"success": False,="error": str(e)}), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
 # 🔍 Verificar Créditos
 @app.route('/check-credits', methods=['POST'])
