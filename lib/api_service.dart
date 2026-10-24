@@ -78,12 +78,13 @@ class ApiService {
     }
   }
 
-  // 🔑 Login do utilizador (com tratamento de senha e bloqueio)
+  // 🔑 Login do utilizador (Enviando o device_id para sincronizar o saldo exato consumido no aparelho)
   static Future<Map<String, dynamic>> login({
     required String email,
     required String senha,
   }) async {
     try {
+      final String deviceId = await _getDeviceId(); // 👈 Captura o device_id atual
       final url = Uri.parse('$baseUrl/login');
       final response = await http.post(
         url,
@@ -91,6 +92,7 @@ class ApiService {
         body: jsonEncode({
           'email': email,
           'senha': senha,
+          'device_id': deviceId, // 👈 Enviado para o backend sincronizar e retornar o saldo correto!
         }),
       );
       return jsonDecode(response.body);
