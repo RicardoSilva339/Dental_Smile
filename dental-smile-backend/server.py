@@ -136,7 +136,6 @@ def register():
             conn.close()
             return jsonify({"success": False, "error": "Este e-mail já está cadastrado."}), 400
 
-        # 🛡️ Herança exata do saldo remanescente do device_id para a nova conta
         creditos_iniciais = 3
         if device_id:
             cur.execute("SELECT creditos FROM dispositivos WHERE device_id = %s;", (device_id,))
@@ -159,7 +158,7 @@ def register():
         traceback.print_exc()
         return jsonify({"success": False, "error": f"Erro no banco: {str(e)}"}), 500
 
-# 🔑 Rota de Login com Proteção de Tentativas e Sincronização de Saldo
+# 🔑 Rota de Login com Soma Inteligente de Créditos (Dispositivo + Conta)
 @app.route('/login', methods=['POST'])
 def login():
     data = request.get_json(force=True, silent=True) or {}
@@ -199,24 +198,30 @@ def login():
             conn.close()
 
             restantes = 4 - novas_tentativas
-
             msg = f"Senha incorreta. Restam {restantes} tentativas." if restantes > 0 else "Conta bloqueada por segurança."
             return jsonify({"success": False, "error": msg}), 401
 
         cur.execute("UPDATE usuarios SET tentativas_login = 0 WHERE id = %s;", (user_id,))
 
-        # 🔗 Sincronização inteligente no Login
+        # 🔗 SOMA INTELIGENTE NO LOGIN: Soma o saldo da conta com os créditos do novo aparelho
         if device_id:
             cur.execute("SELECT creditos FROM dispositivos WHERE device_id = %s;", (device_id,))
             dev_row = cur.fetchone()
             if dev_row:
                 dev_creditos = dev_row[0]
-                menor_saldo = min(creditos, dev_creditos)
-                if menor_saldo != creditos:
-                    cur.execute("UPDATE usuarios SET creditos = %s WHERE id = %s;", (menor_saldo, user_id))
-                    creditos = menor_saldo
-                elif menor_saldo != dev_creditos:
-                    cur.execute("UPDATE dispositivos SET creditos = %s WHERE device_id = %s;", (menor_saldo, device_id))
+
+                # Se o aparelho tem saldo positivo (ex: 3 créditos de cortesia novos), soma com o da conta!
+                # (Evita somar se o device já foi zerado antes para não duplicar infinitamente)
+                if dev_creditos > 0:
+                    novo_saldo_total = creditos + dev_creditos
+
+                    # Atualiza usuário e dispositivo com a soma justa
+                    cur.execute("UPDATE usuarios SET creditos = %s WHERE id = %s;", (novo_saldo_total, user_id))
+                    cur.execute("UPDATE dispositivos SET creditos = %s WHERE device_id = %s;", (0, device_id)) # Zera o device para já estar incorporado na conta
+                    creditos = novo_saldo_total
+                else:
+                    # Se o device já está zerado, o usuário assume o controle com o saldo da conta dele
+                    cur.execute("UPDATE dispositivos SET creditos = %s WHERE device_id = %s;", (creditos, device_id))
 
         conn.commit()
         cur.close()
@@ -233,7 +238,7 @@ def login():
     except Exception as e:
         print(f"ERRO NO LOGIN: {str(e)}")
         traceback.print_exc()
-        return jsonify({"success": False, "error": str(e)}), 500
+        return jsonify({"success": False,="error": str(e)}), 500
 
 # 🔍 Verificar Créditos
 @app.route('/check-credits', methods=['POST'])
@@ -292,7 +297,7 @@ def add_credits():
 
     return jsonify({"success": True, "novo_saldo": novo_saldo}), 200
 
-# 🪄 Processar Sorriso (Com saldo unificado e sincronização bidirecional instantânea)
+# 🪄 Processar Sorriso
 @app.route('/process-smile', methods=['POST'])
 def process_smile():
     data = request.get_json(force=True, silent=True) or {}
@@ -325,7 +330,7 @@ def process_smile():
         return jsonify({"success": False, "error": "Créditos insuficientes."}), 403
 
     image_b64 = data.get('image')
-    prompt_custom = data.get('prompt', 'perfect white smile, professional cosmetic dentistry, highly detailed')
+    prompt_custom = data.get('prompt', 'perfect white smile, color $color, shape $shape, size $size, professional cosmetic dentistry, highly detailed')
 
     if not image_b64:
         cur.close()
@@ -336,7 +341,6 @@ def process_smile():
         image_data = base64.b64decode(image_b64)
         orig_image = Image.open(io.BytesIO(image_data))
 
-        # 🔄 Correção automática de rotação EXIF
         orig_image = ImageOps.exif_transpose(orig_image) or orig_image
         orig_width, orig_height = orig_image.size
 
@@ -358,18 +362,15 @@ def process_smile():
         ai_image_resized.save(buffered, format="JPEG")
         processed_b64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
 
-        # 🛡️ Sincronização Bidirecional Definitiva: Desconta o crédito e atualiza AMBAS as tabelas instantaneamente!
         if is_convidado:
             cur.execute("UPDATE dispositivos SET creditos = creditos - 1 WHERE device_id = %s RETURNING creditos;", (device_id,))
             novo_saldo = cur.fetchone()[0]
         else:
             cur.execute("UPDATE usuarios SET creditos = creditos - 1 WHERE api_key = %s OR email = %s RETURNING creditos;", (api_key, api_key))
             novo_saldo = cur.fetchone()[0]
-            # Espelha imediatamente no dispositivo vinculado para que o logout mostre o mesmo saldo exato
             if device_id:
                 cur.execute("UPDATE dispositivos SET creditos = %s WHERE device_id = %s;", (novo_saldo, device_id))
             else:
-                # Se por acaso o device_id não veio no request, atualiza todos os registros de dispositivos recentes
                 cur.execute("UPDATE dispositivos SET creditos = %s;", (novo_saldo,))
 
         conn.commit()
