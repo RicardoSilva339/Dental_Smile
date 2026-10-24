@@ -210,11 +210,10 @@ class _CompareScreenState extends State<CompareScreen> {
     return pdf;
   }
 
-  // 💾 Salva no Hive para o Histórico (Gravando o userEmail do dono da conta!)
+  // 💾 Salva no Hive para o Histórico
   Future<void> _salvarNoHistorico(String noteText) async {
     final box = Hive.box('simulacoes');
 
-    // Se por acaso _userEmail ainda estiver vazio, pega da sessão ativa do Hive
     final String emailDono = (_userEmail != null && _userEmail!.isNotEmpty)
         ? _userEmail!
         : Hive.box('box_usuario').get('email', defaultValue: '') as String;
@@ -228,7 +227,7 @@ class _CompareScreenState extends State<CompareScreen> {
       'shape': _selectedShape,
       'size': _selectedSize,
       'notes': noteText,
-      'userEmail': emailDono, // 👈 ESSENCIAL: Salva o e-mail para vincular ao histórico do dentista!
+      'userEmail': emailDono,
     };
     await box.add(simulationData);
   }
@@ -290,7 +289,6 @@ class _CompareScreenState extends State<CompareScreen> {
         backgroundColor: const Color(0xFF5C6BC0),
         foregroundColor: Colors.white,
         actions: [
-          // 🏠 Apenas o botão Home, limpo e direto para a tela inicial
           IconButton(
             icon: const Icon(Icons.home),
             onPressed: () => Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false),
@@ -317,11 +315,11 @@ class _CompareScreenState extends State<CompareScreen> {
                 ),
               const SizedBox(height: 12),
 
-              // ÁREA DE COMPARAÇÃO SOBREPOSTA (SLIDER IDÊNTICO 1:1)
+              // ÁREA DE COMPARAÇÃO SOBREPOSTA (SLIDER COM PROPORÇÃO ESTABILIZADA)
               LayoutBuilder(
                 builder: (context, constraints) {
                   final containerWidth = constraints.maxWidth;
-                  const containerHeight = 360.0;
+                  const containerHeight = 380.0;
 
                   return GestureDetector(
                     onPanUpdate: (details) {
@@ -342,6 +340,7 @@ class _CompareScreenState extends State<CompareScreen> {
                       width: containerWidth,
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(16),
+                        color: Colors.black, // Fundo neutro para evitar piscar branco
                         boxShadow: [
                           BoxShadow(
                             color: Colors.black.withOpacity(0.15),
@@ -355,17 +354,20 @@ class _CompareScreenState extends State<CompareScreen> {
                         child: Stack(
                           fit: StackFit.expand,
                           children: [
+                            // 🖼️ IMAGEM PROCESSADA (Com cacheWidth otimizado para evitar estouro de memória e zoom brusco)
                             if (processedFile != null && processedFile.existsSync())
                               Image.file(
                                 processedFile,
                                 width: containerWidth,
                                 height: containerHeight,
-                                fit: BoxFit.cover,
+                                fit: BoxFit.contain, // 👈 Alterado para contain para manter proporção exata sem saltos
                                 alignment: Alignment.center,
+                                cacheWidth: 1000,
                               )
                             else
-                              const Center(child: Text('Erro ao carregar imagem processada')),
+                              const Center(child: Text('Erro ao carregar imagem processada', style: TextStyle(color: Colors.white))),
 
+                            // 🖼️ IMAGEM ORIGINAL (Sobreposta com o slider)
                             if (originalFile != null && originalFile.existsSync())
                               Align(
                                 alignment: Alignment.centerLeft,
@@ -383,14 +385,16 @@ class _CompareScreenState extends State<CompareScreen> {
                                         originalFile,
                                         width: containerWidth,
                                         height: containerHeight,
-                                        fit: BoxFit.cover,
+                                        fit: BoxFit.contain, // 👈 Mantém alinhado com a processada
                                         alignment: Alignment.center,
+                                        cacheWidth: 1000,
                                       ),
                                     ),
                                   ),
                                 ),
                               ),
 
+                            // BARRA DO SLIDER
                             Positioned(
                               top: 0,
                               bottom: 0,
@@ -426,6 +430,7 @@ class _CompareScreenState extends State<CompareScreen> {
                               ),
                             ),
 
+                            // BADGE ORIGINAL
                             Positioned(
                               top: 12,
                               left: 12,
@@ -442,6 +447,7 @@ class _CompareScreenState extends State<CompareScreen> {
                               ),
                             ),
 
+                            // BADGE COM IA
                             Positioned(
                               top: 12,
                               right: 12,
