@@ -143,7 +143,7 @@ class ApiService {
     return false;
   }
 
-  // 🪄 Envia a foto em Base64 para o servidor gerar o sorriso, descontar o crédito e aceitar Device ID
+  // 🪄 Envia a foto em Base64 para o servidor gerar o sorriso e sincronizar o Device ID em qualquer cenário
   static Future<Map<String, dynamic>> processSmile({
     required File imageFile,
     required String color,
@@ -157,11 +157,8 @@ class ApiService {
       List<int> imageBytes = await imageFile.readAsBytes();
       String base64Image = base64Encode(imageBytes);
 
-      // 📱 Se a apiKey estiver vazia, captura o device_id do aparelho atual
-      String deviceId = '';
-      if (apiKey.isEmpty) {
-        deviceId = await _getDeviceId();
-      }
+      // 📱 SEMPRE captura o device_id do aparelho atual para garantir sincronia total no backend
+      String deviceId = await _getDeviceId();
 
       String customPrompt = 'perfect white smile, color $color, shape $shape, size $size, professional cosmetic dentistry, highly detailed';
 
@@ -170,7 +167,7 @@ class ApiService {
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'api_key': apiKey,
-          'device_id': deviceId, // 👈 Enviado para o backend conseguir abater o crédito do convidado!
+          'device_id': deviceId, // 👈 Sempre enviado para o backend atualizar as duas tabelas (usuário e aparelho)!
           'image': base64Image,
           'prompt': customPrompt,
         }),

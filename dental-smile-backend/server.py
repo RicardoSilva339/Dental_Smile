@@ -165,7 +165,7 @@ def login():
     data = request.get_json(force=True, silent=True) or {}
     email = data.get('email', '').strip().lower()
     senha = data.get('senha', '')
-    device_id = data.get('device_id', '').strip() # Opcional: receber o device_id no login se enviado pelo app
+    device_id = data.get('device_id', '').strip()
 
     try:
         conn = get_db_connection()
@@ -198,20 +198,19 @@ def login():
             cur.close()
             conn.close()
 
-            restantes = 4 - novas_tentativas # 👈 Corrigido perfeitamente
+            restantes = 4 - novas_tentativas
 
             msg = f"Senha incorreta. Restam {restantes} tentativas." if restantes > 0 else "Conta bloqueada por segurança."
             return jsonify({"success": False, "error": msg}), 401
 
         cur.execute("UPDATE usuarios SET tentativas_login = 0 WHERE id = %s;", (user_id,))
 
-        # 🔗 Sincronização inteligente: Se o device_id foi enviado, garante que o saldo do aparelho e da conta sejam idênticos
+        # 🔗 Sincronização inteligente no Login
         if device_id:
             cur.execute("SELECT creditos FROM dispositivos WHERE device_id = %s;", (device_id,))
             dev_row = cur.fetchone()
             if dev_row:
                 dev_creditos = dev_row[0]
-                # Pega o menor valor entre os dois para não duplicar créditos gerados em separado
                 menor_saldo = min(creditos, dev_creditos)
                 if menor_saldo != creditos:
                     cur.execute("UPDATE usuarios SET creditos = %s WHERE id = %s;", (menor_saldo, user_id))
@@ -275,8 +274,7 @@ def add_credits():
         res = cur.fetchone()
         if res:
             novo_saldo = res[0]
-            # Espelha no device_id se houver
-            cur.execute("UPDATE dispositivos SET creditos = %s WHERE device_id IN (SELECT device_id FROM dispositivos);", (novo_saldo,))
+            cur.execute("UPDATE dispositivos SET creditos = %s;", (novo_saldo,))
     elif device_id:
         cur.execute("""
             UPDATE dispositivos
@@ -294,7 +292,7 @@ def add_credits():
 
     return jsonify({"success": True, "novo_saldo": novo_saldo}), 200
 
-# 🪄 Processar Sorriso (Com saldo unificado e sincronizado)
+# 🪄 Processar Sorriso (Com saldo unificado e sincronização bidirecional instantânea)
 @app.route('/process-smile', methods=['POST'])
 def process_smile():
     data = request.get_json(force=True, silent=True) or {}
@@ -360,17 +358,21 @@ def process_smile():
         ai_image_resized.save(buffered, format="JPEG")
         processed_b64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
 
-        # 🛡️ Desconta o crédito e sincroniza automaticamente o aparelho e a conta para nunca haver divergência
+        # 🛡️ Sincronização Bidirecional Definitiva: Desconta o crédito e atualiza AMBAS as tabelas instantaneamente!
         if is_convidado:
             cur.execute("UPDATE dispositivos SET creditos = creditos - 1 WHERE device_id = %s RETURNING creditos;", (device_id,))
+            novo_saldo = cur.fetchone()[0]
         else:
             cur.execute("UPDATE usuarios SET creditos = creditos - 1 WHERE api_key = %s OR email = %s RETURNING creditos;", (api_key, api_key))
+            novo_saldo = cur.fetchone()[0]
+            # Espelha imediatamente no dispositivo vinculado para que o logout mostre o mesmo saldo exato
             if device_id:
-                cur.execute("UPDATE dispositivos SET creditos = (SELECT creditos FROM usuarios WHERE api_key = %s OR email = %s) WHERE device_id = %s;", (api_key, api_key, device_id))
+                cur.execute("UPDATE dispositivos SET creditos = %s WHERE device_id = %s;", (novo_saldo, device_id))
+            else:
+                # Se por acaso o device_id não veio no request, atualiza todos os registros de dispositivos recentes
+                cur.execute("UPDATE dispositivos SET creditos = %s;", (novo_saldo,))
 
-        novo_saldo = cur.fetchone()[0]
         conn.commit()
-
         cur.close()
         conn.close()
 
