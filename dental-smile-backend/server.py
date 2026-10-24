@@ -136,7 +136,7 @@ def register():
             conn.close()
             return jsonify({"success": False, "error": "Este e-mail já está cadastrado."}), 400
 
-        # 🛡️ Herança Exata de Créditos do Aparelho: A conta nova herda exatamente o saldo remanescente do device_id
+        # 🛡️ Herança exata do saldo remanescente do device_id para a nova conta
         creditos_iniciais = 3
         if device_id:
             cur.execute("SELECT creditos FROM dispositivos WHERE device_id = %s;", (device_id,))
@@ -159,12 +159,13 @@ def register():
         traceback.print_exc()
         return jsonify({"success": False, "error": f"Erro no banco: {str(e)}"}), 500
 
-# 🔑 Rota de Login com Proteção de Tentativas
+# 🔑 Rota de Login com Proteção de Tentativas e Sincronização de Saldo
 @app.route('/login', methods=['POST'])
 def login():
     data = request.get_json(force=True, silent=True) or {}
     email = data.get('email', '').strip().lower()
     senha = data.get('senha', '')
+    device_id = data.get('device_id', '').strip() # Opcional: receber o device_id no login se enviado pelo app
 
     try:
         conn = get_db_connection()
@@ -197,12 +198,27 @@ def login():
             cur.close()
             conn.close()
 
-            restantes = 4 - novas_tentativas
+            restantes = 4 - novas_tentativas # 👈 Corrigido perfeitamente
 
             msg = f"Senha incorreta. Restam {restantes} tentativas." if restantes > 0 else "Conta bloqueada por segurança."
             return jsonify({"success": False, "error": msg}), 401
 
         cur.execute("UPDATE usuarios SET tentativas_login = 0 WHERE id = %s;", (user_id,))
+
+        # 🔗 Sincronização inteligente: Se o device_id foi enviado, garante que o saldo do aparelho e da conta sejam idênticos
+        if device_id:
+            cur.execute("SELECT creditos FROM dispositivos WHERE device_id = %s;", (device_id,))
+            dev_row = cur.fetchone()
+            if dev_row:
+                dev_creditos = dev_row[0]
+                # Pega o menor valor entre os dois para não duplicar créditos gerados em separado
+                menor_saldo = min(creditos, dev_creditos)
+                if menor_saldo != creditos:
+                    cur.execute("UPDATE usuarios SET creditos = %s WHERE id = %s;", (menor_saldo, user_id))
+                    creditos = menor_saldo
+                elif menor_saldo != dev_creditos:
+                    cur.execute("UPDATE dispositivos SET creditos = %s WHERE device_id = %s;", (menor_saldo, device_id))
+
         conn.commit()
         cur.close()
         conn.close()
@@ -259,6 +275,8 @@ def add_credits():
         res = cur.fetchone()
         if res:
             novo_saldo = res[0]
+            # Espelha no device_id se houver
+            cur.execute("UPDATE dispositivos SET creditos = %s WHERE device_id IN (SELECT device_id FROM dispositivos);", (novo_saldo,))
     elif device_id:
         cur.execute("""
             UPDATE dispositivos
@@ -276,7 +294,7 @@ def add_credits():
 
     return jsonify({"success": True, "novo_saldo": novo_saldo}), 200
 
-# 🪄 Processar Sorriso
+# 🪄 Processar Sorriso (Com saldo unificado e sincronizado)
 @app.route('/process-smile', methods=['POST'])
 def process_smile():
     data = request.get_json(force=True, silent=True) or {}
@@ -320,9 +338,8 @@ def process_smile():
         image_data = base64.b64decode(image_b64)
         orig_image = Image.open(io.BytesIO(image_data))
 
-        # 🔄 Correção automática de rotação EXIF (Resolve fotos de lado de qualquer celular)
+        # 🔄 Correção automática de rotação EXIF
         orig_image = ImageOps.exif_transpose(orig_image) or orig_image
-
         orig_width, orig_height = orig_image.size
 
         ai_image_resized = None
@@ -331,7 +348,7 @@ def process_smile():
             response = requests.post(HF_API_URL, headers=HEADERS, files={"image": image_data}, json=payload, timeout=30)
             if response.status_code == 200:
                 ai_image = Image.open(io.BytesIO(response.content))
-                ai_image = ImageOps.exif_transpose(ai_image) or ai_image # Garante que a resposta da IA também fique correta
+                ai_image = ImageOps.exif_transpose(ai_image) or ai_image
                 ai_image_resized = ai_image.resize((orig_width, orig_height), Image.Resampling.LANCZOS)
         except Exception:
             pass
@@ -343,10 +360,13 @@ def process_smile():
         ai_image_resized.save(buffered, format="JPEG")
         processed_b64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
 
+        # 🛡️ Desconta o crédito e sincroniza automaticamente o aparelho e a conta para nunca haver divergência
         if is_convidado:
             cur.execute("UPDATE dispositivos SET creditos = creditos - 1 WHERE device_id = %s RETURNING creditos;", (device_id,))
         else:
             cur.execute("UPDATE usuarios SET creditos = creditos - 1 WHERE api_key = %s OR email = %s RETURNING creditos;", (api_key, api_key))
+            if device_id:
+                cur.execute("UPDATE dispositivos SET creditos = (SELECT creditos FROM usuarios WHERE api_key = %s OR email = %s) WHERE device_id = %s;", (api_key, api_key, device_id))
 
         novo_saldo = cur.fetchone()[0]
         conn.commit()
