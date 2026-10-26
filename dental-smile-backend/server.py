@@ -393,7 +393,8 @@ def process_smile():
                             output = poll_data.get("output")
                             if output and isinstance(output, list) and len(output) > 0:
                                 img_url = output[0]
-                                img_resp = requests.get(img_url, timeout=30)
+                                # Timeout de download ampliado para 60 segundos
+                                img_resp = requests.get(img_url, timeout=60)
                                 if img_resp.status_code == 200:
                                     ai_image = Image.open(io.BytesIO(img_resp.content))
                                     ai_image = ImageOps.exif_transpose(ai_image) or ai_image
@@ -435,7 +436,7 @@ def process_smile():
         print(f"ERRO NO PROCESS-SMILE: {str(e)}")
         traceback.print_exc()
         if 'cur' in locals() and cur: cur.close()
-        if 'conn' in locals() and conn: cur.close()
+        if 'conn' in locals() and conn: conn.close()
         return jsonify({"success": False, "error": str(e)}), 500
 
 if __name__ == '__main__':
