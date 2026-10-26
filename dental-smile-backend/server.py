@@ -348,7 +348,7 @@ def process_smile():
         orig_image = ImageOps.exif_transpose(orig_image) or orig_image
         orig_width, orig_height = orig_image.size
 
-        # 🚀 Otimização de RAM: Redimensiona se for maior que 1024px para evitar Out of Memory (SIGKILL) no Render
+        # Otimização de RAM: Redimensiona se for maior que 1024px para evitar SIGKILL no Render
         max_dim = 1024
         work_image = orig_image.copy()
         if max(orig_width, orig_height) > max_dim:
@@ -379,7 +379,7 @@ def process_smile():
             pred_id = pred_data.get("id")
             get_url = f"{REPLICATE_API_URL}/{pred_id}"
 
-            # 40 tentativas (até 80 segundos) para suportar o cold start da GPU sem timeout
+            # 40 tentativas (até 80 segundos) para suportar o cold start da GPU
             for _ in range(40):
                 time.sleep(2)
                 try:
@@ -397,7 +397,6 @@ def process_smile():
                                 if img_resp.status_code == 200:
                                     ai_image = Image.open(io.BytesIO(img_resp.content))
                                     ai_image = ImageOps.exif_transpose(ai_image) or ai_image
-                                    # Redimensiona de volta para a resolução original do usuário
                                     ai_image_resized = ai_image.resize((orig_width, orig_height), Image.Resampling.LANCZOS)
                             break
                         elif status in ["failed", "canceled"]:
