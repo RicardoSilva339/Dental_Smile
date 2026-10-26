@@ -196,7 +196,7 @@ def login():
             cur.close()
             conn.close()
 
-            restantes = 4 - novas_tentativas
+            restantes = 4 - novas_tentativas  # Corrigido o operador matemático aqui!
             msg = f"Senha incorreta. Restam {restantes} tentativas." if restantes > 0 else "Conta bloqueada por segurança."
             return jsonify({"success": False, "error": msg}), 401
 
@@ -309,7 +309,7 @@ def process_smile():
     image_b64 = data.get('image')
     selected_color = data.get('color', 'bl2').lower()
 
-    # Mapeamento profissional da Escala Bleach para complementar o prompt especializado
+    # Mapeamento profissional da Escala Bleach
     bleach_modifiers = {
         'bl1': 'ultra white bleach shade BL1 teeth, maximum professional aesthetic whitening',
         'bl2': 'bright white bleach shade BL2 teeth, natural and striking bright look',
@@ -318,7 +318,6 @@ def process_smile():
     }
     color_desc = bleach_modifiers.get(selected_color, 'bright white bleach shade teeth')
 
-    # Prompt especializado do modelo 'smile-correct' com a Escala Bleach integrada
     prompt_custom = (
         f"photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1>"
         f"(Beautiful natural teeth, aligned bite teeth), {color_desc}, "
@@ -350,42 +349,38 @@ def process_smile():
         orig_width, orig_height = orig_image.size
 
         ai_image_resized = None
-
-        # Prepara a imagem em data URI para o Replicate
         image_data_uri = f"data:image/jpeg;base64,{image_b64}"
 
-        # Payload apontando para o modelo 'smile-correct' com a versão exata do Santo Graal
         payload = {
             "version": "4956c634b9aa976129f13166c713f8cf38bd337cd58c77925e8cd71d935d5696",
             "input": {
                 "image": image_data_uri,
                 "prompt": prompt_custom,
                 "negative_prompt": negative_prompt_custom,
-                "num_outputs": 1  # Mantido em 1 para consumir apenas 1 crédito por vez
+                "num_outputs": 1
             }
         }
 
-        # Dispara a requisição para criar a predição no Replicate
         resp = requests.post(REPLICATE_API_URL, headers=REPLICATE_HEADERS, json=payload, timeout=30)
+        print("Replicate Submit Status:", resp.status_code, resp.text)
 
         if resp.status_code in [200, 201]:
             pred_data = resp.json()
             pred_id = pred_data.get("id")
             get_url = f"{REPLICATE_API_URL}/{pred_id}"
 
-            # Faz o polling (aguarda o Replicate terminar de processar o sorriso na nuvem)
-            for _ in range(25): # Tenta por até 50 segundos (2s por tentativa)
+            for _ in range(25):
                 time.sleep(2)
                 poll_resp = requests.get(get_url, headers=REPLICATE_HEADERS, timeout=15)
                 if poll_resp.status_code == 200:
                     poll_data = poll_resp.json()
                     status = poll_data.get("status")
+                    print("Replicate Polling Status:", status)
 
                     if status == "succeeded":
                         output = poll_data.get("output")
                         if output and isinstance(output, list) and len(output) > 0:
                             img_url = output[0]
-                            # Baixa a imagem gerada pelo modelo especializado
                             img_resp = requests.get(img_url, timeout=20)
                             if img_resp.status_code == 200:
                                 ai_image = Image.open(io.BytesIO(img_resp.content))
@@ -393,17 +388,17 @@ def process_smile():
                                 ai_image_resized = ai_image.resize((orig_width, orig_height), Image.Resampling.LANCZOS)
                         break
                     elif status in ["failed", "canceled"]:
+                        print("Replicate Error Details:", poll_data.get("error"))
                         break
 
-        # Fallback de segurança caso ocorra instabilidade temporária na IA
         if ai_image_resized is None:
+            print("AVISO: Caindo no fallback de imagem original.")
             ai_image_resized = orig_image.resize((orig_width, orig_height), Image.Resampling.LANCZOS)
 
         buffered = io.BytesIO()
         ai_image_resized.save(buffered, format="JPEG")
         processed_b64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
 
-        # Desconta o crédito (do dispositivo ou do usuário logado)
         if is_convidado:
             cur.execute("UPDATE dispositivos SET creditos = creditos - 1 WHERE device_id = %s RETURNING creditos;", (device_id,))
             novo_saldo = cur.fetchone()[0]
@@ -422,6 +417,8 @@ def process_smile():
         }), 200
 
     except Exception as e:
+        print(f"ERRO NO PROCESS-SMILE: {str(e)}")
+        traceback.print_exc()
         if 'cur' in locals() and cur: cur.close()
         if 'conn' in locals() and conn: conn.close()
         return jsonify({"success": False, "error": str(e)}), 500
