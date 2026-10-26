@@ -393,12 +393,18 @@ def process_smile():
                             output = poll_data.get("output")
                             if output and isinstance(output, list) and len(output) > 0:
                                 img_url = output[0]
-                                # Timeout de download ampliado para 60 segundos
                                 img_resp = requests.get(img_url, timeout=60)
                                 if img_resp.status_code == 200:
                                     ai_image = Image.open(io.BytesIO(img_resp.content))
                                     ai_image = ImageOps.exif_transpose(ai_image) or ai_image
-                                    ai_image_resized = ai_image.resize((orig_width, orig_height), Image.Resampling.LANCZOS)
+
+                                    # Encaixe proporcional perfeito sem distorção (object-fit cover)
+                                    ai_image_resized = ImageOps.fit(
+                                        ai_image,
+                                        (orig_width, orig_height),
+                                        method=Image.Resampling.LANCZOS,
+                                        centering=(0.5, 0.5)
+                                    )
                             break
                         elif status in ["failed", "canceled"]:
                             print("Replicate Error Details:", poll_data.get("error"))
