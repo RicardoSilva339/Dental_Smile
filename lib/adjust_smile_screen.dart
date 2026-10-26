@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:async'; // ⏱️ Necessário para o Timer das mensagens dinâmicas
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:dental_smile/api_service.dart';
@@ -32,6 +33,20 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
 
   late String _selectedColor;
 
+  // 🔄 Variáveis para controlar as mensagens dinâmicas do processamento de IA
+  Timer? _timerMensagens;
+  int _mensagemIndex = 0;
+
+  final List<String> _mensagensLoading = [
+    "Conectando ao servidor seguro de IA...",
+    "Acordando motor gráfico na nuvem (GPU)...",
+    "Enviando matriz de imagem do paciente...",
+    "Processando proporções e alinhamento do sorriso...",
+    "Aplicando escala Bleach selecionada...",
+    "Finalizando renderização de alta precisão...",
+    "Quase pronto! Otimizando resultado final..."
+  ];
+
   // 🦷 Apenas os códigos curtos e objetivos como você pediu
   final Map<String, String> _colors = {
     'bl1': 'BL1',
@@ -45,6 +60,12 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
     super.initState();
     _selectedColor = widget.initialColor ?? 'bl2';
     _carregarCreditos();
+  }
+
+  @override
+  void dispose() {
+    _timerMensagens?.cancel(); // Limpa o timer ao sair da tela
+    super.dispose();
   }
 
   String _obterApiKeyAtual() {
@@ -104,7 +125,19 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
       return;
     }
 
-    setState(() => _isProcessing = true);
+    // 🚀 Inicia o estado de processamento e o ciclo das mensagens dinâmicas a cada 3 segundos
+    setState(() {
+      _isProcessing = true;
+      _mensagemIndex = 0;
+    });
+
+    _timerMensagens = Timer.periodic(const Duration(seconds: 3), (timer) {
+      if (mounted) {
+        setState(() {
+          _mensagemIndex = (_mensagemIndex + 1) % _mensagensLoading.length;
+        });
+      }
+    });
 
     String? processedImagePath;
 
@@ -116,6 +149,9 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
         size: 'medio',
         apiKey: apiKey.isNotEmpty ? apiKey : '',
       );
+
+      // Para o timer assim que a resposta chega
+      _timerMensagens?.cancel();
 
       if (resultado['success'] == true) {
         processedImagePath = resultado['imagePath'];
@@ -140,6 +176,7 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
         }
       }
     } catch (e) {
+      _timerMensagens?.cancel();
       debugPrint("Falha na chamada do servidor: $e");
     }
 
@@ -178,7 +215,6 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.white),
           ),
           const SizedBox(height: 6),
-          // Linha 1: BL1 e BL2
           Row(
             children: [
               Expanded(child: _buildChipButton(keys[0])),
@@ -187,7 +223,6 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
             ],
           ),
           const SizedBox(height: 6),
-          // Linha 2: BL3 e BL4
           Row(
             children: [
               Expanded(child: _buildChipButton(keys[2])),
@@ -220,7 +255,7 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
           ),
           padding: EdgeInsets.zero,
         ),
-        onPressed: () => setState(() => _selectedColor = key),
+        onPressed: _isProcessing ? null : () => setState(() => _selectedColor = key),
         child: Text(
           label,
           style: TextStyle(
@@ -309,9 +344,48 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
                 ),
               ),
               const SizedBox(height: 8),
-              // 🦷 Seletor em Grade 2x2 limpo (BL1/BL2 em cima, BL3/BL4 embaixo)
+
+              // 🦷 Seletor em Grade 2x2 limpo
               _buildColorGrid(),
               const SizedBox(height: 10),
+
+              // 🔄 Caixa de status dinâmica que aparece logo acima do botão durante o processamento
+              if (_isProcessing)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.6),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFF5C6BC0), width: 1),
+                    ),
+                    child: Row(
+                      children: [
+                        const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.amber),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            _mensagensLoading[_mensagemIndex],
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+              const SizedBox(height: 6),
+
+              // 🚀 Botão principal de aplicar clareamento
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16.0),
                 child: ElevatedButton.icon(

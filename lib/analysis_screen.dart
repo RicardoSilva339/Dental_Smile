@@ -1,11 +1,5 @@
 import 'dart:io';
-import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'package:hive_flutter/hive_flutter.dart';
-import 'background.dart';
-import 'adjust_smile_screen.dart';
 
 class AnalysisScreen extends StatefulWidget {
   const AnalysisScreen({super.key});
@@ -55,159 +49,6 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
         _isLoading = false;
       });
     }
-  }
-
-  // 🚀 Método que dispara a API do Flask/Replicate com Feedback Visual Dinâmico
-  Future<void> _enviarParaProcessamentoIA(String corSelecionada) async {
-    if (_imageFile == null) return;
-
-    // Lista de mensagens dinâmicas para entreter e tranquilizar o usuário durante o "Cold Start" da GPU
-    final List<String> mensagensLoading = [
-      "Conectando ao servidor seguro de IA...",
-      "Acordando motor gráfico na nuvem (GPU)...",
-      "Enviando matriz de imagem do paciente...",
-      "Processando proporções e alinhamento do sorriso...",
-      "Aplicando escala Bleach selecionada...",
-      "Finalizando renderização de alta precisão...",
-      "Quase pronto! Otimizando resultado final..."
-    ];
-
-    int mensagemIndex = 0;
-    Timer? timerMensagens;
-
-    // Exibe o diálogo de carregamento bloqueante com frases dinâmicas
-    showDialog(
-      context: context,
-      barrierDismissible: false, // Impede o usuário de fechar clicando fora
-      builder: (BuildContext context) {
-        return StatefulBuilder(
-          builder: (context, setStateDialog) {
-            // Inicia o timer para trocar a mensagem a cada 3 segundos
-            timerMensagens ??= Timer.periodic(const Duration(seconds: 3), (timer) {
-              if (mounted) {
-                setStateDialog(() {
-                  mensagemIndex = (mensagemIndex + 1) % mensagensLoading.length;
-                });
-              }
-            });
-
-            return PopScope(
-              canPop: false, // Bloqueia o botão de voltar do Android
-              child: AlertDialog(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                content: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 12.0),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const CircularProgressIndicator(color: Color(0xFF5C6BC0)),
-                      const SizedBox(height: 24),
-                      const Text(
-                        "Processando Simulação...",
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF3F51B5)),
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        mensagensLoading[mensagemIndex],
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(fontSize: 13, color: Colors.black87),
-                      ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        "(Isso pode levar alguns segundos devido ao arranque inicial da IA)",
-                        textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 10, color: Colors.grey),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-
-    try {
-      // Lê os bytes da imagem e converte para Base64
-      final bytes = await _imageFile!.readAsBytes();
-      final base64Image = base64Encode(bytes);
-
-      // 🔍 Leitura 100% segura da box de usuário já existente no app (sem risco de erro)
-      String apiKey = '';
-      try {
-        if (Hive.isBoxOpen('box_usuario')) {
-          final boxUser = Hive.box('box_usuario');
-          apiKey = boxUser.get('email', defaultValue: '') as String;
-        }
-      } catch (_) {}
-
-      if (apiKey.isEmpty && _userEmail.isNotEmpty) {
-        apiKey = _userEmail;
-      }
-
-      // URL do seu backend no Render (atualize caso o seu link seja diferente)
-      final url = Uri.parse('https://dental-smile-api.onrender.com/process-smile');
-
-      final response = await http.post(
-        url,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'api_key': apiKey,
-          'image': base64Image,
-          'color': corSelecionada, // ex: 'bl2'
-        }),
-      ).timeout(const Duration(seconds: 90)); // Timeout generoso para aguentar o cold start
-
-      // Cancela o timer de mensagens
-      timerMensagens?.cancel();
-
-      // Fecha o diálogo de loading
-      if (mounted) Navigator.of(context).pop();
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data['success'] == true) {
-          final String processedBase64 = data['processed_image'];
-          final processedBytes = base64Decode(processedBase64);
-
-          // Salva a imagem processada temporariamente no diretório local do app para exibir na tela de comparação
-          final tempDir = Directory.systemTemp;
-          final processedFile = File('${tempDir.path}/processed_${DateTime.now().millisecondsSinceEpoch}.jpg');
-          await processedFile.writeAsBytes(processedBytes);
-
-          if (mounted) {
-            // Navega para a tela de comparativo (CompareScreen) passando os caminhos
-            Navigator.pushNamed(
-              context,
-              '/compare',
-              arguments: {
-                'originalPath': _imageFile!.path,
-                'processedPath': processedFile.path,
-                'color': corSelecionada,
-                'simulationId': _simulationId,
-                'userEmail': _userEmail,
-              },
-            );
-          }
-        } else {
-          _mostrarErro(data['error'] ?? 'Erro desconhecido ao processar.');
-        }
-      } else {
-        _mostrarErro('Erro no servidor (${response.statusCode}). Tente novamente.');
-      }
-    } catch (e) {
-      timerMensagens?.cancel();
-      if (mounted) Navigator.of(context).pop(); // Fecha o loading se houver exceção
-      _mostrarErro('Falha de conexão: $e');
-    }
-  }
-
-  void _mostrarErro(String mensagem) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(mensagem), backgroundColor: Colors.red),
-    );
   }
 
   @override
@@ -303,7 +144,7 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
 
             const SizedBox(height: 12),
 
-            // Botão Principal para Chamar a IA com o Loading Dinâmico
+            // Botão Principal para Seguir para os Ajustes do Sorriso
             SizedBox(
               width: double.infinity,
               height: 48,
@@ -316,14 +157,24 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                   ),
                   elevation: 2,
                 ),
-                icon: const Icon(Icons.auto_fix_high, size: 18),
+                icon: const Icon(Icons.arrow_forward, size: 18),
                 label: const Text(
-                  'Processar Clareamento com IA',
+                  'Seguir para Ajustes do Sorriso',
                   style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
                 ),
                 onPressed: () {
-                  // Dispara o processamento com IA passando a cor padrão (ex: 'bl2')
-                  _enviarParaProcessamentoIA('bl2');
+                  if (_imageFile != null) {
+                    Navigator.pushNamed(
+                      context,
+                      '/adjust',
+                      arguments: {
+                        'imagePath': _imageFile!.path,
+                        'image': _imageFile,
+                        'simulationId': _simulationId,
+                        'userEmail': _userEmail,
+                      },
+                    );
+                  }
                 },
               ),
             ),
