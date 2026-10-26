@@ -133,23 +133,27 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
       final bytes = await _imageFile!.readAsBytes();
       final base64Image = base64Encode(bytes);
 
-      // Pega a chave ou identificador do usuário logado
-      final boxUser = Hive.box('box_usuario');
-      final apiKey = boxUser.get('email', defaultValue: '') as String;
+      // 🔍 Leitura 100% segura da box de usuário já existente no app (sem risco de erro)
+      String apiKey = '';
+      try {
+        if (Hive.isBoxOpen('box_usuario')) {
+          final boxUser = Hive.box('box_usuario');
+          apiKey = boxUser.get('email', defaultValue: '') as String;
+        }
+      } catch (_) {}
 
-      // Se não houver email logado, pega o device_id ou deixa vazio para tratar no backend
-      final boxDevice = Hive.box('box_dispositivo'); // ajuste se o nome da sua box for diferente
-      final deviceId = boxDevice.get('device_id', defaultValue: '') as String;
+      if (apiKey.isEmpty && _userEmail.isNotEmpty) {
+        apiKey = _userEmail;
+      }
 
-      // URL do seu backend no Render (substitua caso tenha uma URL customizada)
-      final url = Uri.parse('https://SEU-APP-NO-RENDER.onrender.com/process-smile');
+      // URL do seu backend no Render (atualize caso o seu link seja diferente)
+      final url = Uri.parse('https://dental-smile-api.onrender.com/process-smile');
 
       final response = await http.post(
         url,
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'api_key': apiKey,
-          'device_id': deviceId,
           'image': base64Image,
           'color': corSelecionada, // ex: 'bl2'
         }),
@@ -176,7 +180,7 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
             // Navega para a tela de comparativo (CompareScreen) passando os caminhos
             Navigator.pushNamed(
               context,
-              '/compare', // ou ajuste para a rota da sua tela de comparativo
+              '/compare',
               arguments: {
                 'originalPath': _imageFile!.path,
                 'processedPath': processedFile.path,
@@ -318,8 +322,7 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                   style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
                 ),
                 onPressed: () {
-                  // Aqui você pode disparar direto ou abrir um seletor de cor se preferir.
-                  // Por padrão mandamos 'bl2' ou pegamos a cor escolhida pelo dentista.
+                  // Dispara o processamento com IA passando a cor padrão (ex: 'bl2')
                   _enviarParaProcessamentoIA('bl2');
                 },
               ),
