@@ -379,11 +379,11 @@ def process_smile():
             pred_id = pred_data.get("id")
             get_url = f"{REPLICATE_API_URL}/{pred_id}"
 
-            # 40 tentativas (até 80 segundos) para suportar o cold start da GPU
-            for _ in range(40):
+            # 50 tentativas (até 100 segundos de folga para o cold start da GPU)
+            for _ in range(50):
                 time.sleep(2)
                 try:
-                    poll_resp = requests.get(get_url, headers=REPLICATE_HEADERS, timeout=15)
+                    poll_resp = requests.get(get_url, headers=REPLICATE_HEADERS, timeout=20)
                     if poll_resp.status_code == 200:
                         poll_data = poll_resp.json()
                         status = poll_data.get("status")
@@ -393,7 +393,7 @@ def process_smile():
                             output = poll_data.get("output")
                             if output and isinstance(output, list) and len(output) > 0:
                                 img_url = output[0]
-                                img_resp = requests.get(img_url, timeout=20)
+                                img_resp = requests.get(img_url, timeout=30)
                                 if img_resp.status_code == 200:
                                     ai_image = Image.open(io.BytesIO(img_resp.content))
                                     ai_image = ImageOps.exif_transpose(ai_image) or ai_image
@@ -435,7 +435,7 @@ def process_smile():
         print(f"ERRO NO PROCESS-SMILE: {str(e)}")
         traceback.print_exc()
         if 'cur' in locals() and cur: cur.close()
-        if 'conn' in locals() and conn: conn.close()
+        if 'conn' in locals() and conn: cur.close()
         return jsonify({"success": False, "error": str(e)}), 500
 
 if __name__ == '__main__':
