@@ -160,6 +160,7 @@ class ApiService {
       // 🦷 Prompt otimizado exclusivamente para a Escala Bleach (BL1 a BL4)
       String customPrompt = 'perfect white smile, professional cosmetic dentistry, bleach shade ${color.toLowerCase()}, highly detailed, natural teeth structure';
 
+      // Timeout ampliado para 120 segundos para dar total folga ao aquecimento da GPU da IA
       final response = await http.post(
         url,
         headers: {'Content-Type': 'application/json'},
@@ -170,7 +171,7 @@ class ApiService {
           'color': color, // Envia a cor exata (ex: bl1, bl2) para o backend
           'prompt': customPrompt,
         }),
-      ).timeout(const Duration(seconds: 60));
+      ).timeout(const Duration(seconds: 120));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
