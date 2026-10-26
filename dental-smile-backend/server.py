@@ -196,7 +196,7 @@ def login():
             cur.close()
             conn.close()
 
-            restantes = 4 - novas_tentativas  # Corrigido o operador matemático aqui!
+            restantes = 4 - novas_tentativas
             msg = f"Senha incorreta. Restam {restantes} tentativas." if restantes > 0 else "Conta bloqueada por segurança."
             return jsonify({"success": False, "error": msg}), 401
 
@@ -369,27 +369,32 @@ def process_smile():
             pred_id = pred_data.get("id")
             get_url = f"{REPLICATE_API_URL}/{pred_id}"
 
-            for _ in range(25):
+            # Aumentado para 40 tentativas (até 80 segundos) para suportar o cold start da GPU sem timeout
+            for _ in range(40):
                 time.sleep(2)
-                poll_resp = requests.get(get_url, headers=REPLICATE_HEADERS, timeout=15)
-                if poll_resp.status_code == 200:
-                    poll_data = poll_resp.json()
-                    status = poll_data.get("status")
-                    print("Replicate Polling Status:", status)
+                try:
+                    poll_resp = requests.get(get_url, headers=REPLICATE_HEADERS, timeout=15)
+                    if poll_resp.status_code == 200:
+                        poll_data = poll_resp.json()
+                        status = poll_data.get("status")
+                        print("Replicate Polling Status:", status)
 
-                    if status == "succeeded":
-                        output = poll_data.get("output")
-                        if output and isinstance(output, list) and len(output) > 0:
-                            img_url = output[0]
-                            img_resp = requests.get(img_url, timeout=20)
-                            if img_resp.status_code == 200:
-                                ai_image = Image.open(io.BytesIO(img_resp.content))
-                                ai_image = ImageOps.exif_transpose(ai_image) or ai_image
-                                ai_image_resized = ai_image.resize((orig_width, orig_height), Image.Resampling.LANCZOS)
-                        break
-                    elif status in ["failed", "canceled"]:
-                        print("Replicate Error Details:", poll_data.get("error"))
-                        break
+                        if status == "succeeded":
+                            output = poll_data.get("output")
+                            if output and isinstance(output, list) and len(output) > 0:
+                                img_url = output[0]
+                                img_resp = requests.get(img_url, timeout=20)
+                                if img_resp.status_code == 200:
+                                    ai_image = Image.open(io.BytesIO(img_resp.content))
+                                    ai_image = ImageOps.exif_transpose(ai_image) or ai_image
+                                    ai_image_resized = ai_image.resize((orig_width, orig_height), Image.Resampling.LANCZOS)
+                            break
+                        elif status in ["failed", "canceled"]:
+                            print("Replicate Error Details:", poll_data.get("error"))
+                            break
+                except Exception as poll_err:
+                    print(f"Aviso temporário no polling: {poll_err}")
+                    continue
 
         if ai_image_resized is None:
             print("AVISO: Caindo no fallback de imagem original.")
