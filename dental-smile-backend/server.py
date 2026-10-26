@@ -398,11 +398,13 @@ def process_smile():
                                     ai_image = Image.open(io.BytesIO(img_resp.content))
                                     ai_image = ImageOps.exif_transpose(ai_image) or ai_image
 
-                                    # 🎯 Restaura o enquadramento original exato (Full Portrait) sem zoom
-                                    ai_square = ai_image.resize((orig_width, orig_width), Image.Resampling.LANCZOS)
-                                    ai_image_resized = orig_image.copy()
-                                    top_pos = max(0, (orig_height - orig_width) // 2)
-                                    ai_image_resized.paste(ai_square, (0, top_pos))
+                                    # 🎯 Encaixe proporcional perfeito (object-fit cover) mantendo exatamente a mesma proporção da foto original do usuário
+                                    ai_image_resized = ImageOps.fit(
+                                        ai_image,
+                                        (orig_width, orig_height),
+                                        method=Image.Resampling.LANCZOS,
+                                        centering=(0.5, 0.5)
+                                    )
                             break
                         elif status in ["failed", "canceled"]:
                             print("Replicate Error Details:", poll_data.get("error"))
