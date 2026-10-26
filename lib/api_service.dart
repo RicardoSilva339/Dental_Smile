@@ -91,7 +91,6 @@ class ApiService {
         body: jsonEncode({
           'email': email,
           'senha': senha,
-          // 👈 Removido o device_id daqui! O login agora é puramente a conta do usuário.
         }),
       );
       return jsonDecode(response.body);
@@ -142,7 +141,7 @@ class ApiService {
     return false;
   }
 
-  // 🪄 Envia a foto em Base64 para o servidor gerar o sorriso (Mantém o device_id apenas se for convidado/processo avulso)
+  // 🪄 Envia a foto em Base64 para o servidor gerar o sorriso focado na Escala Bleach
   static Future<Map<String, dynamic>> processSmile({
     required File imageFile,
     required String color,
@@ -158,7 +157,8 @@ class ApiService {
 
       String deviceId = await _getDeviceId();
 
-      String customPrompt = 'perfect white smile, color $color, shape $shape, size $size, professional cosmetic dentistry, highly detailed';
+      // 🦷 Prompt otimizado exclusivamente para a Escala Bleach (BL1 a BL4)
+      String customPrompt = 'perfect white smile, professional cosmetic dentistry, bleach shade ${color.toLowerCase()}, highly detailed, natural teeth structure';
 
       final response = await http.post(
         url,
@@ -167,6 +167,7 @@ class ApiService {
           'api_key': apiKey,
           'device_id': deviceId,
           'image': base64Image,
+          'color': color, // Envia a cor exata (ex: bl1, bl2) para o backend
           'prompt': customPrompt,
         }),
       ).timeout(const Duration(seconds: 60));

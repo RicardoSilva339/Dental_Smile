@@ -29,7 +29,6 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
           _imageFile = path;
         }
 
-        // 🔍 Extrai o ID da simulação e o e-mail do usuário ativo
         _simulationId = args['simulationId'] ?? '';
         _userEmail = args['userEmail'] ?? '';
       } else if (args is String && args.isNotEmpty) {
@@ -44,9 +43,7 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
   }
 
   Future<void> _processarCarregamento() async {
-    // Breve pausa para dar fluidez visual ao transitar da captura
     await Future.delayed(const Duration(milliseconds: 800));
-
     if (mounted) {
       setState(() {
         _isLoading = false;
@@ -59,6 +56,8 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Análise da Imagem'),
+        backgroundColor: const Color(0xFF5C6BC0),
+        foregroundColor: Colors.white,
       ),
       body: _isLoading
           ? const Center(
@@ -71,62 +70,97 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
           ],
         ),
       )
-          : SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 20.0),
+          : Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             const Text(
-              'Imagem Carregada',
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+              'Imagem Capturada',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 8),
 
-            // Preview da imagem
-            if (_imageFile != null && _imageFile!.existsSync())
-              Container(
+            // 🖼️ Foto com espaço expandido para ficar bem nítida e ampla
+            Expanded(
+              child: Container(
+                width: double.infinity,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(16),
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black.withValues(alpha: 0.12),
-                      blurRadius: 10,
+                      blurRadius: 8,
                       offset: const Offset(0, 4),
                     ),
                   ],
                 ),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(16),
-                  child: Image.file(
+                  child: (_imageFile != null && _imageFile!.existsSync())
+                      ? Image.file(
                     _imageFile!,
-                    height: 320,
-                    width: double.infinity,
                     fit: BoxFit.contain,
-                  ),
+                  )
+                      : const Icon(Icons.image_not_supported, size: 80, color: Colors.grey),
                 ),
-              )
-            else
-              const Icon(Icons.image_not_supported, size: 100, color: Colors.grey),
+              ),
+            ),
 
-            const SizedBox(height: 40),
+            const SizedBox(height: 12),
 
-            // Botão Principal: Seguir para Ajustes
+            // 🦷 Guia Explicativo Compacto
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.indigo.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.indigo.shade100),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Guia da Tonalidade (Escala Bleach):',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                      color: Color(0xFF3F51B5),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      _buildMiniGuide('BL1', 'Ultra'),
+                      _buildMiniGuide('BL2', 'Intenso'),
+                      _buildMiniGuide('BL3', 'Natural'),
+                      _buildMiniGuide('BL4', 'Suave'),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 12),
+
+            // Botão Principal
             SizedBox(
               width: double.infinity,
-              height: 52,
+              height: 48,
               child: ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.deepPurple,
+                  backgroundColor: const Color(0xFF5C6BC0),
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
                   elevation: 2,
                 ),
-                icon: const Icon(Icons.arrow_forward),
+                icon: const Icon(Icons.arrow_forward, size: 18),
                 label: const Text(
                   'Seguir para Ajustes do Sorriso',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
                 ),
                 onPressed: () {
                   if (_imageFile != null) {
@@ -136,8 +170,8 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                       arguments: {
                         'imagePath': _imageFile!.path,
                         'image': _imageFile,
-                        'simulationId': _simulationId, // 👈 Repassa o ID
-                        'userEmail': _userEmail,       // 👈 Repassa o e-mail do usuário
+                        'simulationId': _simulationId,
+                        'userEmail': _userEmail,
                       },
                     );
                   }
@@ -145,19 +179,37 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
               ),
             ),
 
-            const SizedBox(height: 12),
+            const SizedBox(height: 4),
 
             TextButton.icon(
               onPressed: () => Navigator.pop(context),
-              icon: const Icon(Icons.refresh, size: 18, color: Colors.grey),
+              icon: const Icon(Icons.refresh, size: 16, color: Colors.grey),
               label: const Text(
                 'Tirar outra foto',
-                style: TextStyle(color: Colors.grey, fontSize: 14),
+                style: TextStyle(color: Colors.grey, fontSize: 13),
               ),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildMiniGuide(String code, String label) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+          decoration: BoxDecoration(
+            color: Colors.indigo,
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Text(code, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+        ),
+        const SizedBox(width: 3),
+        Text(label, style: TextStyle(fontSize: 11, color: Colors.grey.shade800)),
+      ],
     );
   }
 }

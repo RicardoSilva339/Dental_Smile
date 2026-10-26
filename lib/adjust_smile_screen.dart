@@ -27,30 +27,26 @@ class AdjustSmileScreen extends StatefulWidget {
 
 class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
   bool _isProcessing = false;
-  int _creditos = 0; // Armazena o saldo atual de créditos
+  int _creditos = 0;
   bool _isLoadingCredits = true;
 
   late String _selectedColor;
 
-  // 🦷 Cores baseadas exclusivamente na Escala Profissional Bleach (BL1 a BL4)
+  // 🦷 Apenas os códigos curtos e objetivos como você pediu
   final Map<String, String> _colors = {
-    'bl1': 'BL1 (Ultra Branco)',
-    'bl2': 'BL2 (Branco Intenso)',
-    'bl3': 'BL3 (Natural Claro)',
-    'bl4': 'BL4 (Suave)',
+    'bl1': 'BL1',
+    'bl2': 'BL2',
+    'bl3': 'BL3',
+    'bl4': 'BL4',
   };
 
   @override
   void initState() {
     super.initState();
-    // Valor inicial padrão ajustado para bl2 (um dos mais buscados) caso não venha definido
     _selectedColor = widget.initialColor ?? 'bl2';
-
-    // Busca os créditos ativos ao abrir a tela
     _carregarCreditos();
   }
 
-  // 🔍 Retorna o e-mail/api_key do utilizador logado no Hive
   String _obterApiKeyAtual() {
     if (widget.userEmail != null && widget.userEmail!.isNotEmpty) {
       return widget.userEmail!;
@@ -59,7 +55,6 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
     return boxUser.get('email', defaultValue: '') as String;
   }
 
-  // 🔄 Busca créditos via e-mail ou via Device ID se estiver deslogado
   Future<void> _carregarCreditos() async {
     if (!mounted) return;
     setState(() => _isLoadingCredits = true);
@@ -75,7 +70,6 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
         });
       }
     } else {
-      // Convidado: busca os créditos do aparelho via Device ID
       final dynamic resDevice = await ApiService.checkOrRegisterDevice();
       if (mounted) {
         setState(() {
@@ -95,7 +89,6 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
   Future<void> _handleProcessSmile() async {
     final apiKey = _obterApiKeyAtual();
 
-    // Se estiver deslogado e zerado de créditos, direciona para a compra
     if (apiKey.isEmpty && _creditos <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -116,8 +109,6 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
     String? processedImagePath;
 
     try {
-      // Envia a chamada de processamento da IA passando a cor selecionada da Escala Bleach
-      // Mantemos parâmetros neutros de shape e size fixos para a IA preservar a anatomia natural
       final resultado = await ApiService.processSmile(
         imageFile: widget.image,
         color: _selectedColor,
@@ -158,7 +149,6 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
 
     setState(() => _isProcessing = false);
 
-    // 🚀 Repassa o simulationId e userEmail para a CompareScreen gravar no Hive com o e-mail correto!
     Navigator.pushReplacementNamed(
       context,
       '/compare',
@@ -174,44 +164,71 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
     );
   }
 
-  Widget _buildColorChipGroup() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
-          child: Text(
-            'Selecione a Tonalidade (Escala Bleach):',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white),
+  // 🦷 Grade 2x2 compacta (BL1/BL2 em cima, BL3/BL4 embaixo)
+  Widget _buildColorGrid() {
+    final keys = _colors.keys.toList(); // ['bl1', 'bl2', 'bl3', 'bl4']
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'Selecione a Tonalidade:',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.white),
+          ),
+          const SizedBox(height: 6),
+          // Linha 1: BL1 e BL2
+          Row(
+            children: [
+              Expanded(child: _buildChipButton(keys[0])),
+              const SizedBox(width: 8),
+              Expanded(child: _buildChipButton(keys[1])),
+            ],
+          ),
+          const SizedBox(height: 6),
+          // Linha 2: BL3 e BL4
+          Row(
+            children: [
+              Expanded(child: _buildChipButton(keys[2])),
+              const SizedBox(width: 8),
+              Expanded(child: _buildChipButton(keys[3])),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChipButton(String key) {
+    final isSelected = _selectedColor == key;
+    final label = _colors[key]!;
+
+    return SizedBox(
+      height: 38,
+      child: ElevatedButton(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: isSelected ? const Color(0xFF5C6BC0) : Colors.white.withOpacity(0.9),
+          foregroundColor: isSelected ? Colors.white : Colors.black87,
+          elevation: isSelected ? 3 : 1,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+            side: BorderSide(
+              color: isSelected ? Colors.white : Colors.transparent,
+              width: 1.5,
+            ),
+          ),
+          padding: EdgeInsets.zero,
+        ),
+        onPressed: () => setState(() => _selectedColor = key),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
           ),
         ),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 12.0),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: _colors.entries.map((entry) {
-              final isSelected = _selectedColor == entry.key;
-              return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4.0),
-                child: ChoiceChip(
-                  label: Text(entry.value),
-                  selected: isSelected,
-                  selectedColor: const Color(0xFF5C6BC0),
-                  backgroundColor: Colors.white.withOpacity(0.85),
-                  labelStyle: TextStyle(
-                    color: isSelected ? Colors.white : Colors.black87,
-                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                  ),
-                  onSelected: (selected) {
-                    if (selected) setState(() => _selectedColor = entry.key);
-                  },
-                ),
-              );
-            }).toList(),
-          ),
-        ),
-      ],
+      ),
     );
   }
 
@@ -221,7 +238,7 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Escolha a Cor do Clareamento'),
+        title: const Text('Ajuste do Clareamento'),
         backgroundColor: const Color(0xFF5C6BC0),
         foregroundColor: Colors.white,
         actions: [
@@ -273,48 +290,53 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
         ],
       ),
       body: Background(
-        child: Column(
-          children: [
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(24),
-                  child: Image.file(
-                    widget.image,
-                    fit: BoxFit.contain,
-                    width: double.infinity,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10.0),
+          child: Column(
+            children: [
+              // 🖼️ Foto com espaço bastante ampliado e nítido
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: Image.file(
+                      widget.image,
+                      fit: BoxFit.contain,
+                      width: double.infinity,
+                    ),
                   ),
                 ),
               ),
-            ),
-            // 🦷 Apenas o seletor de cores da Escala Bleach limpo e direto ao ponto
-            _buildColorChipGroup(),
-            const SizedBox(height: 24),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16.0, 0.0, 16.0, 24.0),
-              child: ElevatedButton.icon(
-                icon: _isProcessing
-                    ? const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                )
-                    : const Icon(Icons.auto_awesome),
-                label: Text(_isProcessing ? 'Processando com IA...' : 'Aplicar Clareamento'),
-                style: ElevatedButton.styleFrom(
-                  minimumSize: const Size(double.infinity, 52),
-                  backgroundColor: const Color(0xFF5C6BC0),
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+              const SizedBox(height: 8),
+              // 🦷 Seletor em Grade 2x2 limpo (BL1/BL2 em cima, BL3/BL4 embaixo)
+              _buildColorGrid(),
+              const SizedBox(height: 10),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                child: ElevatedButton.icon(
+                  icon: _isProcessing
+                      ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                  )
+                      : const Icon(Icons.auto_awesome, size: 18),
+                  label: Text(_isProcessing ? 'Processando com IA...' : 'Aplicar Clareamento'),
+                  style: ElevatedButton.styleFrom(
+                    minimumSize: const Size(double.infinity, 48),
+                    backgroundColor: const Color(0xFF5C6BC0),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
                   ),
-                  textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  onPressed: _isProcessing ? null : _handleProcessSmile,
                 ),
-                onPressed: _isProcessing ? null : _handleProcessSmile,
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

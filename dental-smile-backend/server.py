@@ -1,6 +1,7 @@
 import os
 import io
 import base64
+import time
 import requests
 import psycopg2
 import traceback
@@ -10,10 +11,15 @@ from PIL import Image, ImageOps
 app = Flask(__name__)
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
-HUGGINGFACE_API_KEY = os.environ.get("HUGGINGFACE_API_KEY")
+# Usando a sua chave do Replicate
+REPLICATE_API_TOKEN = os.environ.get("REPLICATE_API_TOKEN", "bbd5280737253ebb0c42abf734f3c9ce")
 
-HF_API_URL = "https://router.huggingface.co/hf-inference/models/runwayml/stable-diffusion-v1-5"
-HEADERS = {"Authorization": f"Bearer {HUGGINGFACE_API_KEY}"}
+# Endpoint oficial do modelo de Stable Diffusion v1.5 no Replicate
+REPLICATE_API_URL = "https://api.replicate.com/v1/predictions"
+REPLICATE_HEADERS = {
+    "Authorization": f"Bearer {REPLICATE_API_TOKEN}",
+    "Content-Type": "application/json"
+}
 
 def get_db_connection():
     return psycopg2.connect(DATABASE_URL, sslmode='require')
@@ -111,7 +117,7 @@ def check_device():
         traceback.print_exc()
         return jsonify({"success": False, "error": str(e)}), 500
 
-# 🔐 Rota de Registro de Novo Dentista (Conta nova nasce com ZERO créditos)
+# 🔐 Rota de Registro de Novo Dentista
 @app.route('/register', methods=['POST'])
 def register():
     data = request.get_json(force=True, silent=True) or {}
@@ -135,8 +141,6 @@ def register():
             conn.close()
             return jsonify({"success": False, "error": "Este e-mail já está cadastrado."}), 400
 
-        # 🛡️ REGRA DE OURO: Conta nova nasce SEMPRE com 0 créditos.
-        # O trial de 3 créditos pertence exclusivamente ao aparelho (modo convidado).
         creditos_iniciais = 0
 
         cur.execute("""
@@ -154,7 +158,7 @@ def register():
         traceback.print_exc()
         return jsonify({"success": False, "error": f"Erro no banco: {str(e)}"}), 500
 
-# 🔑 Rota de Login (Soberania Absoluta da Conta)
+# 🔑 Rota de Login
 @app.route('/login', methods=['POST'])
 def login():
     data = request.get_json(force=True, silent=True) or {}
@@ -270,7 +274,7 @@ def add_credits():
 
     return jsonify({"success": True, "novo_saldo": novo_saldo}), 200
 
-# 🪄 Processar Sorriso
+# 🪄 Processar Sorriso (Integrado com o REPLICATE e Escala Bleach)
 @app.route('/process-smile', methods=['POST'])
 def process_smile():
     data = request.get_json(force=True, silent=True) or {}
@@ -303,7 +307,8 @@ def process_smile():
         return jsonify({"success": False, "error": "Créditos insuficientes."}), 403
 
     image_b64 = data.get('image')
-    prompt_custom = data.get('prompt', 'perfect white smile, color $color, shape $shape, size $size, professional cosmetic dentistry, highly detailed')
+    selected_color = data.get('color', 'bl2').lower()
+    prompt_custom = f"perfect white smile, professional cosmetic dentistry, bleach shade {selected_color}, highly detailed, natural teeth structure"
 
     if not image_b64:
         cur.close()
@@ -313,21 +318,56 @@ def process_smile():
     try:
         image_data = base64.b64decode(image_b64)
         orig_image = Image.open(io.BytesIO(image_data))
-
         orig_image = ImageOps.exif_transpose(orig_image) or orig_image
         orig_width, orig_height = orig_image.size
 
         ai_image_resized = None
-        try:
-            payload = {"inputs": prompt_custom, "parameters": {"strength": 0.45}}
-            response = requests.post(HF_API_URL, headers=HEADERS, files={"image": image_data}, json=payload, timeout=30)
-            if response.status_code == 200:
-                ai_image = Image.open(io.BytesIO(response.content))
-                ai_image = ImageOps.exif_transpose(ai_image) or ai_image
-                ai_image_resized = ai_image.resize((orig_width, orig_height), Image.Resampling.LANCZOS)
-        except Exception:
-            pass
 
+        # Prepara a imagem em data URI para o Replicate
+        image_data_uri = f"data:image/jpeg;base64,{image_b64}"
+
+        # Payload para o modelo Stable Diffusion no Replicate
+        payload = {
+            "version": "7762fd07cf82c948538e41f63f7d068bf7316f3cc457673b4bf2fd3261b0c038", # Versão estável SD v1.5
+            "input": {
+                "prompt": prompt_custom,
+                "image": image_data_uri,
+                "prompt_strength": 0.45,
+                "num_outputs": 1
+            }
+        }
+
+        # Dispara a requisição para criar a predição no Replicate
+        resp = requests.post(REPLICATE_API_URL, headers=REPLICATE_HEADERS, json=payload, timeout=30)
+
+        if resp.status_code in [200, 201]:
+            pred_data = resp.json()
+            pred_id = pred_data.get("id")
+            get_url = f"{REPLICATE_API_URL}/{pred_id}"
+
+            # Faz o polling (aguarda o Replicate terminar de processar a imagem na nuvem)
+            for _ in range(15): # Tenta por até 30 segundos (2s por tentativa)
+                time.sleep(2)
+                poll_resp = requests.get(get_url, headers=REPLICATE_HEADERS, timeout=15)
+                if poll_resp.status_code == 200:
+                    poll_data = poll_resp.json()
+                    status = poll_data.get("status")
+
+                    if status == "succeeded":
+                        output = poll_data.get("output")
+                        if output and isinstance(output, list) and len(output) > 0:
+                            img_url = output[0]
+                            # Baixa a imagem gerada pelo Replicate
+                            img_resp = requests.get(img_url, timeout=20)
+                            if img_resp.status_code == 200:
+                                ai_image = Image.open(io.BytesIO(img_resp.content))
+                                ai_image = ImageOps.exif_transpose(ai_image) or ai_image
+                                ai_image_resized = ai_image.resize((orig_width, orig_height), Image.Resampling.LANCZOS)
+                        break
+                    elif status in ["failed", "canceled"]:
+                        break
+
+        # Fallback de segurança caso a IA demore ou falhe
         if ai_image_resized is None:
             ai_image_resized = orig_image.resize((orig_width, orig_height), Image.Resampling.LANCZOS)
 
@@ -335,6 +375,7 @@ def process_smile():
         ai_image_resized.save(buffered, format="JPEG")
         processed_b64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
 
+        # Desconta o crédito (do dispositivo ou do usuário)
         if is_convidado:
             cur.execute("UPDATE dispositivos SET creditos = creditos - 1 WHERE device_id = %s RETURNING creditos;", (device_id,))
             novo_saldo = cur.fetchone()[0]
