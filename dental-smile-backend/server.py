@@ -14,7 +14,7 @@ DATABASE_URL = os.environ.get("DATABASE_URL")
 # Usando a sua chave do Replicate
 REPLICATE_API_TOKEN = os.environ.get("REPLICATE_API_TOKEN", "bbd5280737253ebb0c42abf734f3c9ce")
 
-# Endpoint oficial do modelo de Stable Diffusion v1.5 no Replicate
+# Endpoint oficial de predições no Replicate
 REPLICATE_API_URL = "https://api.replicate.com/v1/predictions"
 REPLICATE_HEADERS = {
     "Authorization": f"Bearer {REPLICATE_API_TOKEN}",
@@ -274,7 +274,7 @@ def add_credits():
 
     return jsonify({"success": True, "novo_saldo": novo_saldo}), 200
 
-# 🪄 Processar Sorriso (Integrado com o REPLICATE e Escala Bleach)
+# 🪄 Processar Sorriso (Integrado com o modelo especializado do Replicate e Escala Bleach)
 @app.route('/process-smile', methods=['POST'])
 def process_smile():
     data = request.get_json(force=True, silent=True) or {}
@@ -308,7 +308,35 @@ def process_smile():
 
     image_b64 = data.get('image')
     selected_color = data.get('color', 'bl2').lower()
-    prompt_custom = f"perfect white smile, professional cosmetic dentistry, bleach shade {selected_color}, highly detailed, natural teeth structure"
+
+    # Mapeamento profissional da Escala Bleach para complementar o prompt especializado
+    bleach_modifiers = {
+        'bl1': 'ultra white bleach shade BL1 teeth, maximum professional aesthetic whitening',
+        'bl2': 'bright white bleach shade BL2 teeth, natural and striking bright look',
+        'bl3': 'natural white bleach shade BL3 teeth, harmonious and balanced shade',
+        'bl4': 'soft natural bleach shade BL4 teeth, subtle clean translucent look'
+    }
+    color_desc = bleach_modifiers.get(selected_color, 'bright white bleach shade teeth')
+
+    # Prompt especializado do modelo 'smile-correct' com a Escala Bleach integrada
+    prompt_custom = (
+        f"photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1>"
+        f"(Beautiful natural teeth, aligned bite teeth), {color_desc}, "
+        f"aligned white teeth, human like teeth, (no teeth gap), "
+        f"celebrity-like teeth, healthy teeth with a perfect smile, not big incisor, "
+        f"good proportion teeth, good proportion smile,"
+    )
+
+    negative_prompt_custom = (
+        "(deformed teeth, semi-realistic, cgi, 3d, render, sketch, cartoon, drawing, anime), "
+        "(deformed, distorted, abnormal teeth:1.3, disfigured:1.3, large teeth:2), poorly drawn, "
+        "bad anatomy, rabbit teeth, wrong anatomy, missing teeth, disconnected teeth, "
+        "unnatural mouth, bunny teeth, big incisor teeth, disproportionate front teeth, "
+        "bad smile, reflection, crooked teeth, distorted teeth, cropped, out of frame, "
+        "worst quality, low quality, jpeg artifacts, ugly, morbid, disfigured, "
+        "gross proportions, too many teeth, lipstick, lip gloss, too less teeth, "
+        "unnatural size teeth, poorly drawn mouth, poorly drawn teeth"
+    )
 
     if not image_b64:
         cur.close()
@@ -326,14 +354,14 @@ def process_smile():
         # Prepara a imagem em data URI para o Replicate
         image_data_uri = f"data:image/jpeg;base64,{image_b64}"
 
-        # Payload para o modelo Stable Diffusion no Replicate
+        # Payload apontando para o modelo 'smile-correct' com a versão exata do Santo Graal
         payload = {
-            "version": "7762fd07cf82c948538e41f63f7d068bf7316f3cc457673b4bf2fd3261b0c038", # Versão estável SD v1.5
+            "version": "4956c634b9aa976129f13166c713f8cf38bd337cd58c77925e8cd71d935d5696",
             "input": {
-                "prompt": prompt_custom,
                 "image": image_data_uri,
-                "prompt_strength": 0.45,
-                "num_outputs": 1
+                "prompt": prompt_custom,
+                "negative_prompt": negative_prompt_custom,
+                "num_outputs": 1  # Mantido em 1 para consumir apenas 1 crédito por vez
             }
         }
 
@@ -345,8 +373,8 @@ def process_smile():
             pred_id = pred_data.get("id")
             get_url = f"{REPLICATE_API_URL}/{pred_id}"
 
-            # Faz o polling (aguarda o Replicate terminar de processar a imagem na nuvem)
-            for _ in range(15): # Tenta por até 30 segundos (2s por tentativa)
+            # Faz o polling (aguarda o Replicate terminar de processar o sorriso na nuvem)
+            for _ in range(25): # Tenta por até 50 segundos (2s por tentativa)
                 time.sleep(2)
                 poll_resp = requests.get(get_url, headers=REPLICATE_HEADERS, timeout=15)
                 if poll_resp.status_code == 200:
@@ -357,7 +385,7 @@ def process_smile():
                         output = poll_data.get("output")
                         if output and isinstance(output, list) and len(output) > 0:
                             img_url = output[0]
-                            # Baixa a imagem gerada pelo Replicate
+                            # Baixa a imagem gerada pelo modelo especializado
                             img_resp = requests.get(img_url, timeout=20)
                             if img_resp.status_code == 200:
                                 ai_image = Image.open(io.BytesIO(img_resp.content))
@@ -367,7 +395,7 @@ def process_smile():
                     elif status in ["failed", "canceled"]:
                         break
 
-        # Fallback de segurança caso a IA demore ou falhe
+        # Fallback de segurança caso ocorra instabilidade temporária na IA
         if ai_image_resized is None:
             ai_image_resized = orig_image.resize((orig_width, orig_height), Image.Resampling.LANCZOS)
 
@@ -375,7 +403,7 @@ def process_smile():
         ai_image_resized.save(buffered, format="JPEG")
         processed_b64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
 
-        # Desconta o crédito (do dispositivo ou do usuário)
+        # Desconta o crédito (do dispositivo ou do usuário logado)
         if is_convidado:
             cur.execute("UPDATE dispositivos SET creditos = creditos - 1 WHERE device_id = %s RETURNING creditos;", (device_id,))
             novo_saldo = cur.fetchone()[0]
