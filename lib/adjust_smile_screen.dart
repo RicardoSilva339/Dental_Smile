@@ -33,7 +33,7 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
 
   late String _selectedColor;
 
-  // 🔄 Variáveis para controlar as mensagens dinâmicas do processamento de IA a cada 10 segundos
+  // 🔄 Variáveis para controlar as mensagens dinâmicas dentro do botão a cada 10 segundos
   Timer? _timerMensagens;
   int _mensagemIndex = 0;
 
@@ -347,45 +347,9 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
 
               // 🦷 Seletor em Grade 2x2 limpo
               _buildColorGrid(),
-              const SizedBox(height: 10),
+              const SizedBox(height: 14),
 
-              // 🔄 Caixa de status dinâmica elegante que aparece logo acima do botão a cada 10s
-              if (_isProcessing)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.7),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: const Color(0xFF5C6BC0), width: 1),
-                    ),
-                    child: Row(
-                      children: [
-                        const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.amber),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            _mensagensLoading[_mensagemIndex],
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-
-              const SizedBox(height: 6),
-
-              // 🚀 Botão principal de aplicar clareamento
+              // 🚀 Botão principal onde o texto muda dinamicamente a cada 10 segundos
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16.0),
                 child: ElevatedButton.icon(
@@ -396,7 +360,12 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
                     child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
                   )
                       : const Icon(Icons.auto_awesome, size: 18),
-                  label: Text(_isProcessing ? 'Processando com IA...' : 'Aplicar Clareamento'),
+                  // O texto do botão agora assume a frase atual da IA ou o texto padrão
+                  label: Text(
+                    _isProcessing ? _mensagensLoading[_mensagemIndex] : 'Aplicar Clareamento',
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                    textAlign: TextAlign.center,
+                  ),
                   style: ElevatedButton.styleFrom(
                     minimumSize: const Size(double.infinity, 48),
                     backgroundColor: const Color(0xFF5C6BC0),
@@ -404,7 +373,6 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
                   ),
                   onPressed: _isProcessing ? null : _handleProcessSmile,
                 ),
