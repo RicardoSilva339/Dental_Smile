@@ -42,7 +42,6 @@ class _CompareScreenState extends State<CompareScreen> {
         _selectedSize = args['size'] ?? 'Médio';
         _simulationId = args['simulationId'] ?? 'DS-${DateTime.now().millisecondsSinceEpoch.toString().substring(5)}';
 
-        // 🔍 Extrai o e-mail do usuário ativo
         _userEmail = args['userEmail'];
 
         final existingNotes = args['notes'] ?? args['note'];
@@ -51,7 +50,6 @@ class _CompareScreenState extends State<CompareScreen> {
         }
       }
 
-      // Fallback: Se não veio via argumentos, consulta o e-mail da sessão diretamente no Hive
       if (_userEmail == null || _userEmail!.isEmpty) {
         final boxUser = Hive.box('box_usuario');
         _userEmail = boxUser.get('email', defaultValue: '') as String;
@@ -67,7 +65,6 @@ class _CompareScreenState extends State<CompareScreen> {
     super.dispose();
   }
 
-  // Carrega a imagem com segurança para o PDF
   Future<pw.MemoryImage?> _carregarImagemSegura(String? path) async {
     if (path == null || path.isEmpty) return null;
     try {
@@ -82,7 +79,6 @@ class _CompareScreenState extends State<CompareScreen> {
     return null;
   }
 
-  // 📄 Geração do Documento PDF Completo e Profissional
   Future<pw.Document> _gerarDocumentoPdf({
     required String? originalPath,
     required String? adjustedPath,
@@ -210,7 +206,6 @@ class _CompareScreenState extends State<CompareScreen> {
     return pdf;
   }
 
-  // 💾 Salva no Hive para o Histórico
   Future<void> _salvarNoHistorico(String noteText) async {
     final box = Hive.box('simulacoes');
 
@@ -232,7 +227,6 @@ class _CompareScreenState extends State<CompareScreen> {
     await box.add(simulationData);
   }
 
-  // 🔍 Abre a tela de Pré-visualização com Zoom por Pinça (PdfPreview)
   void _abrirPreviewPdf() async {
     final noteText = _notesController.text.trim().isEmpty
         ? 'Sem observações'
@@ -315,160 +309,162 @@ class _CompareScreenState extends State<CompareScreen> {
                 ),
               const SizedBox(height: 12),
 
-              // ÁREA DE COMPARAÇÃO SOBREPOSTA (SLIDER COM TELA CHEIA / COVER)
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final containerWidth = constraints.maxWidth;
-                  const containerHeight = 380.0;
+              // 🖼️ ÁREA DE COMPARAÇÃO COM PROPORÇÃO UNIFICADA (FIM DO ZOOM INDESEJADO)
+              Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 400),
+                  child: AspectRatio(
+                    aspectRatio: 3 / 4, // Mantém a proporção exata de retrato padrão de foto
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final containerWidth = constraints.maxWidth;
+                        final containerHeight = constraints.maxHeight;
 
-                  return GestureDetector(
-                    onPanUpdate: (details) {
-                      setState(() {
-                        _sliderValue += details.delta.dx / containerWidth;
-                        if (_sliderValue < 0.0) _sliderValue = 0.0;
-                        if (_sliderValue > 1.0) _sliderValue = 1.0;
-                      });
-                    },
-                    onTapDown: (details) {
-                      final localX = details.localPosition.dx;
-                      setState(() {
-                        _sliderValue = (localX / containerWidth).clamp(0.0, 1.0);
-                      });
-                    },
-                    child: Container(
-                      height: containerHeight,
-                      width: containerWidth,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(16),
-                        color: Colors.indigo.shade50, // Fundo suave caso haja transição
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.15),
-                            blurRadius: 10,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(16),
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            // 🖼️ IMAGEM PROCESSADA (Preenchendo todo o espaço com BoxFit.cover)
-                            if (processedFile != null && processedFile.existsSync())
-                              Image.file(
-                                processedFile,
-                                width: containerWidth,
-                                height: containerHeight,
-                                fit: BoxFit.cover, // 👈 Preenche totalmente sem abas pretas nas laterais
-                                alignment: Alignment.center,
-                                cacheWidth: 1000,
-                              )
-                            else
-                              const Center(child: Text('Erro ao carregar imagem processada')),
+                        return GestureDetector(
+                          onPanUpdate: (details) {
+                            setState(() {
+                              _sliderValue += details.delta.dx / containerWidth;
+                              if (_sliderValue < 0.0) _sliderValue = 0.0;
+                              if (_sliderValue > 1.0) _sliderValue = 1.0;
+                            });
+                          },
+                          onTapDown: (details) {
+                            final localX = details.localPosition.dx;
+                            setState(() {
+                              _sliderValue = (localX / containerWidth).clamp(0.0, 1.0);
+                            });
+                          },
+                          child: Container(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(16),
+                              color: Colors.black,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.15),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(16),
+                              child: Stack(
+                                fit: StackFit.expand,
+                                children: [
+                                  // 🖼️ IMAGEM PROCESSADA (Base)
+                                  if (processedFile != null && processedFile.existsSync())
+                                    Image.file(
+                                      processedFile,
+                                      fit: BoxFit.cover,
+                                      alignment: Alignment.center,
+                                    )
+                                  else
+                                    const Center(child: Text('Erro ao carregar imagem processada', style: TextStyle(color: Colors.white))),
 
-                            // 🖼️ IMAGEM ORIGINAL (Sobreposta com o slider em BoxFit.cover)
-                            if (originalFile != null && originalFile.existsSync())
-                              Align(
-                                alignment: Alignment.centerLeft,
-                                child: FractionallySizedBox(
-                                  widthFactor: _sliderValue,
-                                  alignment: Alignment.topLeft,
-                                  child: ClipRect(
-                                    child: OverflowBox(
-                                      alignment: Alignment.topLeft,
-                                      minWidth: containerWidth,
-                                      maxWidth: containerWidth,
-                                      minHeight: containerHeight,
-                                      maxHeight: containerHeight,
-                                      child: Image.file(
-                                        originalFile,
-                                        width: containerWidth,
-                                        height: containerHeight,
-                                        fit: BoxFit.cover, // 👈 Sincronizado para preencher todo o container
+                                  // 🖼️ IMAGEM ORIGINAL (Sobreposta com cortes proporcionais)
+                                  if (originalFile != null && originalFile.existsSync())
+                                    Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: FractionallySizedBox(
+                                        widthFactor: _sliderValue,
+                                        alignment: Alignment.topLeft,
+                                        child: ClipRect(
+                                          child: OverflowBox(
+                                            alignment: Alignment.topLeft,
+                                            minWidth: containerWidth,
+                                            maxWidth: containerWidth,
+                                            minHeight: containerHeight,
+                                            maxHeight: containerHeight,
+                                            child: Image.file(
+                                              originalFile,
+                                              width: containerWidth,
+                                              height: containerHeight,
+                                              fit: BoxFit.cover,
+                                              alignment: Alignment.center,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+
+                                  // BARRA DO SLIDER
+                                  Positioned(
+                                    top: 0,
+                                    bottom: 0,
+                                    left: (containerWidth * _sliderValue) - 1.5,
+                                    child: Container(
+                                      width: 3,
+                                      color: Colors.white,
+                                      child: Stack(
                                         alignment: Alignment.center,
-                                        cacheWidth: 1000,
+                                        clipBehavior: Clip.none,
+                                        children: [
+                                          Container(
+                                            height: 38,
+                                            width: 38,
+                                            decoration: BoxDecoration(
+                                              color: Colors.white,
+                                              shape: BoxShape.circle,
+                                              boxShadow: [
+                                                BoxShadow(
+                                                  color: Colors.black.withOpacity(0.3),
+                                                  blurRadius: 6,
+                                                )
+                                              ],
+                                            ),
+                                            child: const Icon(
+                                              Icons.compare_arrows,
+                                              size: 22,
+                                              color: Colors.indigo,
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ),
                                   ),
-                                ),
-                              ),
 
-                            // BARRA DO SLIDER
-                            Positioned(
-                              top: 0,
-                              bottom: 0,
-                              left: (containerWidth * _sliderValue) - 1.5,
-                              child: Container(
-                                width: 3,
-                                color: Colors.white,
-                                child: Stack(
-                                  alignment: Alignment.center,
-                                  clipBehavior: Clip.none,
-                                  children: [
-                                    Container(
-                                      height: 38,
-                                      width: 38,
+                                  // BADGE ORIGINAL
+                                  Positioned(
+                                    top: 12,
+                                    left: 12,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                       decoration: BoxDecoration(
-                                        color: Colors.white,
-                                        shape: BoxShape.circle,
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: Colors.black.withOpacity(0.3),
-                                            blurRadius: 6,
-                                          )
-                                        ],
+                                        color: Colors.black.withOpacity(0.65),
+                                        borderRadius: BorderRadius.circular(6),
                                       ),
-                                      child: const Icon(
-                                        Icons.compare_arrows,
-                                        size: 22,
-                                        color: Colors.indigo,
+                                      child: const Text(
+                                        'Original',
+                                        style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
                                       ),
                                     ),
-                                  ],
-                                ),
-                              ),
-                            ),
+                                  ),
 
-                            // BADGE ORIGINAL
-                            Positioned(
-                              top: 12,
-                              left: 12,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withOpacity(0.65),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: const Text(
-                                  'Original',
-                                  style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
-                                ),
+                                  // BADGE COM IA
+                                  Positioned(
+                                    top: 12,
+                                    right: 12,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: Colors.indigo.withOpacity(0.85),
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: const Text(
+                                        'Com IA',
+                                        style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-
-                            // BADGE COM IA
-                            Positioned(
-                              top: 12,
-                              right: 12,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: Colors.indigo.withOpacity(0.85),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: const Text(
-                                  'Com IA',
-                                  style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                          ),
+                        );
+                      },
                     ),
-                  );
-                },
+                  ),
+                ),
               ),
 
               const SizedBox(height: 16),

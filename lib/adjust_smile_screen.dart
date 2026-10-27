@@ -33,7 +33,7 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
 
   late String _selectedColor;
 
-  // 🔄 Variáveis para controlar as mensagens dinâmicas do processamento de IA
+  // 🔄 Variáveis para controlar as mensagens dinâmicas do processamento de IA a cada 10 segundos
   Timer? _timerMensagens;
   int _mensagemIndex = 0;
 
@@ -125,13 +125,13 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
       return;
     }
 
-    // 🚀 Inicia o estado de processamento e o ciclo das mensagens dinâmicas a cada 3 segundos
+    // 🚀 Inicia o estado de processamento e o ciclo das mensagens dinâmicas a cada 10 segundos
     setState(() {
       _isProcessing = true;
       _mensagemIndex = 0;
     });
 
-    _timerMensagens = Timer.periodic(const Duration(seconds: 3), (timer) {
+    _timerMensagens = Timer.periodic(const Duration(seconds: 10), (timer) {
       if (mounted) {
         setState(() {
           _mensagemIndex = (_mensagemIndex + 1) % _mensagensLoading.length;
@@ -150,7 +150,7 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
         apiKey: apiKey.isNotEmpty ? apiKey : '',
       );
 
-      // Para o timer assim que a resposta chega
+      // Para o timer assim que a resposta da IA chega
       _timerMensagens?.cancel();
 
       if (resultado['success'] == true) {
@@ -349,14 +349,14 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
               _buildColorGrid(),
               const SizedBox(height: 10),
 
-              // 🔄 Caixa de status dinâmica que aparece logo acima do botão durante o processamento
+              // 🔄 Caixa de status dinâmica elegante que aparece logo acima do botão a cada 10s
               if (_isProcessing)
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.6),
+                      color: Colors.black.withOpacity(0.7),
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(color: const Color(0xFF5C6BC0), width: 1),
                     ),
