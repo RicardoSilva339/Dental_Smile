@@ -147,7 +147,7 @@ class _CompareScreenState extends State<CompareScreen> {
                     children: [
                       pw.Text("Antes (Original)", style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11)),
                       pw.SizedBox(height: 4),
-                      pw.Image(beforeImage, width: 160, height: 190, fit: pw.BoxFit.contain),
+                      pw.Image(beforeImage, width: 160, height: 190, fit: pw.BoxFit.cover),
                     ],
                   ),
                 if (afterImage != null)
@@ -156,7 +156,7 @@ class _CompareScreenState extends State<CompareScreen> {
                     children: [
                       pw.Text("Depois (Simulação IA)", style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11)),
                       pw.SizedBox(height: 4),
-                      pw.Image(afterImage, width: 160, height: 190, fit: pw.BoxFit.contain),
+                      pw.Image(afterImage, width: 160, height: 190, fit: pw.BoxFit.cover),
                     ],
                   ),
               ],
@@ -309,12 +309,12 @@ class _CompareScreenState extends State<CompareScreen> {
                 ),
               const SizedBox(height: 12),
 
-              // 🖼️ ÁREA DE COMPARAÇÃO BLINDADA (SEM PACOTES EXTERNOS, ALINHAMENTO EXATO)
+              // 🖼️ ÁREA DE COMPARAÇÃO COM PROPORÇÃO 1:1 E FIT.COVER (ALINHAMENTO GEOMÉTRICO PERFEITO)
               Center(
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 450),
+                  constraints: const BoxConstraints(maxHeight: 420),
                   child: AspectRatio(
-                    aspectRatio: 3 / 4,
+                    aspectRatio: 1 / 1, // 👈 Proporção quadrada exata idêntica à compressão de origem
                     child: LayoutBuilder(
                       builder: (context, constraints) {
                         final containerWidth = constraints.maxWidth;
@@ -351,17 +351,17 @@ class _CompareScreenState extends State<CompareScreen> {
                               child: Stack(
                                 fit: StackFit.expand,
                                 children: [
-                                  // 1️⃣ CAMADA DE BASE (DIREITA): Imagem Processada com IA
+                                  // 1️⃣ CAMADA DE BASE (DIREITA): Imagem Processada com IA com BoxFit.cover
                                   if (processedFile != null && processedFile.existsSync())
                                     Image.file(
                                       processedFile,
-                                      fit: BoxFit.contain,
+                                      fit: BoxFit.cover,
                                       alignment: Alignment.center,
                                     )
                                   else
                                     const Center(child: Text('Erro ao carregar imagem processada', style: TextStyle(color: Colors.white))),
 
-                                  // 2️⃣ CAMADA SOBREPOSTA (ESQUERDA): Imagem Original cortada pelo Slider
+                                  // 2️⃣ CAMADA SOBREPOSTA (ESQUERDA): Imagem Original com BoxFit.cover exato
                                   if (originalFile != null && originalFile.existsSync())
                                     Align(
                                       alignment: Alignment.centerLeft,
@@ -379,7 +379,7 @@ class _CompareScreenState extends State<CompareScreen> {
                                               originalFile,
                                               width: containerWidth,
                                               height: containerHeight,
-                                              fit: BoxFit.contain,
+                                              fit: BoxFit.cover,
                                               alignment: Alignment.center,
                                             ),
                                           ),
@@ -387,7 +387,7 @@ class _CompareScreenState extends State<CompareScreen> {
                                       ),
                                     ),
 
-                                  // 3️⃣ BARRA DO SLIDER COM O ÍCONE DE ARRASTAR
+                                  // 3️⃣ BARRA DO SLIDER
                                   Positioned(
                                     top: 0,
                                     bottom: 0,
@@ -423,7 +423,7 @@ class _CompareScreenState extends State<CompareScreen> {
                                     ),
                                   ),
 
-                                  // 🏷️ BADGE ORIGINAL (ESQUERDA)
+                                  // 🏷️ BADGE ORIGINAL
                                   Positioned(
                                     top: 12,
                                     left: 12,
@@ -440,7 +440,7 @@ class _CompareScreenState extends State<CompareScreen> {
                                     ),
                                   ),
 
-                                  // 🏷️ BADGE COM IA (DIREITA)
+                                  // 🏷️ BADGE COM IA
                                   Positioned(
                                     top: 12,
                                     right: 12,
