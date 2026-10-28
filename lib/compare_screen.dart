@@ -310,7 +310,7 @@ class _CompareScreenState extends State<CompareScreen> {
                 ),
               const SizedBox(height: 12),
 
-              // 🖼️ ÁREA DE COMPARAÇÃO COM O PACOTE BEFORE_AFTER CORRIGIDO (ONVALCHANGED)
+              // 🖼️ ÁREA DE COMPARAÇÃO COM BEFORE_AFTER CORRIGIDO (ORIGINAL À ESQUERDA, COM IA À DIREITA, SEM ZOOM)
               Center(
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxHeight: 450),
@@ -335,19 +335,21 @@ class _CompareScreenState extends State<CompareScreen> {
                           children: [
                             BeforeAfter(
                               value: _sliderValue,
+                              // Lado Esquerdo: Original
                               before: originalFile != null && originalFile.existsSync()
                                   ? Image.file(
                                 originalFile,
-                                fit: BoxFit.cover,
+                                fit: BoxFit.contain,
                               )
                                   : const Center(child: Text('Erro original', style: TextStyle(color: Colors.white))),
+                              // Lado Direito: Com IA
                               after: processedFile != null && processedFile.existsSync()
                                   ? Image.file(
                                 processedFile,
-                                fit: BoxFit.cover,
+                                fit: BoxFit.contain,
                               )
                                   : const Center(child: Text('Erro processada', style: TextStyle(color: Colors.white))),
-                              onValueChanged: (value) { // 👈 Ajustado para onValueChanged conforme a API da versão 3.2.0
+                              onValueChanged: (value) {
                                 setState(() {
                                   _sliderValue = value;
                                 });
