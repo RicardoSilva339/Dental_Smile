@@ -4,7 +4,6 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:printing/printing.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:before_after/before_after.dart';
 import 'background.dart';
 import 'adjust_smile_screen.dart';
 
@@ -310,88 +309,159 @@ class _CompareScreenState extends State<CompareScreen> {
                 ),
               const SizedBox(height: 12),
 
-              // 🖼️ ÁREA DE COMPARAÇÃO COM BEFORE_AFTER CORRIGIDO (ORIGINAL À ESQUERDA, COM IA À DIREITA, SEM ZOOM)
+              // 🖼️ ÁREA DE COMPARAÇÃO BLINDADA (SEM PACOTES EXTERNOS, ALINHAMENTO EXATO)
               Center(
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxHeight: 450),
                   child: AspectRatio(
                     aspectRatio: 3 / 4,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(16),
-                        color: Colors.black,
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.15),
-                            blurRadius: 10,
-                            offset: const Offset(0, 4),
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final containerWidth = constraints.maxWidth;
+                        final containerHeight = constraints.maxHeight;
+
+                        return GestureDetector(
+                          onPanUpdate: (details) {
+                            setState(() {
+                              _sliderValue += details.delta.dx / containerWidth;
+                              if (_sliderValue < 0.0) _sliderValue = 0.0;
+                              if (_sliderValue > 1.0) _sliderValue = 1.0;
+                            });
+                          },
+                          onTapDown: (details) {
+                            final localX = details.localPosition.dx;
+                            setState(() {
+                              _sliderValue = (localX / containerWidth).clamp(0.0, 1.0);
+                            });
+                          },
+                          child: Container(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(16),
+                              color: Colors.black,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.15),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(16),
+                              child: Stack(
+                                fit: StackFit.expand,
+                                children: [
+                                  // 1️⃣ CAMADA DE BASE (DIREITA): Imagem Processada com IA
+                                  if (processedFile != null && processedFile.existsSync())
+                                    Image.file(
+                                      processedFile,
+                                      fit: BoxFit.contain,
+                                      alignment: Alignment.center,
+                                    )
+                                  else
+                                    const Center(child: Text('Erro ao carregar imagem processada', style: TextStyle(color: Colors.white))),
+
+                                  // 2️⃣ CAMADA SOBREPOSTA (ESQUERDA): Imagem Original cortada pelo Slider
+                                  if (originalFile != null && originalFile.existsSync())
+                                    Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: FractionallySizedBox(
+                                        widthFactor: _sliderValue,
+                                        alignment: Alignment.topLeft,
+                                        child: ClipRect(
+                                          child: OverflowBox(
+                                            alignment: Alignment.topLeft,
+                                            minWidth: containerWidth,
+                                            maxWidth: containerWidth,
+                                            minHeight: containerHeight,
+                                            maxHeight: containerHeight,
+                                            child: Image.file(
+                                              originalFile,
+                                              width: containerWidth,
+                                              height: containerHeight,
+                                              fit: BoxFit.contain,
+                                              alignment: Alignment.center,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+
+                                  // 3️⃣ BARRA DO SLIDER COM O ÍCONE DE ARRASTAR
+                                  Positioned(
+                                    top: 0,
+                                    bottom: 0,
+                                    left: (containerWidth * _sliderValue) - 1.5,
+                                    child: Container(
+                                      width: 3,
+                                      color: Colors.white,
+                                      child: Stack(
+                                        alignment: Alignment.center,
+                                        clipBehavior: Clip.none,
+                                        children: [
+                                          Container(
+                                            height: 38,
+                                            width: 38,
+                                            decoration: BoxDecoration(
+                                              color: Colors.white,
+                                              shape: BoxShape.circle,
+                                              boxShadow: [
+                                                BoxShadow(
+                                                  color: Colors.black.withOpacity(0.3),
+                                                  blurRadius: 6,
+                                                )
+                                              ],
+                                            ),
+                                            child: const Icon(
+                                              Icons.compare_arrows,
+                                              size: 22,
+                                              color: Colors.indigo,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+
+                                  // 🏷️ BADGE ORIGINAL (ESQUERDA)
+                                  Positioned(
+                                    top: 12,
+                                    left: 12,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black.withOpacity(0.65),
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: const Text(
+                                        'Original',
+                                        style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                                      ),
+                                    ),
+                                  ),
+
+                                  // 🏷️ BADGE COM IA (DIREITA)
+                                  Positioned(
+                                    top: 12,
+                                    right: 12,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: Colors.indigo.withOpacity(0.85),
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: const Text(
+                                        'Com IA',
+                                        style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
                           ),
-                        ],
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(16),
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            BeforeAfter(
-                              value: _sliderValue,
-                              // Lado Esquerdo: Original
-                              before: originalFile != null && originalFile.existsSync()
-                                  ? Image.file(
-                                originalFile,
-                                fit: BoxFit.contain,
-                              )
-                                  : const Center(child: Text('Erro original', style: TextStyle(color: Colors.white))),
-                              // Lado Direito: Com IA
-                              after: processedFile != null && processedFile.existsSync()
-                                  ? Image.file(
-                                processedFile,
-                                fit: BoxFit.contain,
-                              )
-                                  : const Center(child: Text('Erro processada', style: TextStyle(color: Colors.white))),
-                              onValueChanged: (value) {
-                                setState(() {
-                                  _sliderValue = value;
-                                });
-                              },
-                            ),
-
-                            // BADGE ORIGINAL
-                            Positioned(
-                              top: 12,
-                              left: 12,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withOpacity(0.65),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: const Text(
-                                  'Original',
-                                  style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
-                                ),
-                              ),
-                            ),
-
-                            // BADGE COM IA
-                            Positioned(
-                              top: 12,
-                              right: 12,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: Colors.indigo.withOpacity(0.85),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: const Text(
-                                  'Com IA',
-                                  style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                        );
+                      },
                     ),
                   ),
                 ),
