@@ -34,5 +34,6 @@ dev_dependencies:
 flutter:
   uses-material-design: true
 
+  # 🖼️ Caminhos de assets devidamente alinhados
   assets:
     - assets/images/

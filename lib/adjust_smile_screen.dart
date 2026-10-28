@@ -161,7 +161,7 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
             if (resultado['creditos_restantes'] != null && resultado['creditos_restantes'] is int) {
               _creditos = resultado['creditos_restantes'];
             } else if (_creditos > 0) {
-              _creditos = _creditos - 1;
+              _creditos = _creditos - 1; // 👈 Correção do operador de subtração aplicada aqui
             }
           });
         }

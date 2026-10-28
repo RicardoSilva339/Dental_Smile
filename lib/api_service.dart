@@ -157,8 +157,6 @@ class ApiService {
 
       String deviceId = await _getDeviceId();
 
-      String customPrompt = 'perfect white smile, professional cosmetic dentistry, bleach shade ${color.toLowerCase()}, highly detailed, natural teeth structure';
-
       final response = await http.post(
         url,
         headers: {'Content-Type': 'application/json'},
@@ -166,8 +164,9 @@ class ApiService {
           'api_key': apiKey,
           'device_id': deviceId,
           'image': base64Image,
-          'color': color,
-          'prompt': customPrompt,
+          'color': color, // 👈 Envia exatamente o código da cor (ex: 'bl2') para o backend processar o prompt profissional
+          'shape': shape,
+          'size': size,
         }),
       ).timeout(const Duration(seconds: 120));
 

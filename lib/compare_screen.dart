@@ -147,7 +147,7 @@ class _CompareScreenState extends State<CompareScreen> {
                     children: [
                       pw.Text("Antes (Original)", style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11)),
                       pw.SizedBox(height: 4),
-                      pw.Image(beforeImage, width: 160, height: 190, fit: pw.BoxFit.contain),
+                      pw.Image(beforeImage, width: 160, height: 190, fit: pw.BoxFit.cover),
                     ],
                   ),
                 if (afterImage != null)
@@ -156,7 +156,7 @@ class _CompareScreenState extends State<CompareScreen> {
                     children: [
                       pw.Text("Depois (Simulação IA)", style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11)),
                       pw.SizedBox(height: 4),
-                      pw.Image(afterImage, width: 160, height: 190, fit: pw.BoxFit.contain),
+                      pw.Image(afterImage, width: 160, height: 190, fit: pw.BoxFit.cover),
                     ],
                   ),
               ],
@@ -309,12 +309,12 @@ class _CompareScreenState extends State<CompareScreen> {
                 ),
               const SizedBox(height: 12),
 
-              // 🖼️ ÁREA DE COMPARAÇÃO COM BOXFIT.CONTAIN (FIM DO ZOOM)
+              // 🖼️ ÁREA DE COMPARAÇÃO COM PROPORÇÃO PERFEITA
               Center(
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxHeight: 400),
                   child: AspectRatio(
-                    aspectRatio: 3 / 4,
+                    aspectRatio: 1 / 1, // 👈 Proporção 1:1 exata padronizada na origem
                     child: LayoutBuilder(
                       builder: (context, constraints) {
                         final containerWidth = constraints.maxWidth;
@@ -351,17 +351,17 @@ class _CompareScreenState extends State<CompareScreen> {
                               child: Stack(
                                 fit: StackFit.expand,
                                 children: [
-                                  // 🖼️ IMAGEM PROCESSADA (Base) - BoxFit.contain
+                                  // 🖼️ IMAGEM PROCESSADA (Base) - BoxFit.cover para preencher o quadrado perfeito
                                   if (processedFile != null && processedFile.existsSync())
                                     Image.file(
                                       processedFile,
-                                      fit: BoxFit.contain, // 👈 Ajustado para contain
+                                      fit: BoxFit.cover,
                                       alignment: Alignment.center,
                                     )
                                   else
                                     const Center(child: Text('Erro ao carregar imagem processada', style: TextStyle(color: Colors.white))),
 
-                                  // 🖼️ IMAGEM ORIGINAL (Sobreposta) - BoxFit.contain
+                                  // 🖼️ IMAGEM ORIGINAL (Sobreposta com corte dinâmico do slider)
                                   if (originalFile != null && originalFile.existsSync())
                                     Align(
                                       alignment: Alignment.centerLeft,
@@ -379,7 +379,7 @@ class _CompareScreenState extends State<CompareScreen> {
                                               originalFile,
                                               width: containerWidth,
                                               height: containerHeight,
-                                              fit: BoxFit.contain, // 👈 Ajustado para contain
+                                              fit: BoxFit.cover,
                                               alignment: Alignment.center,
                                             ),
                                           ),

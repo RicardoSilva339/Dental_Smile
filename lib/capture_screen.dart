@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'background.dart';
 
 class CaptureScreen extends StatefulWidget {
@@ -14,11 +15,39 @@ class CaptureScreen extends StatefulWidget {
 class _CaptureScreenState extends State<CaptureScreen> {
   File? _image;
 
+  // 🛠️ Padroniza e comprime a imagem direto na origem
+  Future<File?> _padronizarImagem(File imagemOriginal) async {
+    try {
+      final targetPath = '${imagemOriginal.path}_compressed.jpg';
+
+      // 👈 O retorno correto da função é XFile?
+      final XFile? compressedFile = await FlutterImageCompress.compressAndGetFile(
+        imagemOriginal.absolute.path,
+        targetPath,
+        minWidth: 1024,
+        minHeight: 1024,
+        quality: 85,
+        keepExif: true,
+      );
+
+      if (compressedFile != null) {
+        return File(compressedFile.path); // Converte o XFile para File
+      }
+      return imagemOriginal;
+    } catch (e) {
+      debugPrint("Erro ao padronizar imagem na origem: $e");
+      return imagemOriginal;
+    }
+  }
+
   Future<void> _pickImage(ImageSource source) async {
     final picker = ImagePicker();
     final pickedFile = await picker.pickImage(source: source);
     if (pickedFile != null) {
-      setState(() => _image = File(pickedFile.path));
+      File arquivoSelecionado = File(pickedFile.path);
+      File? arquivoPadronizado = await _padronizarImagem(arquivoSelecionado);
+
+      setState(() => _image = arquivoPadronizado ?? arquivoSelecionado);
     }
   }
 
@@ -28,7 +57,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
     return 'DS-$timestamp';
   }
 
-  // 🔍 Obtém o e-mail do utilizador logado no momento da captura
+  // 🔍 E-mail do utilizador logado no momento da captura
   String _obterEmailUsuarioAtual() {
     final boxUser = Hive.box('box_usuario');
     return boxUser.get('email', defaultValue: '') as String;
@@ -37,7 +66,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
   void _goToAnalysis() {
     if (_image != null) {
       final simulationId = _gerarSimulationId();
-      final userEmail = _obterEmailUsuarioAtual(); // 👈 Captura o e-mail ativo
+      final userEmail = _obterEmailUsuarioAtual();
 
       Navigator.pushNamed(
         context,
@@ -45,7 +74,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
         arguments: {
           'image': _image!.path,
           'simulationId': simulationId,
-          'userEmail': userEmail, // 👈 Passa o e-mail para a próxima tela salvar com dono!
+          'userEmail': userEmail,
         },
       );
     } else {
