@@ -309,7 +309,7 @@ class _CompareScreenState extends State<CompareScreen> {
                 ),
               const SizedBox(height: 12),
 
-              // 🖼️ ÁREA DE COMPARAÇÃO COM PROPORÇÃO 3:4 E ESCALA AJUSTADA
+              // 🖼️ ÁREA DE COMPARAÇÃO COM PROPORÇÃO 3:4 E ALINHAMENTO SINCRONIZADO
               Center(
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxHeight: 450),
@@ -351,17 +351,17 @@ class _CompareScreenState extends State<CompareScreen> {
                               child: Stack(
                                 fit: StackFit.expand,
                                 children: [
-                                  // 1️⃣ CAMADA DE BASE (DIREITA): Imagem Processada com IA
+                                  // 1️⃣ CAMADA DE BASE (DIREITA): Imagem Processada com IA (BoxFit.cover para ocupar 100%)
                                   if (processedFile != null && processedFile.existsSync())
                                     Image.file(
                                       processedFile,
-                                      fit: BoxFit.contain,
+                                      fit: BoxFit.cover,
                                       alignment: Alignment.center,
                                     )
                                   else
                                     const Center(child: Text('Erro ao carregar imagem processada', style: TextStyle(color: Colors.white))),
 
-                                  // 2️⃣ CAMADA SOBREPOSTA (ESQUERDA): Imagem Original com Transform.scale
+                                  // 2️⃣ CAMADA SOBREPOSTA (ESQUERDA): Imagem Original com BoxFit.cover idêntico para alinhar pixels
                                   if (originalFile != null && originalFile.existsSync())
                                     Align(
                                       alignment: Alignment.centerLeft,
@@ -375,16 +375,12 @@ class _CompareScreenState extends State<CompareScreen> {
                                             maxWidth: containerWidth,
                                             minHeight: containerHeight,
                                             maxHeight: containerHeight,
-                                            child: Transform.scale(
-                                              scale: 1.25, // Ajuste este valor se precisar aproximar mais ou menos
+                                            child: Image.file(
+                                              originalFile,
+                                              width: containerWidth,
+                                              height: containerHeight,
+                                              fit: BoxFit.cover,
                                               alignment: Alignment.center,
-                                              child: Image.file(
-                                                originalFile,
-                                                width: containerWidth,
-                                                height: containerHeight,
-                                                fit: BoxFit.contain,
-                                                alignment: Alignment.center,
-                                              ),
                                             ),
                                           ),
                                         ),
