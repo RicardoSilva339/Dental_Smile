@@ -398,8 +398,16 @@ def process_smile():
                                     ai_image = Image.open(io.BytesIO(img_resp.content))
                                     ai_image = ImageOps.exif_transpose(ai_image) or ai_image
 
-                                    # Redimensionamento proporcional padrão para o tamanho original da foto
-                                    ai_image_resized = ai_image.resize((orig_width, orig_height), Image.Resampling.LANCZOS)
+                                    # CORREÇÃO DO ZOOM: Mantém a proporção exata preenchendo as bordas
+                                    # ou redimensionando proporcionalmente para evitar distorção no slider do app.
+                                    # Usamos thumbnail mantendo a exata proporção original e colando ao centro se necessário.
+                                    ai_image.thumbnail((orig_width, orig_height), Image.Resampling.LANCZOS)
+
+                                    # Cria uma tela de fundo com o tamanho exato da original e cola a imagem da IA centralizada
+                                    ai_image_resized = Image.new("RGB", (orig_width, orig_height), (0, 0, 0))
+                                    paste_x = (orig_width - ai_image.width) // 2
+                                    paste_y = (orig_height - ai_image.height) // 2
+                                    ai_image_resized.paste(ai_image, (paste_x, paste_y))
                             break
                         elif status in ["failed", "canceled"]:
                             print("Replicate Error Details:", poll_data.get("error"))

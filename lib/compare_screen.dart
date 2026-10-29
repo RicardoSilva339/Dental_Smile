@@ -309,12 +309,12 @@ class _CompareScreenState extends State<CompareScreen> {
                 ),
               const SizedBox(height: 12),
 
-              // 🖼️ ÁREA DE COMPARAÇÃO COM PROPORÇÃO 3:4 E FIT.CONTAIN (ROSTO INTEIRO SEM ZOOM)
+              // 🖼️ ÁREA DE COMPARAÇÃO COM PROPORÇÃO 3:4 E ESCALA AJUSTADA
               Center(
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxHeight: 450),
                   child: AspectRatio(
-                    aspectRatio: 3 / 4, // 👈 Proporção retrato correta para exibir o rosto inteiro sem cortes
+                    aspectRatio: 3 / 4,
                     child: LayoutBuilder(
                       builder: (context, constraints) {
                         final containerWidth = constraints.maxWidth;
@@ -351,7 +351,7 @@ class _CompareScreenState extends State<CompareScreen> {
                               child: Stack(
                                 fit: StackFit.expand,
                                 children: [
-                                  // 1️⃣ CAMADA DE BASE (DIREITA): Imagem Processada com BoxFit.contain
+                                  // 1️⃣ CAMADA DE BASE (DIREITA): Imagem Processada com IA
                                   if (processedFile != null && processedFile.existsSync())
                                     Image.file(
                                       processedFile,
@@ -361,7 +361,7 @@ class _CompareScreenState extends State<CompareScreen> {
                                   else
                                     const Center(child: Text('Erro ao carregar imagem processada', style: TextStyle(color: Colors.white))),
 
-                                  // 2️⃣ CAMADA SOBREPOSTA (ESQUERDA): Imagem Original com BoxFit.contain idêntico
+                                  // 2️⃣ CAMADA SOBREPOSTA (ESQUERDA): Imagem Original com Transform.scale
                                   if (originalFile != null && originalFile.existsSync())
                                     Align(
                                       alignment: Alignment.centerLeft,
@@ -375,12 +375,16 @@ class _CompareScreenState extends State<CompareScreen> {
                                             maxWidth: containerWidth,
                                             minHeight: containerHeight,
                                             maxHeight: containerHeight,
-                                            child: Image.file(
-                                              originalFile,
-                                              width: containerWidth,
-                                              height: containerHeight,
-                                              fit: BoxFit.contain,
+                                            child: Transform.scale(
+                                              scale: 1.25, // Ajuste este valor se precisar aproximar mais ou menos
                                               alignment: Alignment.center,
+                                              child: Image.file(
+                                                originalFile,
+                                                width: containerWidth,
+                                                height: containerHeight,
+                                                fit: BoxFit.contain,
+                                                alignment: Alignment.center,
+                                              ),
                                             ),
                                           ),
                                         ),
