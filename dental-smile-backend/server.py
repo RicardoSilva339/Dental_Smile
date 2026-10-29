@@ -301,7 +301,6 @@ def process_smile():
             pred_id = pred_data.get("id")
             get_url = f"{REPLICATE_API_URL}/{pred_id}"
 
-            # Aumentado para 60 tentativas (aprox. 120 segundos de folga total para o cold start da GPU)
             for _ in range(60):
                 time.sleep(2)
                 try:
@@ -319,9 +318,12 @@ def process_smile():
                                     ai_image = Image.open(io.BytesIO(img_resp.content))
                                     ai_image = ImageOps.exif_transpose(ai_image) or ai_image
 
-                                    # CORREÇÃO DEFINITIVA DO CAIXOTE PRETO:
-                                    # Redimensiona diretamente preenchendo o tamanho exato original sem margens pretas
-                                    ai_image_resized = ai_image.resize((orig_width, orig_height), Image.Resampling.LANCZOS)
+                                    # Centralização proporcional inteligente sem distorcer o rosto/óculos
+                                    ai_image.thumbnail((orig_width, orig_height), Image.Resampling.LANCZOS)
+                                    ai_image_resized = Image.new("RGB", (orig_width, orig_height), (0, 0, 0))
+                                    paste_x = (orig_width - ai_image.width) // 2
+                                    paste_y = (orig_height - ai_image.height) // 2
+                                    ai_image_resized.paste(ai_image, (paste_x, paste_y))
                             break
                         elif status in ["failed", "canceled"]:
                             break
