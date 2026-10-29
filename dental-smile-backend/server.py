@@ -11,10 +11,8 @@ from PIL import Image, ImageOps
 app = Flask(__name__)
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
-# Usando a sua chave do Replicate
 REPLICATE_API_TOKEN = os.environ.get("REPLICATE_API_TOKEN", "bbd5280737253ebb0c42abf734f3c9ce")
 
-# Endpoint oficial de predições no Replicate
 REPLICATE_API_URL = "https://api.replicate.com/v1/predictions"
 REPLICATE_HEADERS = {
     "Authorization": f"Bearer {REPLICATE_API_TOKEN}",
@@ -25,11 +23,9 @@ def get_db_connection():
     return psycopg2.connect(DATABASE_URL, sslmode='require')
 
 def init_db():
-    """Garante a criação da tabela de usuários e adiciona colunas necessárias caso já exista"""
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-
         cur.execute("""
             CREATE TABLE IF NOT EXISTS usuarios (
                 id SERIAL PRIMARY KEY,
@@ -43,22 +39,13 @@ def init_db():
                 criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         """)
-
-        cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS email VARCHAR(100);")
-        cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS senha VARCHAR(100);")
-        cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS cro VARCHAR(50);")
-        cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS creditos INTEGER DEFAULT 0;")
-        cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS tentativas_login INTEGER DEFAULT 0;")
-
         conn.commit()
         cur.close()
         conn.close()
-        print("Banco de dados de usuários sincronizado com sucesso!")
     except Exception as e:
-        print(f"Erro ao inicializar o banco de usuários: {e}")
+        print(f"Erro ao inicializar o banco: {e}")
 
 def init_device_db():
-    """Garante a criação da tabela de controle de dispositivos (Anti-Reinstalação)"""
     try:
         conn = get_db_connection()
         cur = conn.cursor()
@@ -72,52 +59,38 @@ def init_device_db():
         conn.commit()
         cur.close()
         conn.close()
-        print("Banco de dados de dispositivos sincronizado com sucesso!")
     except Exception as e:
-        print(f"Erro ao inicializar tabela de dispositivos: {e}")
+        print(f"Erro ao inicializar dispositivos: {e}")
 
 init_db()
 init_device_db()
 
-# 📱 Rota de Verificação de Dispositivo (Anti-Reinstalação)
 @app.route('/check-device', methods=['POST'])
 def check_device():
     data = request.get_json(force=True, silent=True) or {}
     device_id = data.get('device_id', '').strip()
-
     if not device_id:
         return jsonify({"success": False, "error": "Device ID obrigatório."}), 400
 
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-
         cur.execute("SELECT creditos FROM dispositivos WHERE device_id = %s;", (device_id,))
         row = cur.fetchone()
-
         if row:
             creditos = row[0]
             novo = False
         else:
-            cur.execute("""
-                INSERT INTO dispositivos (device_id, creditos)
-                VALUES (%s, 3)
-                ON CONFLICT (device_id) DO NOTHING;
-            """, (device_id,))
+            cur.execute("INSERT INTO dispositivos (device_id, creditos) VALUES (%s, 3) ON CONFLICT (device_id) DO NOTHING;", (device_id,))
             conn.commit()
             creditos = 3
             novo = True
-
         cur.close()
         conn.close()
         return jsonify({"success": True, "creditos": creditos, "novo": novo}), 200
-
     except Exception as e:
-        print(f"ERRO NO CHECK-DEVICE: {str(e)}")
-        traceback.print_exc()
         return jsonify({"success": False, "error": str(e)}), 500
 
-# 🔐 Rota de Registro de Novo Dentista
 @app.route('/register', methods=['POST'])
 def register():
     data = request.get_json(force=True, silent=True) or {}
@@ -129,36 +102,26 @@ def register():
     if not email or not senha:
         return jsonify({"success": False, "error": "E-mail e senha são obrigatórios."}), 400
 
-    api_key = email
-
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-
         cur.execute("SELECT id FROM usuarios WHERE email = %s;", (email,))
         if cur.fetchone():
             cur.close()
             conn.close()
             return jsonify({"success": False, "error": "Este e-mail já está cadastrado."}), 400
 
-        creditos_iniciais = 0
-
         cur.execute("""
             INSERT INTO usuarios (api_key, nome, email, cro, senha, creditos, tentativas_login)
-            VALUES (%s, %s, %s, %s, %s, %s, 0);
-        """, (api_key, nome, email, cro, senha, creditos_iniciais))
-
+            VALUES (%s, %s, %s, %s, %s, 0, 0);
+        """, (email, nome, email, cro, senha, 0))
         conn.commit()
         cur.close()
         conn.close()
-
         return jsonify({"success": True, "message": "Conta criada com sucesso!"}), 200
     except Exception as e:
-        print(f"ERRO NO CADASTRO: {str(e)}")
-        traceback.print_exc()
-        return jsonify({"success": False, "error": f"Erro no banco: {str(e)}"}), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
-# 🔑 Rota de Login
 @app.route('/login', methods=['POST'])
 def login():
     data = request.get_json(force=True, silent=True) or {}
@@ -168,7 +131,6 @@ def login():
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-
         cur.execute("SELECT id, senha, tentativas_login, creditos, nome FROM usuarios WHERE email = %s;", (email,))
         user = cur.fetchone()
 
@@ -183,11 +145,7 @@ def login():
         if tentativas >= 4:
             cur.close()
             conn.close()
-            return jsonify({
-                "success": False,
-                "bloqueado": True,
-                "error": "Conta temporariamente bloqueada por excesso de tentativas."
-            }), 403
+            return jsonify({"success": False, "bloqueado": True, "error": "Conta bloqueada por excesso de tentativas."}), 403
 
         if senha != senha_correta:
             novas_tentativas = tentativas + 1
@@ -195,46 +153,29 @@ def login():
             conn.commit()
             cur.close()
             conn.close()
-
-            restantes = 4 - novas_tentativas
-            msg = f"Senha incorreta. Restam {restantes} tentativas." if restantes > 0 else "Conta bloqueada por segurança."
-            return jsonify({"success": False, "error": msg}), 401
+            return jsonify({"success": False, "error": "Senha incorreta."}), 401
 
         cur.execute("UPDATE usuarios SET tentativas_login = 0 WHERE id = %s;", (user_id,))
         conn.commit()
         cur.close()
         conn.close()
-
-        return jsonify({
-            "success": True,
-            "message": "Login efetuado com sucesso!",
-            "api_key": email,
-            "creditos": creditos,
-            "nome": nome
-        }), 200
-
+        return jsonify({"success": True, "api_key": email, "creditos": creditos, "nome": nome}), 200
     except Exception as e:
-        print(f"ERRO NO LOGIN: {str(e)}")
-        traceback.print_exc()
         return jsonify({"success": False, "error": str(e)}), 500
 
-# 🔍 Verificar Créditos
 @app.route('/check-credits', methods=['POST'])
 def check_credits():
     data = request.get_json(force=True, silent=True) or {}
     api_key = data.get('api_key', '').strip().lower()
-
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute("SELECT creditos FROM usuarios WHERE api_key = %s OR email = %s;", (api_key, api_key))
     user = cur.fetchone()
     creditos = user[0] if user else 0
-
     cur.close()
     conn.close()
     return jsonify({"success": True, "creditos": creditos}), 200
 
-# 💳 Adicionar Créditos
 @app.route('/add-credits', methods=['POST'])
 def add_credits():
     data = request.get_json(force=True, silent=True) or {}
@@ -244,37 +185,22 @@ def add_credits():
 
     conn = get_db_connection()
     cur = conn.cursor()
-
     novo_saldo = quantidade
 
     if api_key:
-        cur.execute("""
-            UPDATE usuarios
-            SET creditos = creditos + %s
-            WHERE api_key = %s OR email = %s
-            RETURNING creditos;
-        """, (quantidade, api_key, api_key))
+        cur.execute("UPDATE usuarios SET creditos = creditos + %s WHERE api_key = %s OR email = %s RETURNING creditos;", (quantidade, api_key, api_key))
         res = cur.fetchone()
-        if res:
-            novo_saldo = res[0]
+        if res: novo_saldo = res[0]
     elif device_id:
-        cur.execute("""
-            UPDATE dispositivos
-            SET creditos = creditos + %s
-            WHERE device_id = %s
-            RETURNING creditos;
-        """, (quantidade, device_id))
+        cur.execute("UPDATE dispositivos SET creditos = creditos + %s WHERE device_id = %s RETURNING creditos;", (quantidade, device_id))
         res = cur.fetchone()
-        if res:
-            novo_saldo = res[0]
+        if res: novo_saldo = res[0]
 
     conn.commit()
     cur.close()
     conn.close()
-
     return jsonify({"success": True, "novo_saldo": novo_saldo}), 200
 
-# 🪄 Processar Sorriso (Integrado com o modelo especializado do Replicate e Escala Bleach)
 @app.route('/process-smile', methods=['POST'])
 def process_smile():
     data = request.get_json(force=True, silent=True) or {}
@@ -283,7 +209,6 @@ def process_smile():
 
     conn = get_db_connection()
     cur = conn.cursor()
-
     creditos_atuais = 0
     is_convidado = False
 
@@ -309,7 +234,6 @@ def process_smile():
     image_b64 = data.get('image')
     selected_color = data.get('color', 'bl2').lower()
 
-    # Mapeamento profissional da Escala Bleach
     bleach_modifiers = {
         'bl1': 'ultra white bleach shade BL1 teeth, maximum professional aesthetic whitening',
         'bl2': 'bright white bleach shade BL2 teeth, natural and striking bright look',
@@ -348,7 +272,6 @@ def process_smile():
         orig_image = ImageOps.exif_transpose(orig_image) or orig_image
         orig_width, orig_height = orig_image.size
 
-        # Otimização de RAM: Redimensiona se for maior que 1024px para evitar SIGKILL no Render
         max_dim = 1024
         work_image = orig_image.copy()
         if max(orig_width, orig_height) > max_dim:
@@ -372,22 +295,20 @@ def process_smile():
         }
 
         resp = requests.post(REPLICATE_API_URL, headers=REPLICATE_HEADERS, json=payload, timeout=30)
-        print("Replicate Submit Status:", resp.status_code, resp.text)
 
         if resp.status_code in [200, 201]:
             pred_data = resp.json()
             pred_id = pred_data.get("id")
             get_url = f"{REPLICATE_API_URL}/{pred_id}"
 
-            # 50 tentativas (até 100 segundos de folga para o cold start da GPU)
-            for _ in range(50):
+            # Aumentado para 60 tentativas (aprox. 120 segundos de folga total para o cold start da GPU)
+            for _ in range(60):
                 time.sleep(2)
                 try:
                     poll_resp = requests.get(get_url, headers=REPLICATE_HEADERS, timeout=20)
                     if poll_resp.status_code == 200:
                         poll_data = poll_resp.json()
                         status = poll_data.get("status")
-                        print("Replicate Polling Status:", status)
 
                         if status == "succeeded":
                             output = poll_data.get("output")
@@ -398,26 +319,16 @@ def process_smile():
                                     ai_image = Image.open(io.BytesIO(img_resp.content))
                                     ai_image = ImageOps.exif_transpose(ai_image) or ai_image
 
-                                    # CORREÇÃO DO ZOOM: Mantém a proporção exata preenchendo as bordas
-                                    # ou redimensionando proporcionalmente para evitar distorção no slider do app.
-                                    # Usamos thumbnail mantendo a exata proporção original e colando ao centro se necessário.
-                                    ai_image.thumbnail((orig_width, orig_height), Image.Resampling.LANCZOS)
-
-                                    # Cria uma tela de fundo com o tamanho exato da original e cola a imagem da IA centralizada
-                                    ai_image_resized = Image.new("RGB", (orig_width, orig_height), (0, 0, 0))
-                                    paste_x = (orig_width - ai_image.width) // 2
-                                    paste_y = (orig_height - ai_image.height) // 2
-                                    ai_image_resized.paste(ai_image, (paste_x, paste_y))
+                                    # CORREÇÃO DEFINITIVA DO CAIXOTE PRETO:
+                                    # Redimensiona diretamente preenchendo o tamanho exato original sem margens pretas
+                                    ai_image_resized = ai_image.resize((orig_width, orig_height), Image.Resampling.LANCZOS)
                             break
                         elif status in ["failed", "canceled"]:
-                            print("Replicate Error Details:", poll_data.get("error"))
                             break
-                except Exception as poll_err:
-                    print(f"Aviso temporário no polling: {poll_err}")
+                except Exception:
                     continue
 
         if ai_image_resized is None:
-            print("AVISO: Caindo no fallback de imagem original.")
             ai_image_resized = orig_image.resize((orig_width, orig_height), Image.Resampling.LANCZOS)
 
         buffered = io.BytesIO()
@@ -442,8 +353,6 @@ def process_smile():
         }), 200
 
     except Exception as e:
-        print(f"ERRO NO PROCESS-SMILE: {str(e)}")
-        traceback.print_exc()
         if 'cur' in locals() and cur: cur.close()
         if 'conn' in locals() and conn: conn.close()
         return jsonify({"success": False, "error": str(e)}), 500

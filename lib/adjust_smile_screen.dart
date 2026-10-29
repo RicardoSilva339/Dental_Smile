@@ -33,7 +33,7 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
 
   late String _selectedColor;
 
-  // 🔄 Variáveis para controlar as mensagens dinâmicas dentro do botão a cada 10 segundos
+  // 🔄 Variáveis para controlar as mensagens dinâmicas dentro do botão a cada 15 segundos
   Timer? _timerMensagens;
   int _mensagemIndex = 0;
 
@@ -125,13 +125,13 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
       return;
     }
 
-    // 🚀 Inicia o estado de processamento e o ciclo das mensagens dinâmicas a cada 10 segundos
+    // 🚀 Inicia o estado de processamento e o ciclo das mensagens dinâmicas a cada 15 segundos
     setState(() {
       _isProcessing = true;
       _mensagemIndex = 0;
     });
 
-    _timerMensagens = Timer.periodic(const Duration(seconds: 10), (timer) {
+    _timerMensagens = Timer.periodic(const Duration(seconds: 15), (timer) {
       if (mounted) {
         setState(() {
           _mensagemIndex = (_mensagemIndex + 1) % _mensagensLoading.length;
@@ -161,7 +161,7 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
             if (resultado['creditos_restantes'] != null && resultado['creditos_restantes'] is int) {
               _creditos = resultado['creditos_restantes'];
             } else if (_creditos > 0) {
-              _creditos = _creditos - 1; // 👈 Correção do operador de subtração aplicada aqui
+              _creditos = _creditos - 1;
             }
           });
         }
@@ -349,7 +349,7 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
               _buildColorGrid(),
               const SizedBox(height: 14),
 
-              // 🚀 Botão principal onde o texto muda dinamicamente a cada 10 segundos
+              // 🚀 Botão principal onde o texto muda dinamicamente a cada 15 segundos
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16.0),
                 child: ElevatedButton.icon(
@@ -360,7 +360,6 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
                     child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
                   )
                       : const Icon(Icons.auto_awesome, size: 18),
-                  // O texto do botão agora assume a frase atual da IA ou o texto padrão
                   label: Text(
                     _isProcessing ? _mensagensLoading[_mensagemIndex] : 'Aplicar Clareamento',
                     style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
