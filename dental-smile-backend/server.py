@@ -6,7 +6,7 @@ import requests
 import psycopg2
 import traceback
 from flask import Flask, request, jsonify
-from PIL import Image, ImageOps, ImageFilter
+from PIL import Image, ImageOps
 
 app = Flask(__name__)
 
@@ -234,7 +234,6 @@ def process_smile():
     image_b64 = data.get('image')
     selected_color = data.get('color', 'bl2').lower()
 
-    # Forçando explicitamente a cor BL2 solicitada
     bleach_modifiers = {
         'bl1': 'ultra white bleach shade BL1 teeth, maximum professional aesthetic whitening',
         'bl2': 'bright white bleach shade BL2 teeth, natural and striking bright look',
@@ -273,13 +272,11 @@ def process_smile():
         orig_image = ImageOps.exif_transpose(orig_image) or orig_image
         orig_width, orig_height = orig_image.size
 
-        max_dim = 1024
+        # Sem reduções forçadas de tamanho na entrada
         work_image = orig_image.copy()
-        if max(orig_width, orig_height) > max_dim:
-            work_image.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
 
         buffered_work = io.BytesIO()
-        work_image.save(buffered_work, format="JPEG", quality=85)
+        work_image.save(buffered_work, format="JPEG", quality=90)
         optimized_b64 = base64.b64encode(buffered_work.getvalue()).decode('utf-8')
         image_data_uri = f"data:image/jpeg;base64,{optimized_b64}"
 
@@ -319,14 +316,13 @@ def process_smile():
                                     ai_image = Image.open(io.BytesIO(img_resp.content))
                                     ai_image = ImageOps.exif_transpose(ai_image) or ai_image
 
-                                    # 🛠️ ESTRATÉGIA ANTI-LOOP (ALINHAMENTO BLENDED):
-                                    # Em vez de esticar a imagem inteira da IA por cima da original criando distorção,
-                                    # redimensionamos a IA exatamente para o tamanho original e fazemos uma fusão
-                                    # centralizada suave nas bordas (blend) para preservar a moldura da foto intacta.
-                                    ai_resized = ai_image.resize((orig_width, orig_height), Image.Resampling.LANCZOS)
+                                    print("=" * 50)
+                                    print(f"ORIGINAL SIZE: {orig_width} x {orig_height}")
+                                    print(f"AI SIZE: {ai_image.width} x {ai_image.height}")
+                                    print("=" * 50)
 
-                                    # Mistura controlada com a original para garantir 100% de alinhamento visual no slider
-                                    ai_image_final = Image.blend(orig_image.convert("RGB"), ai_resized.convert("RGB"), alpha=0.92)
+                                    # Mantém exatamente a saída da IA sem esticar a imagem
+                                    ai_image_final = ai_image.convert("RGB")
                             break
                         elif status in ["failed", "canceled"]:
                             break
@@ -334,7 +330,7 @@ def process_smile():
                     continue
 
         if ai_image_final is None:
-            ai_image_final = orig_image.resize((orig_width, orig_height), Image.Resampling.LANCZOS)
+            ai_image_final = orig_image.copy()
 
         buffered = io.BytesIO()
         ai_image_final.save(buffered, format="JPEG", quality=90)
