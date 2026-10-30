@@ -270,23 +270,20 @@ def process_smile():
         image_data = base64.b64decode(image_b64)
         orig_image = Image.open(io.BytesIO(image_data))
         orig_image = ImageOps.exif_transpose(orig_image) or orig_image
+        orig_width, orig_height = orig_image.size
 
         print("=" * 60)
-        print(f"📥 [TELEMETRIA ENTRADA] Original do App: {orig_image.width} x {orig_image.height}")
+        print(f"📥 [TELEMETRIA ENTRADA] Original do App: {orig_width} x {orig_height}")
         print("=" * 60)
 
-        # 🛠️ PADRONIZAÇÃO SIMÉTRICA DE ENTRADA:
-        # Transforma a foto original do app num quadrado perfeito 512x512 centrado no rosto.
-        # Assim, o "Antes" exibido no slider já nasce exatamente na mesma proporção da saída da IA.
-        orig_square = ImageOps.fit(
-            orig_image.convert("RGB"),
-            (512, 512),
-            method=Image.Resampling.LANCZOS,
-            centering=(0.5, 0.4) # Leve foco vertical na região superior/central do rosto
-        )
+        # Envia para a IA mantendo uma versão otimizada para o Replicate
+        work_image = orig_image.copy()
+        max_dim = 1024
+        if max(orig_width, orig_height) > max_dim:
+            work_image.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
 
         buffered_work = io.BytesIO()
-        orig_square.save(buffered_work, format="JPEG", quality=90)
+        work_image.save(buffered_work, format="JPEG", quality=90)
         optimized_b64 = base64.b64encode(buffered_work.getvalue()).decode('utf-8')
         image_data_uri = f"data:image/jpeg;base64,{optimized_b64}"
 
@@ -327,11 +324,13 @@ def process_smile():
                                     ai_image = ImageOps.exif_transpose(ai_image) or ai_image
 
                                     print("=" * 60)
-                                    print(f"📤 [TELEMETRIA SAÍDA] Retornada pela IA: {ai_image.width} x {ai_image.height}")
+                                    print(f"📤 [TELEMETRIA SAÍDA] Ajustando IA para a proporção exata da original: {orig_width} x {orig_height}")
                                     print("=" * 60)
 
-                                    # 🛠️ SAÍDA DA IA: Já vem 512x512 nativa, perfeitamente simétrica ao "Antes"
-                                    ai_image_final = ai_image.convert("RGB")
+                                    # 🛠️ CORREÇÃO SIMÉTRICA PERFEITA:
+                                    # Redimensiona o resultado da IA (512x512) exatamente para o tamanho da foto original (orig_width x orig_height)
+                                    # garantindo que o antes e o depois fiquem com pixels e proporções idênticos no slider do app.
+                                    ai_image_final = ai_image.convert("RGB").resize((orig_width, orig_height), Image.Resampling.LANCZOS)
                             break
                         elif status in ["failed", "canceled"]:
                             break
@@ -339,9 +338,8 @@ def process_smile():
                     continue
 
         if ai_image_final is None:
-            ai_image_final = orig_square.copy()
+            ai_image_final = orig_image.copy()
 
-        # Retorna a imagem processada (512x512) para o app comparar com o "Antes" (também 512x512)
         buffered = io.BytesIO()
         ai_image_final.save(buffered, format="JPEG", quality=90)
         processed_b64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
