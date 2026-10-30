@@ -328,14 +328,13 @@ def process_smile():
                                     print(f"🔍 [COMPARAÇÃO] Original: {orig_width}x{orig_height} vs IA: {ai_image.width}x{ai_image.height}")
                                     print("=" * 60)
 
-                                    ai_square = ai_image.convert("RGB")
-                                    new_ai_width = orig_width
-                                    new_ai_height = int(ai_square.height * (orig_width / ai_square.width))
-                                    ai_resized = ai_square.resize((new_ai_width, new_ai_height), Image.Resampling.LANCZOS)
-
-                                    ai_image_final = Image.new("RGB", (orig_width, orig_height), (0, 0, 0))
-                                    paste_y = (orig_height - new_ai_height) // 2
-                                    ai_image_final.paste(ai_resized, (0, paste_y))
+                                    # 🛠️ AJUSTE FINAL: ImageOps.fit cobre 100% da tela original sem deixar bordas pretas
+                                    ai_image_final = ImageOps.fit(
+                                        ai_image.convert("RGB"),
+                                        (orig_width, orig_height),
+                                        method=Image.Resampling.LANCZOS,
+                                        centering=(0.5, 0.5)
+                                    )
                             break
                         elif status in ["failed", "canceled"]:
                             break
