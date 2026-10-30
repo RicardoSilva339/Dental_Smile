@@ -276,17 +276,14 @@ def process_smile():
         print(f"📥 [TELEMETRIA ENTRADA] Original do App: {orig_width} x {orig_height}")
         print("=" * 60)
 
-        # 1. Para enviar ao Replicate mantendo a proporção correta sem distorcer o rosto,
-        # criamos uma versão quadrada centrada na face (512x512) para a IA processar os dentes com precisão.
-        face_square = ImageOps.fit(
-            orig_image.convert("RGB"),
-            (512, 512),
-            method=Image.Resampling.LANCZOS,
-            centering=(0.5, 0.45)
-        )
+        # Prepara a imagem otimizada para envio mantendo o max_dim
+        work_image = orig_image.copy()
+        max_dim = 1024
+        if max(orig_width, orig_height) > max_dim:
+            work_image.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
 
         buffered_work = io.BytesIO()
-        face_square.save(buffered_work, format="JPEG", quality=90)
+        work_image.save(buffered_work, format="JPEG", quality=90)
         optimized_b64 = base64.b64encode(buffered_work.getvalue()).decode('utf-8')
         image_data_uri = f"data:image/jpeg;base64,{optimized_b64}"
 
@@ -323,27 +320,22 @@ def process_smile():
                                 img_url = output[0]
                                 img_resp = requests.get(img_url, timeout=60)
                                 if img_resp.status_code == 200:
-                                    ai_face = Image.open(io.BytesIO(img_resp.content))
-                                    ai_face = ImageOps.exif_transpose(ai_face) or ai_face
-                                    ai_face = ai_face.convert("RGB").resize((512, 512), Image.Resampling.LANCZOS)
+                                    ai_image = Image.open(io.BytesIO(img_resp.content))
+                                    ai_image = ImageOps.exif_transpose(ai_image) or ai_image
 
                                     print("=" * 60)
-                                    print(f"📤 [TELEMETRIA SAÍDA] Mesclando rosto da IA de volta na proporção original: {orig_width} x {orig_height}")
+                                    print(f"📤 [TELEMETRIA SAÍDA] Redimensionando resultado da IA para cobrir a proporção exata: {orig_width} x {orig_height}")
                                     print("=" * 60)
 
-                                    # 2. Em vez de esticar a IA inteira, redimensionamos o quadrado da IA para cobrir a área central da face
-                                    # e compomos de volta na foto original vertical, preservando o fundo, cabelo e ombros intactos!
-                                    ai_image_final = orig_image.copy()
-
-                                    # Calculamos o tamanho da face na escala da foto original
-                                    face_box_size = int(min(orig_width, orig_height) * 0.75)
-                                    ai_face_scaled = ai_face.resize((face_box_size, face_box_size), Image.Resampling.LANCZOS)
-
-                                    # Posicionamos centralizado na região do rosto/boca da foto original
-                                    paste_x = (orig_width - face_box_size) // 2
-                                    paste_y = int((orig_height - face_box_size) * 0.38) # Altura exata da cabeça/boca
-
-                                    ai_image_final.paste(ai_face_scaled, (paste_x, paste_y))
+                                    # 🛠️ SOLUÇÃO LIMPA E FLUIDA:
+                                    # Redimensiona a saída da IA (que cobre o rosto) proporcionalmente preenchendo o canvas vertical (ImageOps.fit)
+                                    # ou reajustando para a dimensão exata da original sem colagens secas.
+                                    ai_image_final = ImageOps.fit(
+                                        ai_image.convert("RGB"),
+                                        (orig_width, orig_height),
+                                        method=Image.Resampling.LANCZOS,
+                                        centering=(0.5, 0.4)
+                                    )
                             break
                         elif status in ["failed", "canceled"]:
                             break
