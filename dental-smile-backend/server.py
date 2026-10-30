@@ -272,7 +272,6 @@ def process_smile():
         orig_image = ImageOps.exif_transpose(orig_image) or orig_image
         orig_width, orig_height = orig_image.size
 
-        # Telemetria de Entrada
         print("=" * 60)
         print(f"📥 [TELEMETRIA ENTRADA] Imagem Original do App: {orig_width} x {orig_height}")
         print("=" * 60)
@@ -302,6 +301,7 @@ def process_smile():
 
         resp = requests.post(REPLICATE_API_URL, headers=REPLICATE_HEADERS, json=payload, timeout=30)
 
+ImageOps = None # placeholder to ensure clean syntax context if needed, but using PIL.ImageOps
         if resp.status_code in [200, 201]:
             pred_data = resp.json()
             pred_id = pred_data.get("id")
@@ -324,13 +324,28 @@ def process_smile():
                                     ai_image = Image.open(io.BytesIO(img_resp.content))
                                     ai_image = ImageOps.exif_transpose(ai_image) or ai_image
 
-                                    # Telemetria de Saída da IA
                                     print("=" * 60)
                                     print(f"📤 [TELEMETRIA SAÍDA] Retornada pelo Replicate: {ai_image.width} x {ai_image.height}")
                                     print(f"🔍 [COMPARAÇÃO] Original: {orig_width}x{orig_height} vs IA: {ai_image.width}x{ai_image.height}")
                                     print("=" * 60)
 
-                                    ai_image_final = ai_image.convert("RGB")
+                                    # 🛠️ CORREÇÃO DEFINITIVA DE ENCAIXE PROPORCIONAL:
+                                    # A IA retorna um quadrado 512x512 focado no rosto.
+                                    # Redimensionamos esse quadrado para cobrir a largura exata da foto original
+                                    # e centralizamos verticalmente num canvas com as dimensões idênticas à original (orig_width x orig_height).
+                                    ai_square = ai_image.convert("RGB")
+
+                                    # Define o novo tamanho mantendo a proporção (largura igual à original)
+                                    new_ai_width = orig_width
+                                    new_ai_height = int(ai_square.height * (orig_width / ai_square.width))
+                                    ai_resized = ai_square.resize((new_ai_width, new_ai_height), Image.Resampling.LANCZOS)
+
+                                    # Cria o canvas final com o tamanho exato da foto original do app
+                                    ai_image_final = Image.new("RGB", (orig_width, orig_height), (0, 0, 0))
+
+                                    # Centraliza verticalmente (posicionando o rosto/boca na altura certa da foto original)
+                                    paste_y = (orig_height - new_ai_height) // 2
+                                    ai_image_final.paste(ai_resized, (0, paste_y))
                             break
                         elif status in ["failed", "canceled"]:
                             break
