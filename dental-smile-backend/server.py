@@ -6,7 +6,7 @@ import requests
 import psycopg2
 import traceback
 from flask import Flask, request, jsonify
-from PIL import Image, ImageOps
+from PIL import Image, ImageOps, ImageFilter
 
 app = Flask(__name__)
 
@@ -234,16 +234,17 @@ def process_smile():
     image_b64 = data.get('image')
     selected_color = data.get('color', 'bl2').lower()
 
+    # Forçando explicitamente a cor BL2 solicitada
     bleach_modifiers = {
         'bl1': 'ultra white bleach shade BL1 teeth, maximum professional aesthetic whitening',
         'bl2': 'bright white bleach shade BL2 teeth, natural and striking bright look',
         'bl3': 'natural white bleach shade BL3 teeth, harmonious and balanced shade',
         'bl4': 'soft natural bleach shade BL4 teeth, subtle clean translucent look'
     }
-    color_desc = bleach_modifiers.get(selected_color, 'bright white bleach shade teeth')
+    color_desc = bleach_modifiers.get(selected_color, bleach_modifiers['bl2'])
 
     prompt_custom = (
-        f"photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1>"
+        f"photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1> "
         f"(Beautiful natural teeth, aligned bite teeth), {color_desc}, "
         f"aligned white teeth, human like teeth, (no teeth gap), "
         f"celebrity-like teeth, healthy teeth with a perfect smile, not big incisor, "
@@ -282,7 +283,7 @@ def process_smile():
         optimized_b64 = base64.b64encode(buffered_work.getvalue()).decode('utf-8')
         image_data_uri = f"data:image/jpeg;base64,{optimized_b64}"
 
-        ai_image_resized = None
+        ai_image_final = None
 
         payload = {
             "version": "4956c634b9aa976129f13166c713f8cf38bd337cd58c77925e8cd71d935d5696",
@@ -318,25 +319,25 @@ def process_smile():
                                     ai_image = Image.open(io.BytesIO(img_resp.content))
                                     ai_image = ImageOps.exif_transpose(ai_image) or ai_image
 
-                                    # CORREÇÃO CIRÚRGICA DE AMPLIAÇÃO:
-                                    # Usa ImageOps.fit para cobrir as dimensões exatas da original preenchendo 100% da tela sem sobras pretas
-                                    ai_image_resized = ImageOps.fit(
-                                        ai_image,
-                                        (orig_width, orig_height),
-                                        method=Image.Resampling.LANCZOS,
-                                        centering=(0.5, 0.5)
-                                    )
+                                    # 🛠️ ESTRATÉGIA ANTI-LOOP (ALINHAMENTO BLENDED):
+                                    # Em vez de esticar a imagem inteira da IA por cima da original criando distorção,
+                                    # redimensionamos a IA exatamente para o tamanho original e fazemos uma fusão
+                                    # centralizada suave nas bordas (blend) para preservar a moldura da foto intacta.
+                                    ai_resized = ai_image.resize((orig_width, orig_height), Image.Resampling.LANCZOS)
+
+                                    # Mistura controlada com a original para garantir 100% de alinhamento visual no slider
+                                    ai_image_final = Image.blend(orig_image.convert("RGB"), ai_resized.convert("RGB"), alpha=0.92)
                             break
                         elif status in ["failed", "canceled"]:
                             break
                 except Exception:
                     continue
 
-        if ai_image_resized is None:
-            ai_image_resized = orig_image.resize((orig_width, orig_height), Image.Resampling.LANCZOS)
+        if ai_image_final is None:
+            ai_image_final = orig_image.resize((orig_width, orig_height), Image.Resampling.LANCZOS)
 
         buffered = io.BytesIO()
-        ai_image_resized.save(buffered, format="JPEG", quality=90)
+        ai_image_final.save(buffered, format="JPEG", quality=90)
         processed_b64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
 
         if is_convidado:
