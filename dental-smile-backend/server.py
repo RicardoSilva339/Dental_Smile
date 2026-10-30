@@ -272,8 +272,16 @@ def process_smile():
         orig_image = ImageOps.exif_transpose(orig_image) or orig_image
         orig_width, orig_height = orig_image.size
 
-        # Sem reduções forçadas de tamanho na entrada
+        # Telemetria de Entrada
+        print("=" * 60)
+        print(f"📥 [TELEMETRIA ENTRADA] Imagem Original do App: {orig_width} x {orig_height}")
+        print("=" * 60)
+
         work_image = orig_image.copy()
+        max_dim = 1024
+        if max(orig_width, orig_height) > max_dim:
+            work_image.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
+            print(f"🔄 [TELEMETRIA WORK] Reduzida para envio ao Replicate: {work_image.width} x {work_image.height}")
 
         buffered_work = io.BytesIO()
         work_image.save(buffered_work, format="JPEG", quality=90)
@@ -316,12 +324,12 @@ def process_smile():
                                     ai_image = Image.open(io.BytesIO(img_resp.content))
                                     ai_image = ImageOps.exif_transpose(ai_image) or ai_image
 
-                                    print("=" * 50)
-                                    print(f"ORIGINAL SIZE: {orig_width} x {orig_height}")
-                                    print(f"AI SIZE: {ai_image.width} x {ai_image.height}")
-                                    print("=" * 50)
+                                    # Telemetria de Saída da IA
+                                    print("=" * 60)
+                                    print(f"📤 [TELEMETRIA SAÍDA] Retornada pelo Replicate: {ai_image.width} x {ai_image.height}")
+                                    print(f"🔍 [COMPARAÇÃO] Original: {orig_width}x{orig_height} vs IA: {ai_image.width}x{ai_image.height}")
+                                    print("=" * 60)
 
-                                    # Mantém exatamente a saída da IA sem esticar a imagem
                                     ai_image_final = ai_image.convert("RGB")
                             break
                         elif status in ["failed", "canceled"]:
