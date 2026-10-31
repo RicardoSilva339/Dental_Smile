@@ -2,7 +2,6 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:image/image.dart' as img;
 import 'background.dart';
 
 class CaptureScreen extends StatefulWidget {
@@ -15,67 +14,13 @@ class CaptureScreen extends StatefulWidget {
 class _CaptureScreenState extends State<CaptureScreen> {
   File? _image;
 
-  // 🛠️ Padroniza com zoom equilibrado (focado no rosto completo, da testa ao queixo)
-  Future<File?> _padronizarImagem(File imagemOriginal) async {
-    try {
-      final bytes = await imagemOriginal.readAsBytes();
-      final imagemDecodificada = img.decodeImage(bytes);
-
-      if (imagemDecodificada == null) return imagemOriginal;
-
-      int larguraOriginal = imagemDecodificada.width;
-      int alturaOriginal = imagemDecodificada.height;
-
-      // Tamanho de corte equilibrado (cobre o rosto inteiro com precisão, sem exagerar no zoom)
-      int tamanhoCorte = (larguraOriginal < alturaOriginal ? larguraOriginal : alturaOriginal) ~/ 1.35;
-
-      // Centraliza horizontalmente
-      int offsetX = (larguraOriginal - tamanhoCorte) ~/ 2;
-
-      // Posiciona o corte verticalmente para garantir que apanha desde a testa até à boca/queixo
-      int offsetY = (alturaOriginal * 0.08).toInt();
-      if (offsetY + tamanhoCorte > alturaOriginal) {
-        offsetY = alturaOriginal - tamanhoCorte;
-      }
-      if (offsetY < 0) offsetY = 0;
-
-      // Executa o recorte equilibrado no rosto
-      img.Image imagemQuadrada = img.copyCrop(
-          imagemDecodificada,
-          x: offsetX,
-          y: offsetY,
-          width: tamanhoCorte,
-          height: tamanhoCorte
-      );
-
-      // Redimensiona para o padrão exato de 512x512 exigido pela IA
-      img.Image imagemFinal = img.copyResize(
-          imagemQuadrada,
-          width: 512,
-          height: 512,
-          interpolation: img.Interpolation.linear
-      );
-
-      // Salva num novo ficheiro temporário padronizado
-      final targetPath = '${imagemOriginal.path}_balanced_face.jpg';
-      File arquivoFinal = File(targetPath)
-        ..writeAsBytesSync(img.encodeJpg(imagemFinal, quality: 95));
-
-      return arquivoFinal;
-    } catch (e) {
-      debugPrint("Erro ao aplicar zoom equilibrado na origem: $e");
-      return imagemOriginal;
-    }
-  }
-
   Future<void> _pickImage(ImageSource source) async {
     final picker = ImagePicker();
     final pickedFile = await picker.pickImage(source: source);
     if (pickedFile != null) {
-      File arquivoSelecionado = File(pickedFile.path);
-      File? arquivoPadronizado = await _padronizarImagem(arquivoSelecionado);
-
-      setState(() => _image = arquivoPadronizado ?? arquivoSelecionado);
+      setState(() {
+        _image = File(pickedFile.path); // 🚀 Usa a imagem original inteira, sem cortes cegos na origem!
+      });
     }
   }
 
