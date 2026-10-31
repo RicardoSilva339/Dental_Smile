@@ -15,7 +15,7 @@ class CaptureScreen extends StatefulWidget {
 class _CaptureScreenState extends State<CaptureScreen> {
   File? _image;
 
-  // 🛠️ Padroniza, corta o rosto centralizado e redimensiona direto na origem (512x512)
+  // 🛠️ Padroniza, aplica zoom inteligente focado no rosto (eliminando ombros) e redimensiona (512x512)
   Future<File?> _padronizarImagem(File imagemOriginal) async {
     try {
       final bytes = await imagemOriginal.readAsBytes();
@@ -23,22 +23,29 @@ class _CaptureScreenState extends State<CaptureScreen> {
 
       if (imagemDecodificada == null) return imagemOriginal;
 
-      // Descobre o menor lado para criar um quadrado perfeito centrado no rosto
-      int size = imagemDecodificada.width < imagemDecodificada.height
-          ? imagemDecodificada.width
-          : imagemDecodificada.height;
+      int larguraOriginal = imagemDecodificada.width;
+      int alturaOriginal = imagemDecodificada.height;
 
-      // Calcula o corte centralizado com leve deslocamento vertical para cima (focado na zona do rosto/boca)
-      int offsetX = (imagemDecodificada.width - size) ~/ 2;
-      int offsetY = ((imagemDecodificada.height - size) * 0.4).toInt();
+      // Define o tamanho do quadrado de corte (cobre o rosto e boca com boa margem)
+      int tamanhoCorte = (larguraOriginal < alturaOriginal ? larguraOriginal : alturaOriginal) ~/ 1.3;
 
-      // Executa o corte quadrado eliminando o fundo e os ombros
+      // Centraliza horizontalmente
+      int offsetX = (larguraOriginal - tamanhoCorte) ~/ 2;
+
+      // Posiciona o corte verticalmente mais acima (15% a partir do topo), focando no rosto e cortando os ombros
+      int offsetY = (alturaOriginal * 0.15).toInt();
+      if (offsetY + tamanhoCorte > alturaOriginal) {
+        offsetY = alturaOriginal - tamanhoCorte;
+      }
+      if (offsetY < 0) offsetY = 0;
+
+      // Executa o corte inteligente focado na região superior/rosto
       img.Image imagemQuadrada = img.copyCrop(
           imagemDecodificada,
           x: offsetX,
           y: offsetY,
-          width: size,
-          height: size
+          width: tamanhoCorte,
+          height: tamanhoCorte
       );
 
       // Redimensiona para o padrão exato de 512x512 exigido pela IA
@@ -50,9 +57,9 @@ class _CaptureScreenState extends State<CaptureScreen> {
       );
 
       // Salva num novo ficheiro temporário padronizado
-      final targetPath = '${imagemOriginal.path}_padded.jpg';
+      final targetPath = '${imagemOriginal.path}_padded_rosto.jpg';
       File arquivoFinal = File(targetPath)
-        ..writeAsBytesSync(img.encodeJpg(imagemFinal, quality: 90));
+        ..writeAsBytesSync(img.encodeJpg(imagemFinal, quality: 95));
 
       return arquivoFinal;
     } catch (e) {
