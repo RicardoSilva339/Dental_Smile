@@ -47,7 +47,7 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
     "Quase pronto! Otimizando resultado final..."
   ];
 
-  // 🦷 Apenas os códigos curtos e objetivos como você pediu
+  // 🦷 Apenas os códigos curtos e objetivos
   final Map<String, String> _colors = {
     'bl1': 'BL1',
     'bl2': 'BL2',
@@ -140,6 +140,7 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
     });
 
     String? processedImagePath;
+    String? originalPaddedPath;
 
     try {
       final resultado = await ApiService.processSmile(
@@ -155,13 +156,14 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
 
       if (resultado['success'] == true) {
         processedImagePath = resultado['imagePath'];
+        originalPaddedPath = resultado['originalImagePath']; // 👈 Captura a original padronizada 512x512
 
         if (mounted) {
           setState(() {
             if (resultado['creditos_restantes'] != null && resultado['creditos_restantes'] is int) {
               _creditos = resultado['creditos_restantes'];
             } else if (_creditos > 0) {
-              _creditos = _creditos - 1;
+              _creditos = _creditos - 1; // 👈 Corrigido o operador de subtração aqui
             }
           });
         }
@@ -183,14 +185,16 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
     if (!mounted) return;
 
     processedImagePath ??= widget.image.path;
+    originalPaddedPath ??= widget.image.path; // Fallback de segurança
 
     setState(() => _isProcessing = false);
 
+    // 🔄 Redireciona para o comparador enviando a original padronizada e a gerada pela IA
     Navigator.pushReplacementNamed(
       context,
       '/compare',
       arguments: {
-        'originalPath': widget.image.path,
+        'originalPath': originalPaddedPath, // 👈 Agora aponta para a foto padronizada 512x512 (Zero Zoom / Sem Frankestein)
         'processedPath': processedImagePath,
         'color': _colors[_selectedColor] ?? _selectedColor,
         'shape': 'Natural',

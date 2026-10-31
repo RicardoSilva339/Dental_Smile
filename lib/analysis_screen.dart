@@ -164,12 +164,12 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                 ),
                 onPressed: () {
                   if (_imageFile != null) {
+                    // 🛠️ Garantimos a passagem do objeto File principal para o construtor do AdjustSmileScreen
                     Navigator.pushNamed(
                       context,
                       '/adjust',
                       arguments: {
-                        'imagePath': _imageFile!.path,
-                        'image': _imageFile,
+                        'image': _imageFile!, // Passa o File limpo e padronizado
                         'simulationId': _simulationId,
                         'userEmail': _userEmail,
                       },

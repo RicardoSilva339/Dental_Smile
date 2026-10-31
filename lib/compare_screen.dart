@@ -351,7 +351,7 @@ class _CompareScreenState extends State<CompareScreen> {
                               child: Stack(
                                 fit: StackFit.expand,
                                 children: [
-                                  // 1️⃣ CAMADA DE BASE (DIREITA): Imagem Processada com IA (BoxFit.cover para ocupar 100%)
+                                  // 1️⃣ CAMADA DE BASE (DIREITA): Imagem Processada com IA
                                   if (processedFile != null && processedFile.existsSync())
                                     Image.file(
                                       processedFile,
@@ -361,7 +361,7 @@ class _CompareScreenState extends State<CompareScreen> {
                                   else
                                     const Center(child: Text('Erro ao carregar imagem processada', style: TextStyle(color: Colors.white))),
 
-                                  // 2️⃣ CAMADA SOBREPOSTA (ESQUERDA): Imagem Original com BoxFit.cover idêntico para alinhar pixels
+                                  // 2️⃣ CAMADA SOBREPOSTA (ESQUERDA): Imagem Original Padronizada (512x512)
                                   if (originalFile != null && originalFile.existsSync())
                                     Align(
                                       alignment: Alignment.centerLeft,
@@ -496,12 +496,16 @@ class _CompareScreenState extends State<CompareScreen> {
                         ),
                       ),
                       onPressed: () {
+                        // 🛠️ Botão Ajustar volta para a tela de ajuste enviando a imagem padronizada atual
                         if (_originalPath != null && _originalPath!.isNotEmpty) {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
                               builder: (context) => AdjustSmileScreen(
                                 image: File(_originalPath!),
+                                simulationId: _simulationId,
+                                userEmail: _userEmail,
+                                initialColor: _selectedColor?.toLowerCase(),
                               ),
                             ),
                           );

@@ -2,7 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:flutter_image_compress/flutter_image_compress.dart';
+import 'package:image/image.dart' as img; // 👈 Certifica-te de que tens este pacote no pubspec.yaml
 import 'background.dart';
 
 class CaptureScreen extends StatefulWidget {
@@ -15,25 +15,46 @@ class CaptureScreen extends StatefulWidget {
 class _CaptureScreenState extends State<CaptureScreen> {
   File? _image;
 
-  // 🛠️ Padroniza e comprime a imagem direto na origem
+  // 🛠️ Padroniza, corta o rosto centralizado e redimensiona direto na origem (512x512)
   Future<File?> _padronizarImagem(File imagemOriginal) async {
     try {
-      final targetPath = '${imagemOriginal.path}_compressed.jpg';
+      final bytes = await imagemOriginal.readAsBytes();
+      final imagemDecodificada = img.decodeImage(bytes);
 
-      // 👈 O retorno correto da função é XFile?
-      final XFile? compressedFile = await FlutterImageCompress.compressAndGetFile(
-        imagemOriginal.absolute.path,
-        targetPath,
-        minWidth: 1024,
-        minHeight: 1024,
-        quality: 85,
-        keepExif: true,
+      if (imagemDecodificada == null) return imagemOriginal;
+
+      // Descobre o menor lado para criar um quadrado perfeito centrado no rosto
+      int size = imagemDecodificada.width < imagemDecodificada.height
+          ? imagemDecodificada.width
+          : imagemDecodificada.height;
+
+      // Calcula o corte centralizado com leve deslocamento vertical para cima (focado na zona do rosto/boca)
+      int offsetX = (imagemDecodificada.width - size) ~/ 2;
+      int offsetY = ((imagemDecodificada.height - size) * 0.4).toInt();
+
+      // Executa o corte quadrado eliminando o fundo e os ombros
+      img.Image imagemQuadrada = img.copyCrop(
+          imagemDecodificada,
+          x: offsetX,
+          y: offsetY,
+          width: size,
+          height: size
       );
 
-      if (compressedFile != null) {
-        return File(compressedFile.path); // Converte o XFile para File
-      }
-      return imagemOriginal;
+      // Redimensiona para o padrão exato de 512x512 exigido pela IA
+      img.Image imagemFinal = img.copyResize(
+          imagemQuadrada,
+          width: 512,
+          height: 512,
+          interpolation: img.Interpolation.linear
+      );
+
+      // Salva num novo ficheiro temporário padronizado
+      final targetPath = '${imagemOriginal.path}_padded.jpg';
+      File arquivoFinal = File(targetPath)
+        ..writeAsBytesSync(img.encodeJpg(imagemFinal, quality: 90));
+
+      return arquivoFinal;
     } catch (e) {
       debugPrint("Erro ao padronizar imagem na origem: $e");
       return imagemOriginal;

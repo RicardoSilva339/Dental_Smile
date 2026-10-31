@@ -8,7 +8,6 @@ import 'package:device_info_plus/device_info_plus.dart';
 class ApiService {
   static const String baseUrl = 'https://dental-smile-backend-iso3.onrender.com';
 
-  // 📱 Obtém o ID único do dispositivo físico (Anti-Reinstalação)
   static Future<String> _getDeviceId() async {
     final DeviceInfoPlugin deviceInfo = DeviceInfoPlugin();
     try {
@@ -25,7 +24,6 @@ class ApiService {
     return 'unknown_device';
   }
 
-  // 🛡️ Verifica ou registra o dispositivo no servidor (Garante os 3 créditos de cortesia por aparelho)
   static Future<dynamic> checkOrRegisterDevice() async {
     try {
       final String deviceId = await _getDeviceId();
@@ -40,17 +38,16 @@ class ApiService {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true) {
-          return data; // Retorna o map completo {'success': true, 'creditos': X, 'novo': bool}
+          return data;
         }
       }
     } catch (e) {
       debugPrint("Erro ao verificar dispositivo: $e");
     }
-    return {'success': false, 'creditos': 3, 'novo': false}; // Fallback de segurança
+    return {'success': false, 'creditos': 3, 'novo': false};
   }
 
-  // 📝 Registo de novo utilizador com senha
-  static Future> register({
+  static Future<dynamic> register({
     required String nome,
     required String email,
     required String cro,
@@ -78,8 +75,7 @@ class ApiService {
     }
   }
 
-  // 🔑 Login do utilizador
-  static Future> login({
+  static Future<dynamic> login({
     required String email,
     required String senha,
   }) async {
@@ -100,8 +96,7 @@ class ApiService {
     }
   }
 
-  // 🔍 Verifica o saldo de créditos do dentista
-  static Future> checkCredits(String apiKey) async {
+  static Future<dynamic> checkCredits(String apiKey) async {
     try {
       final url = Uri.parse('$baseUrl/check-credits');
       final response = await http.post(
@@ -121,7 +116,6 @@ class ApiService {
     }
   }
 
-  // 💳 Adiciona créditos após a compra bem-sucedida
   static Future<bool> adicionarCreditos(String apiKey, int quantidade) async {
     try {
       final url = Uri.parse('$baseUrl/add-credits');
@@ -141,8 +135,7 @@ class ApiService {
     return false;
   }
 
-  // 🪄 Envia a foto em Base64 para o servidor gerar o sorriso e retorna ambas padronizadas 512x512
-  static Future> processSmile({
+  static Future<dynamic> processSmile({
     required File imageFile,
     required String color,
     required String shape,
@@ -173,15 +166,12 @@ class ApiService {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true) {
-
-          // 1️⃣ Decodifica a imagem tratada pela IA ("Com IA")
           String processedBase64 = data['processed_image'];
           Uint8List decodedBytes = base64Decode(processedBase64);
           final tempDir = await getTemporaryDirectory();
           final fileProcessed = File('${tempDir.path}/processed_${DateTime.now().millisecondsSinceEpoch}.jpg');
           await fileProcessed.writeAsBytes(decodedBytes);
 
-          // 2️⃣ Decodifica a imagem original padronizada pelo servidor ("Original")
           String originalBase64 = data['original_image'];
           Uint8List decodedOriginalBytes = base64Decode(originalBase64);
           final fileOriginal = File('${tempDir.path}/original_padded_${DateTime.now().millisecondsSinceEpoch}.jpg');
@@ -189,8 +179,8 @@ class ApiService {
 
           return {
             'success': true,
-            'imagePath': fileProcessed.path,          // Caminho da foto com IA (512x512)
-            'originalImagePath': fileOriginal.path,   // Caminho da foto original padronizada (512x512)
+            'imagePath': fileProcessed.path,
+            'originalImagePath': fileOriginal.path,
             'creditos_restantes': data['creditos_restantes'],
           };
         } else {
