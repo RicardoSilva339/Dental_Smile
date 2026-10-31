@@ -15,7 +15,7 @@ class CaptureScreen extends StatefulWidget {
 class _CaptureScreenState extends State<CaptureScreen> {
   File? _image;
 
-  // 🛠️ Padroniza, aplica zoom facial fechado (tipo face-crop), eliminando pescoço e ombros
+  // 🛠️ Padroniza com zoom equilibrado (focado no rosto completo, da testa ao queixo)
   Future<File?> _padronizarImagem(File imagemOriginal) async {
     try {
       final bytes = await imagemOriginal.readAsBytes();
@@ -26,20 +26,20 @@ class _CaptureScreenState extends State<CaptureScreen> {
       int larguraOriginal = imagemDecodificada.width;
       int alturaOriginal = imagemDecodificada.height;
 
-      // Reduzimos o tamanho do corte para criar um "zoom" maior focado no rosto
-      int tamanhoCorte = (larguraOriginal < alturaOriginal ? larguraOriginal : alturaOriginal) ~/ 1.8;
+      // Tamanho de corte equilibrado (cobre o rosto inteiro com precisão, sem exagerar no zoom)
+      int tamanhoCorte = (larguraOriginal < alturaOriginal ? larguraOriginal : alturaOriginal) ~/ 1.35;
 
       // Centraliza horizontalmente
       int offsetX = (larguraOriginal - tamanhoCorte) ~/ 2;
 
-      // Posiciona o corte verticalmente na zona do rosto (ajustado para focar olhos, nariz e boca sem ombros)
-      int offsetY = (alturaOriginal * 0.12).toInt();
+      // Posiciona o corte verticalmente para garantir que apanha desde a testa até à boca/queixo
+      int offsetY = (alturaOriginal * 0.08).toInt();
       if (offsetY + tamanhoCorte > alturaOriginal) {
         offsetY = alturaOriginal - tamanhoCorte;
       }
       if (offsetY < 0) offsetY = 0;
 
-      // Executa o recorte fechado no rosto
+      // Executa o recorte equilibrado no rosto
       img.Image imagemQuadrada = img.copyCrop(
           imagemDecodificada,
           x: offsetX,
@@ -57,13 +57,13 @@ class _CaptureScreenState extends State<CaptureScreen> {
       );
 
       // Salva num novo ficheiro temporário padronizado
-      final targetPath = '${imagemOriginal.path}_tight_face.jpg';
+      final targetPath = '${imagemOriginal.path}_balanced_face.jpg';
       File arquivoFinal = File(targetPath)
         ..writeAsBytesSync(img.encodeJpg(imagemFinal, quality: 95));
 
       return arquivoFinal;
     } catch (e) {
-      debugPrint("Erro ao aplicar zoom facial na origem: $e");
+      debugPrint("Erro ao aplicar zoom equilibrado na origem: $e");
       return imagemOriginal;
     }
   }
