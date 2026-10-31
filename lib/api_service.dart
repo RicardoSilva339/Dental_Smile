@@ -50,7 +50,7 @@ class ApiService {
   }
 
   // 📝 Registo de novo utilizador com senha
-  static Future<Map<String, dynamic>> register({
+  static Future> register({
     required String nome,
     required String email,
     required String cro,
@@ -79,7 +79,7 @@ class ApiService {
   }
 
   // 🔑 Login do utilizador
-  static Future<Map<String, dynamic>> login({
+  static Future> login({
     required String email,
     required String senha,
   }) async {
@@ -101,7 +101,7 @@ class ApiService {
   }
 
   // 🔍 Verifica o saldo de créditos do dentista
-  static Future<Map<String, dynamic>> checkCredits(String apiKey) async {
+  static Future> checkCredits(String apiKey) async {
     try {
       final url = Uri.parse('$baseUrl/check-credits');
       final response = await http.post(
@@ -141,8 +141,8 @@ class ApiService {
     return false;
   }
 
-  // 🪄 Envia a foto em Base64 para o servidor gerar o sorriso focado na Escala Bleach
-  static Future<Map<String, dynamic>> processSmile({
+  // 🪄 Envia a foto em Base64 para o servidor gerar o sorriso e retorna ambas padronizadas 512x512
+  static Future> processSmile({
     required File imageFile,
     required String color,
     required String shape,
@@ -164,7 +164,7 @@ class ApiService {
           'api_key': apiKey,
           'device_id': deviceId,
           'image': base64Image,
-          'color': color, // 👈 Envia exatamente o código da cor (ex: 'bl2') para o backend processar o prompt profissional
+          'color': color,
           'shape': shape,
           'size': size,
         }),
@@ -173,16 +173,24 @@ class ApiService {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true) {
+
+          // 1️⃣ Decodifica a imagem tratada pela IA ("Com IA")
           String processedBase64 = data['processed_image'];
           Uint8List decodedBytes = base64Decode(processedBase64);
-
           final tempDir = await getTemporaryDirectory();
-          final file = File('${tempDir.path}/processed_${DateTime.now().millisecondsSinceEpoch}.jpg');
-          await file.writeAsBytes(decodedBytes);
+          final fileProcessed = File('${tempDir.path}/processed_${DateTime.now().millisecondsSinceEpoch}.jpg');
+          await fileProcessed.writeAsBytes(decodedBytes);
+
+          // 2️⃣ Decodifica a imagem original padronizada pelo servidor ("Original")
+          String originalBase64 = data['original_image'];
+          Uint8List decodedOriginalBytes = base64Decode(originalBase64);
+          final fileOriginal = File('${tempDir.path}/original_padded_${DateTime.now().millisecondsSinceEpoch}.jpg');
+          await fileOriginal.writeAsBytes(decodedOriginalBytes);
 
           return {
             'success': true,
-            'imagePath': file.path,
+            'imagePath': fileProcessed.path,          // Caminho da foto com IA (512x512)
+            'originalImagePath': fileOriginal.path,   // Caminho da foto original padronizada (512x512)
             'creditos_restantes': data['creditos_restantes'],
           };
         } else {
