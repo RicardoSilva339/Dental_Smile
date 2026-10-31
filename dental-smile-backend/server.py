@@ -270,20 +270,23 @@ def process_smile():
         image_data = base64.b64decode(image_b64)
         orig_image = Image.open(io.BytesIO(image_data))
         orig_image = ImageOps.exif_transpose(orig_image) or orig_image
-        orig_width, orig_height = orig_image.size
 
         print("=" * 60)
-        print(f"📥 [TELEMETRIA ENTRADA] Original do App: {orig_width} x {orig_height}")
+        print(f"📥 [TELEMETRIA ENTRADA] Original recebida: {orig_image.width} x {orig_image.height}")
         print("=" * 60)
 
-        # Prepara a imagem otimizada para envio mantendo o max_dim
-        work_image = orig_image.copy()
-        max_dim = 1024
-        if max(orig_width, orig_height) > max_dim:
-            work_image.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
+        # 🛠️ PADRONIZAÇÃO NA ENTRADA:
+        # Converte qualquer foto (vertical/horizontal) num quadrado perfeito 512x512 centrado no rosto.
+        # Assim, a foto entra no padrão nativo que o Replicate exige e o app recebe tudo simétrico.
+        square_image = ImageOps.fit(
+            orig_image.convert("RGB"),
+            (512, 512),
+            method=Image.Resampling.LANCZOS,
+            centering=(0.5, 0.4) # Foco vertical equilibrado na região do rosto
+        )
 
         buffered_work = io.BytesIO()
-        work_image.save(buffered_work, format="JPEG", quality=90)
+        square_image.save(buffered_work, format="JPEG", quality=90)
         optimized_b64 = base64.b64encode(buffered_work.getvalue()).decode('utf-8')
         image_data_uri = f"data:image/jpeg;base64,{optimized_b64}"
 
@@ -324,18 +327,11 @@ def process_smile():
                                     ai_image = ImageOps.exif_transpose(ai_image) or ai_image
 
                                     print("=" * 60)
-                                    print(f"📤 [TELEMETRIA SAÍDA] Redimensionando resultado da IA para cobrir a proporção exata: {orig_width} x {orig_height}")
+                                    print(f"📤 [TELEMETRIA SAÍDA] Retornada pela IA em 512x512 perfeitamente simétrica")
                                     print("=" * 60)
 
-                                    # 🛠️ SOLUÇÃO LIMPA E FLUIDA:
-                                    # Redimensiona a saída da IA (que cobre o rosto) proporcionalmente preenchendo o canvas vertical (ImageOps.fit)
-                                    # ou reajustando para a dimensão exata da original sem colagens secas.
-                                    ai_image_final = ImageOps.fit(
-                                        ai_image.convert("RGB"),
-                                        (orig_width, orig_height),
-                                        method=Image.Resampling.LANCZOS,
-                                        centering=(0.5, 0.4)
-                                    )
+                                    # A saída da IA já vem 512x512 nativa, perfeitamente compatível com o quadrado de entrada
+                                    ai_image_final = ai_image.convert("RGB")
                             break
                         elif status in ["failed", "canceled"]:
                             break
@@ -343,7 +339,7 @@ def process_smile():
                     continue
 
         if ai_image_final is None:
-            ai_image_final = orig_image.copy()
+            ai_image_final = square_image.copy()
 
         buffered = io.BytesIO()
         ai_image_final.save(buffered, format="JPEG", quality=90)
