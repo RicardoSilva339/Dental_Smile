@@ -139,7 +139,7 @@ def login():
             conn.close()
             return jsonify({"success": False, "error": "E-mail não encontrado."}), 404
 
-        user_id, senha_correta, tentativas, creditos, nome = user
+        user_id, senha_corr, tentativas, creditos, nome = user
         tentativas = tentativas or 0
 
         if tentativas >= 4:
@@ -147,7 +147,7 @@ def login():
             conn.close()
             return jsonify({"success": False, "bloqueado": True, "error": "Conta bloqueada por excesso de tentativas."}), 403
 
-        if senha != senha_correta:
+        if senha != senha_corr:
             novas_tentativas = tentativas + 1
             cur.execute("UPDATE usuarios SET tentativas_login = %s WHERE id = %s;", (novas_tentativas, user_id))
             conn.commit()
@@ -275,15 +275,17 @@ def process_smile():
         print(f"📥 [TELEMETRIA ENTRADA] Original recebida: {orig_image.width} x {orig_image.height}")
         print("=" * 60)
 
-        # 🛠️ PADRONIZAÇÃO NA ENTRADA:
-        # Converte qualquer foto (vertical/horizontal) num quadrado perfeito 512x512 centrado no rosto.
-        # Assim, a foto entra no padrão nativo que o Replicate exige e o app recebe tudo simétrico.
+        # Padroniza a imagem de entrada num quadrado 512x512 centrado no rosto
         square_image = ImageOps.fit(
             orig_image.convert("RGB"),
             (512, 512),
             method=Image.Resampling.LANCZOS,
-            centering=(0.5, 0.4) # Foco vertical equilibrado na região do rosto
+            centering=(0.5, 0.4)
         )
+
+        buffered_orig = io.BytesIO()
+        square_image.save(buffered_orig, format="JPEG", quality=90)
+        original_processed_b64 = base64.b64encode(buffered_orig.getvalue()).decode('utf-8')
 
         buffered_work = io.BytesIO()
         square_image.save(buffered_work, format="JPEG", quality=90)
@@ -330,7 +332,6 @@ def process_smile():
                                     print(f"📤 [TELEMETRIA SAÍDA] Retornada pela IA em 512x512 perfeitamente simétrica")
                                     print("=" * 60)
 
-                                    # A saída da IA já vem 512x512 nativa, perfeitamente compatível com o quadrado de entrada
                                     ai_image_final = ai_image.convert("RGB")
                             break
                         elif status in ["failed", "canceled"]:
@@ -358,7 +359,8 @@ def process_smile():
 
         return jsonify({
             "success": True,
-            "processed_image": processed_b64,
+            "original_image": original_processed_b64,  # <-- Retorna a original padronizada 512x512
+            "processed_image": processed_b64,          # <-- Retorna a da IA 512x512
             "creditos_restantes": novo_saldo
         }), 200
 
