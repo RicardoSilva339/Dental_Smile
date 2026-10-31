@@ -2,7 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:image/image.dart' as img; // 👈 Certifica-te de que tens este pacote no pubspec.yaml
+import 'package:image/image.dart' as img;
 import 'background.dart';
 
 class CaptureScreen extends StatefulWidget {
@@ -15,7 +15,7 @@ class CaptureScreen extends StatefulWidget {
 class _CaptureScreenState extends State<CaptureScreen> {
   File? _image;
 
-  // 🛠️ Padroniza, aplica zoom inteligente focado no rosto (eliminando ombros) e redimensiona (512x512)
+  // 🛠️ Padroniza, aplica zoom facial fechado (tipo face-crop), eliminando pescoço e ombros
   Future<File?> _padronizarImagem(File imagemOriginal) async {
     try {
       final bytes = await imagemOriginal.readAsBytes();
@@ -26,20 +26,20 @@ class _CaptureScreenState extends State<CaptureScreen> {
       int larguraOriginal = imagemDecodificada.width;
       int alturaOriginal = imagemDecodificada.height;
 
-      // Define o tamanho do quadrado de corte (cobre o rosto e boca com boa margem)
-      int tamanhoCorte = (larguraOriginal < alturaOriginal ? larguraOriginal : alturaOriginal) ~/ 1.3;
+      // Reduzimos o tamanho do corte para criar um "zoom" maior focado no rosto
+      int tamanhoCorte = (larguraOriginal < alturaOriginal ? larguraOriginal : alturaOriginal) ~/ 1.8;
 
       // Centraliza horizontalmente
       int offsetX = (larguraOriginal - tamanhoCorte) ~/ 2;
 
-      // Posiciona o corte verticalmente mais acima (15% a partir do topo), focando no rosto e cortando os ombros
-      int offsetY = (alturaOriginal * 0.15).toInt();
+      // Posiciona o corte verticalmente na zona do rosto (ajustado para focar olhos, nariz e boca sem ombros)
+      int offsetY = (alturaOriginal * 0.12).toInt();
       if (offsetY + tamanhoCorte > alturaOriginal) {
         offsetY = alturaOriginal - tamanhoCorte;
       }
       if (offsetY < 0) offsetY = 0;
 
-      // Executa o corte inteligente focado na região superior/rosto
+      // Executa o recorte fechado no rosto
       img.Image imagemQuadrada = img.copyCrop(
           imagemDecodificada,
           x: offsetX,
@@ -57,13 +57,13 @@ class _CaptureScreenState extends State<CaptureScreen> {
       );
 
       // Salva num novo ficheiro temporário padronizado
-      final targetPath = '${imagemOriginal.path}_padded_rosto.jpg';
+      final targetPath = '${imagemOriginal.path}_tight_face.jpg';
       File arquivoFinal = File(targetPath)
         ..writeAsBytesSync(img.encodeJpg(imagemFinal, quality: 95));
 
       return arquivoFinal;
     } catch (e) {
-      debugPrint("Erro ao padronizar imagem na origem: $e");
+      debugPrint("Erro ao aplicar zoom facial na origem: $e");
       return imagemOriginal;
     }
   }
@@ -85,7 +85,6 @@ class _CaptureScreenState extends State<CaptureScreen> {
     return 'DS-$timestamp';
   }
 
-  // 🔍 E-mail do utilizador logado no momento da captura
   String _obterEmailUsuarioAtual() {
     final boxUser = Hive.box('box_usuario');
     return boxUser.get('email', defaultValue: '') as String;
