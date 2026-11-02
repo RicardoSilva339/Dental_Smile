@@ -1,9 +1,9 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
+import 'package:camera/camera.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:image/image.dart' as img;
-import 'background.dart';
+import 'background.dart'; // Mantido caso queiras usar noutros locais, embora a câmara use ecrã cheio
 
 class CaptureScreen extends StatefulWidget {
   const CaptureScreen({super.key});
@@ -13,34 +13,117 @@ class CaptureScreen extends StatefulWidget {
 }
 
 class _CaptureScreenState extends State<CaptureScreen> {
-  File? _image;
+  CameraController? _controller;
+  List<CameraDescription>? _cameras;
+  bool _isCameraInitialized = false;
+  bool _isCapturing = false;
 
-  // 🛠️ Recorta a imagem de forma inteligente baseada na moldura central (Elimina o zoom da IA)
-  Future<File?> _recortarParaMoldura(File imagemOriginal) async {
+  @override
+  void initState() {
+    super.initState();
+    _initializeCamera();
+  }
+
+  Future<void> _initializeCamera() async {
+    try {
+      _cameras = await availableCameras();
+      if (_cameras != null && _cameras!.isNotEmpty) {
+        // Seleciona preferencialmente a câmara traseira para maior nitidez nos dentes
+        final cameraTraseira = _cameras!.firstWhere(
+              (c) => c.lensDirection == CameraLensDirection.back,
+          orElse: () => _cameras!.first,
+        );
+
+        _controller = CameraController(
+          cameraTraseira,
+          ResolutionPreset.high,
+          enableAudio: false,
+        );
+
+        await _controller!.initialize();
+        if (!mounted) return;
+        setState(() {
+          _isCameraInitialized = true;
+        });
+      }
+    } catch (e) {
+      debugPrint("Erro ao inicializar a câmara: $e");
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  Future<void> _captureAndCrop() async {
+    if (_controller == null || !_controller!.value.isInitialized || _isCapturing) return;
+
+    setState(() => _isCapturing = true);
+
+    try {
+      // 1. Tira a foto diretamente do sensor da câmara
+      final XFile picture = await _controller!.takePicture();
+      File originalFile = File(picture.path);
+
+      // 2. Aplica o recorte matemático milimétrico focado na zona da oval
+      File? croppedFile = await _processarRecorteOval(originalFile);
+
+      if (!mounted) return;
+
+      final simulationId = _gerarSimulationId();
+      final userEmail = _obterEmailUsuarioAtual();
+
+      // 3. Avança para a tela de análise com a imagem limpa e focada
+      Navigator.pushNamed(
+        context,
+        '/analysis',
+        arguments: {
+          'image': (croppedFile ?? originalFile).path,
+          'simulationId': simulationId,
+          'userEmail': userEmail,
+        },
+      );
+    } catch (e) {
+      debugPrint("Erro ao capturar e recortar imagem: $e");
+    } finally {
+      if (mounted) setState(() => _isCapturing = false);
+    }
+  }
+
+  Future<File?> _processarRecorteOval(File imagemOriginal) async {
     try {
       final bytes = await imagemOriginal.readAsBytes();
       final imagemDecodificada = img.decodeImage(bytes);
-
       if (imagemDecodificada == null) return imagemOriginal;
 
-      // Define um recorte quadrado centralizado (correspondente à moldura da UI)
-      int menorLado = imagemDecodificada.width < imagemDecodificada.height
-          ? imagemDecodificada.width
-          : imagemDecodificada.height;
+      int largura = imagemDecodificada.width;
+      int altura = imagemDecodificada.height;
 
-      int offsetX = (imagemDecodificada.width - menorLado) ~/ 2;
-      int offsetY = (imagemDecodificada.height - menorLado) ~/ 2;
+      // Define um quadrado centralizado focado no terço superior/médio (onde o rosto fica na oval)
+      int menorLado = largura < altura ? largura : altura;
+      int tamanhoCorte = (menorLado * 0.72).toInt(); // 72% da largura para fechar bem no rosto
 
-      // 1. Recorta exatamente o centro (onde fica a moldura do rosto)
+      int offsetX = (largura - tamanhoCorte) ~/ 2;
+      int offsetY = (altura - tamanhoCorte) ~/ 3; // Deslocado para cima para focar nos olhos/nariz/boca
+
+      // Validações de segurança para evitar limites negativos
+      if (offsetY < 0) offsetY = 0;
+      if (offsetX < 0) offsetX = 0;
+      if (offsetY + tamanhoCorte > altura) offsetY = altura - tamanhoCorte;
+      if (offsetX + tamanhoCorte > largura) offsetX = largura - tamanhoCorte;
+
+      // Recorta cirurgicamente a região do rosto
       img.Image imagemCropped = img.copyCrop(
         imagemDecodificada,
         x: offsetX,
         y: offsetY,
-        width: menorLado,
-        height: menorLado,
+        width: tamanhoCorte,
+        height: tamanhoCorte,
       );
 
-      // 2. Redimensiona para o padrão ideal da IA (512x512)
+      // Padroniza exatamente para 512x512 para o motor da IA
       img.Image imagemFinal = img.copyResize(
         imagemCropped,
         width: 512,
@@ -48,28 +131,14 @@ class _CaptureScreenState extends State<CaptureScreen> {
         interpolation: img.Interpolation.linear,
       );
 
-      // Salva num ficheiro temporário padronizado
-      final targetPath = '${imagemOriginal.path}_moldura.jpg';
+      final targetPath = '${imagemOriginal.path}_face_oval.jpg';
       File arquivoFinal = File(targetPath)
         ..writeAsBytesSync(img.encodeJpg(imagemFinal, quality: 90));
 
       return arquivoFinal;
     } catch (e) {
-      debugPrint("Erro ao recortar imagem para a moldura: $e");
-      return imagemOriginal;
-    }
-  }
-
-  Future<void> _pickImage(ImageSource source) async {
-    final picker = ImagePicker();
-    final pickedFile = await picker.pickImage(source: source);
-    if (pickedFile != null) {
-      File arquivoSelecionado = File(pickedFile.path);
-      File? arquivoProcessado = await _recortarParaMoldura(arquivoSelecionado);
-
-      setState(() {
-        _image = arquivoProcessado ?? arquivoSelecionado;
-      });
+      debugPrint("Erro no recorte oval: $e");
+      return null;
     }
   }
 
@@ -84,190 +153,143 @@ class _CaptureScreenState extends State<CaptureScreen> {
     return boxUser.get('email', defaultValue: '') as String;
   }
 
-  void _goToAnalysis() {
-    if (_image != null) {
-      final simulationId = _gerarSimulationId();
-      final userEmail = _obterEmailUsuarioAtual();
-
-      Navigator.pushNamed(
-        context,
-        '/analysis',
-        arguments: {
-          'image': _image!.path,
-          'simulationId': simulationId,
-          'userEmail': userEmail,
-        },
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Selecione ou capture uma imagem primeiro!')),
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
+    if (!_isCameraInitialized || _controller == null) {
+      return const Scaffold(
+        backgroundColor: Colors.black,
+        body: Center(
+          child: CircularProgressIndicator(color: Colors.white),
+        ),
+      );
+    }
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Nova Simulação')),
-      body: Background(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            children: [
-              const Text(
-                'Posicione o Rosto na Moldura',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 8),
-
-              // 💡 Dicas rápidas
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.blue.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.blue.withOpacity(0.3)),
-                ),
-                child: const Column(
-                  children: [
-                    Text(
-                      'Regras de Ouro:',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                    ),
-                    SizedBox(height: 4),
-                    Text(
-                      '• Enquadre apenas o rosto dentro da área delimitada\n• Sorriso natural (dentes visíveis, boca fechada)\n• Boa iluminação frontal',
-                      style: TextStyle(fontSize: 13),
-                      textAlign: TextAlign.left,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 20),
-
-              // 🖼️ Área de Pré-visualização com a Moldura Guia Estilo "Gov.br"
-              Center(
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    // Imagem selecionada ou espaço vazio
-                    _image == null
-                        ? Container(
-                      height: 280,
-                      width: 280,
-                      decoration: BoxDecoration(
-                        color: Colors.grey[200],
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: Colors.grey.withOpacity(0.5), width: 2),
-                      ),
-                      child: const Center(
-                        child: Text(
-                          'Nenhuma imagem selecionada\nToque em Câmera ou Galeria',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: Colors.grey),
-                        ),
-                      ),
-                    )
-                        : ClipRRect(
-                      borderRadius: BorderRadius.circular(20),
-                      child: Image.file(
-                        _image!,
-                        height: 280,
-                        width: 280,
-                        fit: BoxFit.cover,
-                      ),
-                    ),
-
-                    // 🛑 Moldura Visual em Cima (Guia para o Utilizador)
-                    IgnorePointer(
-                      child: Container(
-                        height: 260,
-                        width: 260,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(130), // Formato oval/circular perfeito para o rosto
-                          border: Border.all(
-                            color: Colors.amberAccent,
-                            width: 3,
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.4),
-                              blurRadius: 10,
-                              spreadRadius: 2,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 25),
-
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  ElevatedButton.icon(
-                    icon: const Icon(Icons.photo),
-                    label: const Text('Galeria'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blue[300],
-                      foregroundColor: Colors.white,
-                      minimumSize: const Size(140, 50),
-                      textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                    ),
-                    onPressed: () => _pickImage(ImageSource.gallery),
-                  ),
-                  const SizedBox(width: 16),
-                  ElevatedButton.icon(
-                    icon: const Icon(Icons.camera_alt),
-                    label: const Text('Câmera'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.indigo[300],
-                      foregroundColor: Colors.white,
-                      minimumSize: const Size(140, 50),
-                      textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                    ),
-                    onPressed: () => _pickImage(ImageSource.camera),
-                  ),
-                ],
-              ),
-            ],
+      body: Stack(
+        children: [
+          // 1. Pré-visualização da Câmara a ocupar todo o ecrã
+          Positioned.fill(
+            child: CameraPreview(_controller!),
           ),
-        ),
-      ),
-      bottomNavigationBar: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: ElevatedButton.icon(
-          icon: const Icon(Icons.arrow_forward),
-          label: const Text(
-            'Seguir para Análise com IA',
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 18,
+
+          // 2. Máscara Escura com o Recorte Oval no Centro (Efeito Gov.br / Bancos)
+          Positioned.fill(
+            child: CustomPaint(
+              painter: OvalOverlayPainter(),
             ),
           ),
-          style: ElevatedButton.styleFrom(
-            minimumSize: const Size(double.infinity, 60),
-            backgroundColor: Colors.blue[400],
-            foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(30),
+
+          // 3. Cabeçalho e Textos Informativos
+          SafeArea(
+            child: Column(
+              children: [
+                AppBar(
+                  title: const Text('Enquadramento Facial'),
+                  backgroundColor: Colors.transparent,
+                  elevation: 0,
+                  foregroundColor: Colors.white,
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.6),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Text(
+                    'Posicione o rosto e o sorriso dentro da oval',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
-          onPressed: _goToAnalysis,
-        ),
+
+          // 4. Botão de Disparo Estilo Profissional
+          Positioned(
+            bottom: 40,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: _isCapturing
+                  ? const CircularProgressIndicator(color: Colors.white)
+                  : GestureDetector(
+                onTap: _captureAndCrop,
+                child: Container(
+                  height: 75,
+                  width: 75,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 4),
+                    color: const Color(0xFF5C6BC0),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.4),
+                        blurRadius: 8,
+                        spreadRadius: 2,
+                      ),
+                    ],
+                  ),
+                  child: const Icon(
+                    Icons.camera_alt,
+                    color: Colors.white,
+                    size: 34,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
+}
+
+// 🎨 Pintor responsável por criar o efeito de "janela oval transparente" sobre fundo escuro
+class OvalOverlayPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paintBackground = Paint()
+      ..color = Colors.black.withOpacity(0.7)
+      ..style = PaintingStyle.fill;
+
+    // Retângulo total do ecrã
+    final rectTotal = Rect.fromLTWH(0, 0, size.width, size.height);
+
+    // Dimensões e posição da moldura oval central
+    final double ovalWidth = size.width * 0.72;
+    final double ovalHeight = size.height * 0.48;
+    final Rect ovalRect = Rect.fromCenter(
+      center: Offset(size.width / 2, size.height / 2 - 20),
+      width: ovalWidth,
+      height: ovalHeight,
+    );
+
+    final Path pathBackground = Path()..addRect(rectTotal);
+    final Path pathOval = Path()..addOval(ovalRect);
+
+    // Subtrai a oval do fundo escuro
+    final Path pathFinal = Path.combine(
+      PathOperation.difference,
+      pathBackground,
+      pathOval,
+    );
+
+    canvas.drawPath(pathFinal, paintBackground);
+
+    // Desenha a linha de destaque da oval (Dourada / Amarela)
+    final paintBorder = Paint()
+      ..color = Colors.amberAccent
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3.5;
+
+    canvas.drawOval(ovalRect, paintBorder);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
