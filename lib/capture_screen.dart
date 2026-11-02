@@ -15,15 +15,15 @@ class CaptureScreen extends StatefulWidget {
 class _CaptureScreenState extends State<CaptureScreen> {
   File? _image;
 
-  // 🛠️ Padroniza e recorta a imagem de forma inteligente e simétrica para a IA
-  Future<File?> _padronizarParaGabarito(File imagemOriginal) async {
+  // 🛠️ Recorta a imagem de forma inteligente baseada na moldura central (Elimina o zoom da IA)
+  Future<File?> _recortarParaMoldura(File imagemOriginal) async {
     try {
       final bytes = await imagemOriginal.readAsBytes();
       final imagemDecodificada = img.decodeImage(bytes);
 
       if (imagemDecodificada == null) return imagemOriginal;
 
-      // Descobre o menor lado para fazer um corte quadrado perfeito centralizado
+      // Define um recorte quadrado centralizado (correspondente à moldura da UI)
       int menorLado = imagemDecodificada.width < imagemDecodificada.height
           ? imagemDecodificada.width
           : imagemDecodificada.height;
@@ -31,7 +31,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
       int offsetX = (imagemDecodificada.width - menorLado) ~/ 2;
       int offsetY = (imagemDecodificada.height - menorLado) ~/ 2;
 
-      // 1. Recorta em quadrado centralizado
+      // 1. Recorta exatamente o centro (onde fica a moldura do rosto)
       img.Image imagemCropped = img.copyCrop(
         imagemDecodificada,
         x: offsetX,
@@ -49,13 +49,13 @@ class _CaptureScreenState extends State<CaptureScreen> {
       );
 
       // Salva num ficheiro temporário padronizado
-      final targetPath = '${imagemOriginal.path}_gabarito.jpg';
+      final targetPath = '${imagemOriginal.path}_moldura.jpg';
       File arquivoFinal = File(targetPath)
         ..writeAsBytesSync(img.encodeJpg(imagemFinal, quality: 90));
 
       return arquivoFinal;
     } catch (e) {
-      debugPrint("Erro ao padronizar imagem para o gabarito: $e");
+      debugPrint("Erro ao recortar imagem para a moldura: $e");
       return imagemOriginal;
     }
   }
@@ -65,10 +65,10 @@ class _CaptureScreenState extends State<CaptureScreen> {
     final pickedFile = await picker.pickImage(source: source);
     if (pickedFile != null) {
       File arquivoSelecionado = File(pickedFile.path);
-      File? arquivoPadronizado = await _padronizarParaGabarito(arquivoSelecionado);
+      File? arquivoProcessado = await _recortarParaMoldura(arquivoSelecionado);
 
       setState(() {
-        _image = arquivoPadronizado ?? arquivoSelecionado;
+        _image = arquivoProcessado ?? arquivoSelecionado;
       });
     }
   }
@@ -115,7 +115,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
           child: Column(
             children: [
               const Text(
-                'Capturar Foto',
+                'Posicione o Rosto na Moldura',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 22,
@@ -124,7 +124,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
               ),
               const SizedBox(height: 8),
 
-              // 💡 Card Informativo (Dicas de Ouro baseadas na nossa descoberta)
+              // 💡 Dicas rápidas
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
@@ -135,12 +135,12 @@ class _CaptureScreenState extends State<CaptureScreen> {
                 child: const Column(
                   children: [
                     Text(
-                      'Dicas para uma Simulação Perfeita:',
+                      'Regras de Ouro:',
                       style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                     ),
                     SizedBox(height: 4),
                     Text(
-                      '• Ângulo frontal e boa iluminação\n• Sorriso natural (dentes visíveis)\n• Evite dentes muito abertos ou separados',
+                      '• Enquadre apenas o rosto dentro da área delimitada\n• Sorriso natural (dentes visíveis, boca fechada)\n• Boa iluminação frontal',
                       style: TextStyle(fontSize: 13),
                       textAlign: TextAlign.left,
                     ),
@@ -148,6 +148,65 @@ class _CaptureScreenState extends State<CaptureScreen> {
                 ),
               ),
               const SizedBox(height: 20),
+
+              // 🖼️ Área de Pré-visualização com a Moldura Guia Estilo "Gov.br"
+              Center(
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    // Imagem selecionada ou espaço vazio
+                    _image == null
+                        ? Container(
+                      height: 280,
+                      width: 280,
+                      decoration: BoxDecoration(
+                        color: Colors.grey[200],
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: Colors.grey.withOpacity(0.5), width: 2),
+                      ),
+                      child: const Center(
+                        child: Text(
+                          'Nenhuma imagem selecionada\nToque em Câmera ou Galeria',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                      ),
+                    )
+                        : ClipRRect(
+                      borderRadius: BorderRadius.circular(20),
+                      child: Image.file(
+                        _image!,
+                        height: 280,
+                        width: 280,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+
+                    // 🛑 Moldura Visual em Cima (Guia para o Utilizador)
+                    IgnorePointer(
+                      child: Container(
+                        height: 260,
+                        width: 260,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(130), // Formato oval/circular perfeito para o rosto
+                          border: Border.all(
+                            color: Colors.amberAccent,
+                            width: 3,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.4),
+                              blurRadius: 10,
+                              spreadRadius: 2,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 25),
 
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -182,37 +241,6 @@ class _CaptureScreenState extends State<CaptureScreen> {
                     onPressed: () => _pickImage(ImageSource.camera),
                   ),
                 ],
-              ),
-              const SizedBox(height: 25),
-
-              // Pré-visualização da imagem recortada
-              Center(
-                child: _image == null
-                    ? Container(
-                  height: 280,
-                  width: 280,
-                  decoration: BoxDecoration(
-                    color: Colors.grey[200],
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Colors.grey.withOpacity(0.5), width: 2),
-                  ),
-                  child: const Center(
-                    child: Text(
-                      'Nenhuma imagem selecionada\nToque em Câmera ou Galeria',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.grey),
-                    ),
-                  ),
-                )
-                    : ClipRRect(
-                  borderRadius: BorderRadius.circular(20),
-                  child: Image.file(
-                    _image!,
-                    height: 280,
-                    width: 280,
-                    fit: BoxFit.cover,
-                  ),
-                ),
               ),
             ],
           ),
