@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:image/image.dart' as img;
 import 'background.dart';
 
 class CaptureScreen extends StatefulWidget {
@@ -14,12 +15,43 @@ class CaptureScreen extends StatefulWidget {
 class _CaptureScreenState extends State<CaptureScreen> {
   File? _image;
 
+  // 🛠️ Padroniza a imagem capturada para o nosso padrão gabarito (720x1280)
+  Future<File?> _padronizarParaGabarito(File imagemOriginal) async {
+    try {
+      final bytes = await imagemOriginal.readAsBytes();
+      final imagemDecodificada = img.decodeImage(bytes);
+
+      if (imagemDecodificada == null) return imagemOriginal;
+
+      // Redimensiona mantendo a proporção exata de 720x1280 (padrão da nossa foto de sucesso)
+      img.Image imagemFinal = img.copyResize(
+        imagemDecodificada,
+        width: 720,
+        height: 1280,
+        interpolation: img.Interpolation.linear,
+      );
+
+      // Salva num ficheiro temporário padronizado
+      final targetPath = '${imagemOriginal.path}_gabarito.jpg';
+      File arquivoFinal = File(targetPath)
+        ..writeAsBytesSync(img.encodeJpg(imagemFinal, quality: 90));
+
+      return arquivoFinal;
+    } catch (e) {
+      debugPrint("Erro ao padronizar imagem para o gabarito: $e");
+      return imagemOriginal;
+    }
+  }
+
   Future<void> _pickImage(ImageSource source) async {
     final picker = ImagePicker();
     final pickedFile = await picker.pickImage(source: source);
     if (pickedFile != null) {
+      File arquivoSelecionado = File(pickedFile.path);
+      File? arquivoPadronizado = await _padronizarParaGabarito(arquivoSelecionado);
+
       setState(() {
-        _image = File(pickedFile.path); // 🚀 Usa a imagem original inteira, sem cortes cegos na origem!
+        _image = arquivoPadronizado ?? arquivoSelecionado;
       });
     }
   }
