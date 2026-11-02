@@ -275,20 +275,19 @@ def process_smile():
         print(f"📥 [TELEMETRIA ENTRADA] Original recebida: {orig_image.width} x {orig_image.height}")
         print("=" * 60)
 
-        # Padroniza a imagem de entrada num quadrado 512x512 centrado no rosto
-        square_image = ImageOps.fit(
-            orig_image.convert("RGB"),
-            (512, 512),
-            method=Image.Resampling.LANCZOS,
-            centering=(0.5, 0.4)
-        )
+        # 🚀 Mantém a imagem original intacta para exibição e comparador, sem cortes cegos!
+        rgb_image = orig_image.convert("RGB")
 
         buffered_orig = io.BytesIO()
-        square_image.save(buffered_orig, format="JPEG", quality=90)
+        rgb_image.save(buffered_orig, format="JPEG", quality=90)
         original_processed_b64 = base64.b64encode(buffered_orig.getvalue()).decode('utf-8')
 
+        # Cria uma versão otimizada para enviar à IA (redimensionada proporcionalmente se necessário)
+        ai_input_image = rgb_image.copy()
+        ai_input_image.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
+
         buffered_work = io.BytesIO()
-        square_image.save(buffered_work, format="JPEG", quality=90)
+        ai_input_image.save(buffered_work, format="JPEG", quality=90)
         optimized_b64 = base64.b64encode(buffered_work.getvalue()).decode('utf-8')
         image_data_uri = f"data:image/jpeg;base64,{optimized_b64}"
 
@@ -329,10 +328,11 @@ def process_smile():
                                     ai_image = ImageOps.exif_transpose(ai_image) or ai_image
 
                                     print("=" * 60)
-                                    print(f"📤 [TELEMETRIA SAÍDA] Retornada pela IA em 512x512 perfeitamente simétrica")
+                                    print(f"📤 [TELEMETRIA SAÍDA] IA processou com sucesso mantendo a proporção natural")
                                     print("=" * 60)
 
-                                    ai_image_final = ai_image.convert("RGB")
+                                    # Redimensiona o resultado da IA para casar exatamente com as dimensões da original
+                                    ai_image_final = ai_image.convert("RGB").resize(rgb_image.size, Image.Resampling.LANCZOS)
                             break
                         elif status in ["failed", "canceled"]:
                             break
@@ -340,7 +340,7 @@ def process_smile():
                     continue
 
         if ai_image_final is None:
-            ai_image_final = square_image.copy()
+            ai_image_final = rgb_image.copy()
 
         buffered = io.BytesIO()
         ai_image_final.save(buffered, format="JPEG", quality=90)
@@ -359,8 +359,8 @@ def process_smile():
 
         return jsonify({
             "success": True,
-            "original_image": original_processed_b64,  # <-- Retorna a original padronizada 512x512
-            "processed_image": processed_b64,          # <-- Retorna a da IA 512x512
+            "original_image": original_processed_b64,  # <-- Retorna a original intacta na proporção correta
+            "processed_image": processed_b64,          # <-- Retorna o resultado ajustado exatamente à mesma dimensão
             "creditos_restantes": novo_saldo
         }), 200
 
