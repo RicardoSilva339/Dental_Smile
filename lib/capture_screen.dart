@@ -15,7 +15,7 @@ class CaptureScreen extends StatefulWidget {
 class _CaptureScreenState extends State<CaptureScreen> {
   File? _image;
 
-  // 🛠️ Padroniza a imagem capturada para o nosso padrão gabarito (720x1280)
+  // 🛠️ Padroniza e recorta a imagem de forma inteligente e simétrica para a IA
   Future<File?> _padronizarParaGabarito(File imagemOriginal) async {
     try {
       final bytes = await imagemOriginal.readAsBytes();
@@ -23,11 +23,28 @@ class _CaptureScreenState extends State<CaptureScreen> {
 
       if (imagemDecodificada == null) return imagemOriginal;
 
-      // Redimensiona mantendo a proporção exata de 720x1280 (padrão da nossa foto de sucesso)
-      img.Image imagemFinal = img.copyResize(
+      // Descobre o menor lado para fazer um corte quadrado perfeito centralizado
+      int menorLado = imagemDecodificada.width < imagemDecodificada.height
+          ? imagemDecodificada.width
+          : imagemDecodificada.height;
+
+      int offsetX = (imagemDecodificada.width - menorLado) ~/ 2;
+      int offsetY = (imagemDecodificada.height - menorLado) ~/ 2;
+
+      // 1. Recorta em quadrado centralizado
+      img.Image imagemCropped = img.copyCrop(
         imagemDecodificada,
-        width: 720,
-        height: 1280,
+        x: offsetX,
+        y: offsetY,
+        width: menorLado,
+        height: menorLado,
+      );
+
+      // 2. Redimensiona para o padrão ideal da IA (512x512)
+      img.Image imagemFinal = img.copyResize(
+        imagemCropped,
+        width: 512,
+        height: 512,
         interpolation: img.Interpolation.linear,
       );
 
@@ -93,7 +110,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Nova Simulação')),
       body: Background(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(24.0),
           child: Column(
             children: [
@@ -105,16 +122,32 @@ class _CaptureScreenState extends State<CaptureScreen> {
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              const SizedBox(height: 10),
-              const Text(
-                'Enquadre o sorriso ou selecione uma foto',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
+              const SizedBox(height: 8),
+
+              // 💡 Card Informativo (Dicas de Ouro baseadas na nossa descoberta)
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                ),
+                child: const Column(
+                  children: [
+                    Text(
+                      'Dicas para uma Simulação Perfeita:',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      '• Ângulo frontal e boa iluminação\n• Sorriso natural (dentes visíveis)\n• Evite dentes muito abertos ou separados',
+                      style: TextStyle(fontSize: 13),
+                      textAlign: TextAlign.left,
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 40),
+              const SizedBox(height: 20),
 
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -150,15 +183,34 @@ class _CaptureScreenState extends State<CaptureScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 30),
+              const SizedBox(height: 25),
 
-              Expanded(
-                child: Center(
-                  child: _image == null
-                      ? const Text('Nenhuma imagem selecionada')
-                      : ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
-                    child: Image.file(_image!, height: 300, fit: BoxFit.cover),
+              // Pré-visualização da imagem recortada
+              Center(
+                child: _image == null
+                    ? Container(
+                  height: 280,
+                  width: 280,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[200],
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.grey.withOpacity(0.5), width: 2),
+                  ),
+                  child: const Center(
+                    child: Text(
+                      'Nenhuma imagem selecionada\nToque em Câmera ou Galeria',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.grey),
+                    ),
+                  ),
+                )
+                    : ClipRRect(
+                  borderRadius: BorderRadius.circular(20),
+                  child: Image.file(
+                    _image!,
+                    height: 280,
+                    width: 280,
+                    fit: BoxFit.cover,
                   ),
                 ),
               ),

@@ -156,14 +156,14 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
 
       if (resultado['success'] == true) {
         processedImagePath = resultado['imagePath'];
-        originalPaddedPath = resultado['originalImagePath']; // 👈 Captura a original padronizada 512x512
+        originalPaddedPath = resultado['originalImagePath']; // 👈 Captura a original padronizada
 
         if (mounted) {
           setState(() {
             if (resultado['creditos_restantes'] != null && resultado['creditos_restantes'] is int) {
               _creditos = resultado['creditos_restantes'];
             } else if (_creditos > 0) {
-              _creditos = _creditos - 1; // 👈 Corrigido o operador de subtração aqui
+              _creditos = _creditos - 1; // 👈 Corrigido aqui perfeitamente
             }
           });
         }
@@ -194,7 +194,7 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
       context,
       '/compare',
       arguments: {
-        'originalPath': originalPaddedPath, // 👈 Agora aponta para a foto padronizada 512x512 (Zero Zoom / Sem Frankestein)
+        'originalPath': originalPaddedPath, // 👈 Aponta para a foto padronizada sem zoom/Frankenstein
         'processedPath': processedImagePath,
         'color': _colors[_selectedColor] ?? _selectedColor,
         'shape': 'Natural',
