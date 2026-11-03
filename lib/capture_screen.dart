@@ -17,7 +17,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
   List<CameraDescription>? _cameras;
   bool _isCameraInitialized = false;
   bool _isCapturing = false;
-  int _selectedCameraIndex = 0; // 0 para trasera, 1 para frontal/selfie
+  int _selectedCameraIndex = 0; // 0 para traseira, 1 para frontal/selfie
 
   @override
   void initState() {
@@ -45,11 +45,11 @@ class _CaptureScreenState extends State<CaptureScreen> {
         });
       }
     } catch (e) {
-      debugPrint("Error al inicializar la cámara: $e");
+      debugPrint("Erro ao inicializar a câmara: $e");
     }
   }
 
-  // 🔄 Alternar entre cámara trasera y frontal (selfie)
+  // 🔄 Alternar entre Câmera Traseira e Frontal (Selfie)
   Future<void> _switchCamera() async {
     if (_cameras == null || _cameras!.length < 2) return;
     int novoIndice = (_selectedCameraIndex + 1) % _cameras!.length;
@@ -64,7 +64,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
     super.dispose();
   }
 
-  // 📸 Captura y aplica el recorte sin zoom ni distorsión
+  // 📸 Captura e aplica o recorte estrito da moldura oval
   Future<void> _captureAndCrop() async {
     if (_controller == null || !_controller!.value.isInitialized || _isCapturing) return;
 
@@ -78,13 +78,13 @@ class _CaptureScreenState extends State<CaptureScreen> {
       if (!mounted) return;
       _avancarParaAnalise(croppedFile ?? originalFile);
     } catch (e) {
-      debugPrint("Error al capturar la imagen: $e");
+      debugPrint("Erro ao capturar imagem: $e");
     } finally {
       if (mounted) setState(() => _isCapturing = false);
     }
   }
 
-  // 🖼️ Seleccionar desde la galería
+  // 🖼️ Selecionar da Galeria
   Future<void> _pickFromGallery() async {
     final picker = ImagePicker();
     final pickedFile = await picker.pickImage(source: ImageSource.gallery);
@@ -98,35 +98,46 @@ class _CaptureScreenState extends State<CaptureScreen> {
     }
   }
 
-  // 🎯 Recorte cuadrado perfecto (1:1) para cero distorsión y proporción natural
+  // 🎯 Recorte Exato Baseado na Geometria da Moldura Oval (Elimina fundo e ombros)
   Future<File?> _processarRecorteOval(File imagemOriginal) async {
     try {
       final bytes = await imagemOriginal.readAsBytes();
       final imagemDecodificada = img.decodeImage(bytes);
       if (imagemDecodificada == null) return imagemOriginal;
 
-      int largura = imagemDecodificada.width;
-      int altura = imagemDecodificada.height;
+      int larguraImg = imagemDecodificada.width;
+      int alturaImg = imagemDecodificada.height;
 
-      int tamanhoCorte = largura;
+      // Proporções exatas correspondentes à OvalOverlayPainter (72% largura, ~65% altura para manter proporção de rosto)
+      int tamanhoCorteLargura = (larguraImg * 0.72).toInt();
+      int tamanhoCorteAltura = (tamanhoCorteLargura * 1.35).toInt(); // Altura ideal para o rosto oval
 
-      int offsetX = 0;
-      int offsetY = (altura * 0.10).toInt();
+      // Centraliza horizontalmente
+      int offsetX = (larguraImg - tamanhoCorteLargura) ~/ 2;
 
-      if (offsetY + tamanhoCorte > altura) {
-        offsetY = altura - tamanhoCorte;
-      }
-      if (offsetY < 0) offsetY = 0;
+      // Centraliza verticalmente alinhado com o deslocamento da oval (-20 pixels na UI)
+      int offsetY = (alturaImg - tamanhoCorteAltura) ~/ 2 - (alturaImg * 0.03).toInt();
+
+      // Validações rigorosas de segurança para os limites da imagem
       if (offsetX < 0) offsetX = 0;
+      if (offsetY < 0) offsetY = 0;
+      if (offsetX + tamanhoCorteLargura > larguraImg) {
+        tamanhoCorteLargura = larguraImg - offsetX;
+      }
+      if (offsetY + tamanhoCorteAltura > alturaImg) {
+        tamanhoCorteAltura = alturaImg - offsetY;
+      }
 
+      // 1. Recorta exatamente a região correspondente à oval
       img.Image imagemCropped = img.copyCrop(
         imagemDecodificada,
         x: offsetX,
         y: offsetY,
-        width: tamanhoCorte,
-        height: tamanhoCorte,
+        width: tamanhoCorteLargura,
+        height: tamanhoCorteAltura,
       );
 
+      // 2. Padroniza para 512x512 mantendo o foco exclusivo no rosto
       img.Image imagemFinal = img.copyResize(
         imagemCropped,
         width: 512,
@@ -140,7 +151,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
 
       return arquivoFinal;
     } catch (e) {
-      debugPrint("Error en el recorte oval: $e");
+      debugPrint("Erro no recorte oval: $e");
       return null;
     }
   }
