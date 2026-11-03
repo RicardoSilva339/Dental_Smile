@@ -17,7 +17,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
   List<CameraDescription>? _cameras;
   bool _isCameraInitialized = false;
   bool _isCapturing = false;
-  int _selectedCameraIndex = 0; // 0 para traseira, 1 para frontal/selfie
+  int _selectedCameraIndex = 0; // 0 para trasera, 1 para frontal/selfie
 
   @override
   void initState() {
@@ -45,11 +45,11 @@ class _CaptureScreenState extends State<CaptureScreen> {
         });
       }
     } catch (e) {
-      debugPrint("Erro ao inicializar a câmara: $e");
+      debugPrint("Error al inicializar la cámara: $e");
     }
   }
 
-  // 🔄 Alterna entre Câmera Traseira e Frontal (Selfie)
+  // 🔄 Alternar entre cámara trasera y frontal (selfie)
   Future<void> _switchCamera() async {
     if (_cameras == null || _cameras!.length < 2) return;
     int novoIndice = (_selectedCameraIndex + 1) % _cameras!.length;
@@ -64,7 +64,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
     super.dispose();
   }
 
-  // 📸 Captura e aplica o recorte oval amplo (sem zoom)
+  // 📸 Captura y aplica el recorte sin zoom ni distorsión
   Future<void> _captureAndCrop() async {
     if (_controller == null || !_controller!.value.isInitialized || _isCapturing) return;
 
@@ -78,13 +78,13 @@ class _CaptureScreenState extends State<CaptureScreen> {
       if (!mounted) return;
       _avancarParaAnalise(croppedFile ?? originalFile);
     } catch (e) {
-      debugPrint("Erro ao capturar imagem: $e");
+      debugPrint("Error al capturar la imagen: $e");
     } finally {
       if (mounted) setState(() => _isCapturing = false);
     }
   }
 
-  // 🖼️ Seleciona da Galeria e aplica o mesmo enquadramento
+  // 🖼️ Seleccionar desde la galería
   Future<void> _pickFromGallery() async {
     final picker = ImagePicker();
     final pickedFile = await picker.pickImage(source: ImageSource.gallery);
@@ -98,43 +98,35 @@ class _CaptureScreenState extends State<CaptureScreen> {
     }
   }
 
-  // 🎯 Recorte Sem Zoom: Enquadra o rosto inteiro proporcionalmente
+  // 🎯 Recorte cuadrado perfecto (1:1) para cero distorsión y proporción natural
   Future<File?> _processarRecorteOval(File imagemOriginal) async {
     try {
       final bytes = await imagemOriginal.readAsBytes();
       final imagemDecodificada = img.decodeImage(bytes);
       if (imagemDecodificada == null) return imagemOriginal;
 
-      int larguraImg = imagemDecodificada.width;
-      int alturaImg = imagemDecodificada.height;
+      int largura = imagemDecodificada.width;
+      int altura = imagemDecodificada.height;
 
-      // Utiliza 85% da largura original para garantir enquadramento do rosto inteiro
-      int tamanhoCorteLargura = (larguraImg * 0.85).toInt();
-      int tamanhoCorteAltura = (tamanhoCorteLargura * 1.25).toInt();
+      int tamanhoCorte = largura;
 
-      if (tamanhoCorteAltura > alturaImg) {
-        tamanhoCorteAltura = alturaImg;
-        tamanhoCorteLargura = (tamanhoCorteAltura / 1.25).toInt();
+      int offsetX = 0;
+      int offsetY = (altura * 0.10).toInt();
+
+      if (offsetY + tamanhoCorte > altura) {
+        offsetY = altura - tamanhoCorte;
       }
-
-      int offsetX = (larguraImg - tamanhoCorteLargura) ~/ 2;
-      int offsetY = (alturaImg - tamanhoCorteAltura) ~/ 2;
-
-      if (offsetX < 0) offsetX = 0;
       if (offsetY < 0) offsetY = 0;
-      if (offsetX + tamanhoCorteLargura > larguraImg) offsetX = larguraImg - tamanhoCorteLargura;
-      if (offsetY + tamanhoCorteAltura > alturaImg) offsetY = alturaImg - tamanhoCorteAltura;
+      if (offsetX < 0) offsetX = 0;
 
-      // Recorta a área ampla do rosto
       img.Image imagemCropped = img.copyCrop(
         imagemDecodificada,
         x: offsetX,
         y: offsetY,
-        width: tamanhoCorteLargura,
-        height: tamanhoCorteAltura,
+        width: tamanhoCorte,
+        height: tamanhoCorte,
       );
 
-      // Padroniza exatamente para 512x512 para o servidor de IA
       img.Image imagemFinal = img.copyResize(
         imagemCropped,
         width: 512,
@@ -148,7 +140,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
 
       return arquivoFinal;
     } catch (e) {
-      debugPrint("Erro no recorte oval: $e");
+      debugPrint("Error en el recorte oval: $e");
       return null;
     }
   }
@@ -193,19 +185,14 @@ class _CaptureScreenState extends State<CaptureScreen> {
     return Scaffold(
       body: Stack(
         children: [
-          // 1. Pré-visualização da Câmara
           Positioned.fill(
             child: CameraPreview(_controller!),
           ),
-
-          // 2. Máscara Oval Transparente (Estilo Gov.br / Bancos)
           Positioned.fill(
             child: CustomPaint(
               painter: OvalOverlayPainter(),
             ),
           ),
-
-          // 3. Cabeçalho, Título e Botão de Alternar Câmera
           SafeArea(
             child: Column(
               children: [
@@ -222,7 +209,6 @@ class _CaptureScreenState extends State<CaptureScreen> {
                         'Enquadramento Facial',
                         style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
                       ),
-                      // 🔄 Botão para alternar entre Câmera Traseira e Selfie
                       IconButton(
                         icon: const Icon(Icons.switch_camera, color: Colors.white, size: 28),
                         onPressed: _switchCamera,
@@ -249,8 +235,6 @@ class _CaptureScreenState extends State<CaptureScreen> {
               ],
             ),
           ),
-
-          // 4. Botões Inferiores: Galeria e Disparo
           Positioned(
             bottom: 40,
             left: 0,
@@ -258,15 +242,12 @@ class _CaptureScreenState extends State<CaptureScreen> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
-                // Botão da Galeria
                 FloatingActionButton(
                   heroTag: 'btnGaleria',
                   backgroundColor: Colors.blue[300],
                   onPressed: _isCapturing ? null : _pickFromGallery,
                   child: const Icon(Icons.photo_library, color: Colors.white),
                 ),
-
-                // Botão de Disparo Principal
                 _isCapturing
                     ? const CircularProgressIndicator(color: Colors.white)
                     : GestureDetector(
@@ -293,8 +274,6 @@ class _CaptureScreenState extends State<CaptureScreen> {
                     ),
                   ),
                 ),
-
-                // Espaço invisível para balancear a linha
                 const SizedBox(width: 56),
               ],
             ),
@@ -305,7 +284,6 @@ class _CaptureScreenState extends State<CaptureScreen> {
   }
 }
 
-// 🎨 Pintor da Moldura Oval
 class OvalOverlayPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
