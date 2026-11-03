@@ -64,7 +64,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
     super.dispose();
   }
 
-  // 📸 Captura e aplica o recorte estrito da moldura oval
+  // 📸 Captura e aplica o recorte exato da moldura oval
   Future<void> _captureAndCrop() async {
     if (_controller == null || !_controller!.value.isInitialized || _isCapturing) return;
 
@@ -98,7 +98,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
     }
   }
 
-  // 🎯 Recorte Exato Baseado na Geometria da Moldura Oval (Elimina fundo e ombros)
+  // 🎯 Recorte Proporcional Exato da Oval (Elimina fundo, móveis e ombros sem zoom excessivo)
   Future<File?> _processarRecorteOval(File imagemOriginal) async {
     try {
       final bytes = await imagemOriginal.readAsBytes();
@@ -108,27 +108,24 @@ class _CaptureScreenState extends State<CaptureScreen> {
       int larguraImg = imagemDecodificada.width;
       int alturaImg = imagemDecodificada.height;
 
-      // Proporções exatas correspondentes à OvalOverlayPainter (72% largura, ~65% altura para manter proporção de rosto)
-      int tamanhoCorteLargura = (larguraImg * 0.72).toInt();
-      int tamanhoCorteAltura = (tamanhoCorteLargura * 1.35).toInt(); // Altura ideal para o rosto oval
+      // Proporção exata correspondente à OvalOverlayPainter
+      int tamanhoCorteLargura = (larguraImg * 0.72).toInt(); // 72% da largura da imagem
+      int tamanhoCorteAltura = (tamanhoCorteLargura * 1.30).toInt(); // Altura ideal cobrindo da testa ao queixo
 
-      // Centraliza horizontalmente
+      if (tamanhoCorteAltura > alturaImg) {
+        tamanhoCorteAltura = alturaImg;
+        tamanhoCorteLargura = (tamanhoCorteAltura / 1.30).toInt();
+      }
+
       int offsetX = (larguraImg - tamanhoCorteLargura) ~/ 2;
+      int offsetY = (alturaImg - tamanhoCorteAltura) ~/ 2 - (alturaImg * 0.04).toInt();
 
-      // Centraliza verticalmente alinhado com o deslocamento da oval (-20 pixels na UI)
-      int offsetY = (alturaImg - tamanhoCorteAltura) ~/ 2 - (alturaImg * 0.03).toInt();
-
-      // Validações rigorosas de segurança para os limites da imagem
       if (offsetX < 0) offsetX = 0;
       if (offsetY < 0) offsetY = 0;
-      if (offsetX + tamanhoCorteLargura > larguraImg) {
-        tamanhoCorteLargura = larguraImg - offsetX;
-      }
-      if (offsetY + tamanhoCorteAltura > alturaImg) {
-        tamanhoCorteAltura = alturaImg - offsetY;
-      }
+      if (offsetX + tamanhoCorteLargura > larguraImg) offsetX = larguraImg - tamanhoCorteLargura;
+      if (offsetY + tamanhoCorteAltura > alturaImg) offsetY = alturaImg - tamanhoCorteAltura;
 
-      // 1. Recorta exatamente a região correspondente à oval
+      // 1. Recorta a região exata da oval
       img.Image imagemCropped = img.copyCrop(
         imagemDecodificada,
         x: offsetX,
@@ -137,7 +134,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
         height: tamanhoCorteAltura,
       );
 
-      // 2. Padroniza para 512x512 mantendo o foco exclusivo no rosto
+      // 2. Padroniza para 512x512 para o Replicate processar o sorriso
       img.Image imagemFinal = img.copyResize(
         imagemCropped,
         width: 512,
