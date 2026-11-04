@@ -235,22 +235,23 @@ def process_smile():
     selected_color = data.get('color', 'bl2').lower()
 
     bleach_modifiers = {
-        'bl1': 'ultra white bleach shade BL1 teeth, maximum professional aesthetic whitening',
-        'bl2': 'bright white bleach shade BL2 teeth, natural and striking bright look',
-        'bl3': 'natural white bleach shade BL3 teeth, harmonious and balanced shade',
+        'bl1': 'ultra white bleach shade BL1 teeth, maximum professional aesthetic whitening, bright flawless smile',
+        'bl2': 'bright white bleach shade BL2 teeth, natural and striking bright look, clean aesthetic smile',
+        'bl3': 'natural white bleach shade BL3 teeth, harmonious and balanced shade, healthy smile',
         'bl4': 'soft natural bleach shade BL4 teeth, subtle clean translucent look'
     }
     color_desc = bleach_modifiers.get(selected_color, bleach_modifiers['bl2'])
 
-    # Prompt otimizado para inpainting estrito na região da boca
+    # Prompt forte direcionado para modificar e clarear os dentes na máscara
     prompt_custom = (
-        f"perfect aesthetic human teeth, {color_desc}, aligned white teeth, "
-        f"healthy teeth with a perfect smile, professional dental restoration, photorealistic"
+        f"professional dental aesthetic restoration, whitening procedure, "
+        f"{color_desc}, perfectly aligned white teeth, natural human teeth texture, "
+        f"healthy gums, clean bright smile"
     )
 
     negative_prompt_custom = (
-        "deformed teeth, ugly, disfigured, bad anatomy, crooked teeth, "
-        "worst quality, low quality, jpeg artifacts, extra teeth, missing teeth"
+        "blurry, deformed teeth, yellow teeth, dark stains, ugly, disfigured, "
+        "bad anatomy, crooked teeth, worst quality, low quality, extra teeth, missing teeth"
     )
 
     if not image_b64:
@@ -264,13 +265,13 @@ def process_smile():
         orig_image = ImageOps.exif_transpose(orig_image) or orig_image
 
         print("=" * 60)
-        print(f"📥 [INPAINTING] Imagem original recebida: {orig_image.width} x {orig_image.height}")
+        print(f"📥 [INPAINTING] Imagem original recebida: {orig_image.width} x {orig_image.height} | Tom: {selected_color.upper()}")
         print("=" * 60)
 
         rgb_image = orig_image.convert("RGB")
         w, h = rgb_image.size
 
-        # Redimensiona para 512x512 para o Stable Diffusion Inpainting processar perfeitamente sem distorcer
+        # Redimensiona para 512x512 para processamento estável no Stable Diffusion
         img_512 = rgb_image.resize((512, 512), Image.Resampling.LANCZOS)
 
         buffered_orig = io.BytesIO()
@@ -282,11 +283,11 @@ def process_smile():
         image_b64_512 = base64.b64encode(buffered_input.getvalue()).decode('utf-8')
         image_data_uri = f"data:image/jpeg;base64,{image_b64_512}"
 
-        # 🎯 Criação automática da Máscara focada na região central inferior (boca/sorriso)
-        mask_img = Image.new("L", (512, 512), 0) # Fundo preto (preserva tudo)
+        # 🎯 Máscara ajustada e ligeiramente mais ampla na região central da boca
+        mask_img = Image.new("L", (512, 512), 0)
         draw = ImageDraw.Draw(mask_img)
-        # Desenha uma elipse branca exatamente na zona da boca (centro-baixo)
-        draw.ellipse([160, 300, 352, 430], fill=255) # Branco (área que a IA vai modificar)
+        # Área da boca expandida para garantir que abranja toda a arcada dentária
+        draw.ellipse([140, 280, 372, 440], fill=255)
 
         buffered_mask = io.BytesIO()
         mask_img.save(buffered_mask, format="PNG")
@@ -295,7 +296,6 @@ def process_smile():
 
         ai_image_final = None
 
-        # Usando o modelo oficial e estável de Inpainting do Replicate
         payload = {
             "version": "95b7223104132402a9ae91cc677285bc0eb997013cd357bffa40d9ae41a9d91a",
             "input": {
@@ -304,8 +304,8 @@ def process_smile():
                 "prompt": prompt_custom,
                 "negative_prompt": negative_prompt_custom,
                 "num_outputs": 1,
-                "guidance_scale": 7.5,
-                "prompt_strength": 0.75
+                "guidance_scale": 8.0,
+                "prompt_strength": 0.90  # 🚀 Aumentado para 0.90 para forçar a IA a alterar os dentes de fato
             }
         }
 
@@ -334,10 +334,9 @@ def process_smile():
                                     ai_image = ImageOps.exif_transpose(ai_image) or ai_image
 
                                     print("=" * 60)
-                                    print(f"📤 [INPAINTING] Sucesso! Redimensionando para o tamanho original: {w}x{h}")
+                                    print(f"📤 [INPAINTING] Sucesso! Aplicando redimensionamento para: {w}x{h}")
                                     print("=" * 60)
 
-                                    # Redimensiona diretamente para o tamanho original exato da foto do celular
                                     ai_image_final = ai_image.convert("RGB").resize((w, h), Image.Resampling.LANCZOS)
                             break
                         elif status in ["failed", "canceled"]:
