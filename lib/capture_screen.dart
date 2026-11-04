@@ -64,7 +64,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
     super.dispose();
   }
 
-  // 📸 Captura e aplica o recorte sem zoom e sem distorção
+  // 📸 Captura e aplica o recorte alinhado perfeitamente com a máscara oval vertical
   Future<void> _captureAndCrop() async {
     if (_controller == null || !_controller!.value.isInitialized || _isCapturing) return;
 
@@ -98,7 +98,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
     }
   }
 
-  // 🎯 Recorte Quadrado Perfeito Sem Zoom (Proporção 1:1 real)
+  // 🎯 Recorte Proporcional Oval (Retangular Vertical idêntico ao Overlay)
   Future<File?> _processarRecorteOval(File imagemOriginal) async {
     try {
       final bytes = await imagemOriginal.readAsBytes();
@@ -108,34 +108,37 @@ class _CaptureScreenState extends State<CaptureScreen> {
       int larguraImg = imagemDecodificada.width;
       int alturaImg = imagemDecodificada.height;
 
-      // Usa a largura ou altura mínima para formar um quadrado perfeito sem reduções que causem zoom
-      int tamanhoCorte = larguraImg < alturaImg ? larguraImg : alturaImg;
+      // Proporção baseada exatamente no OvalOverlayPainter (Largura ~72%, Altura ~48%)
+      double ovalRatioWidth = 0.72;
+      double ovalRatioHeight = 0.48;
 
-      int offsetX = (larguraImg - tamanhoCorte) ~/ 2;
+      int larguraCorte = (larguraImg * ovalRatioWidth).toInt();
+      int alturaCorte = (alturaImg * ovalRatioHeight).toInt();
 
-      // Ajuste vertical milimétrico para centralizar perfeitamente o rosto
-      int offsetY = (alturaImg - tamanhoCorte) ~/ 2 + (alturaImg * 0.05).toInt();
+      int offsetX = (larguraImg - larguraCorte) ~/ 2;
+      // Deslocamento vertical ajustado para alinhar com o centro com leve offset para cima (-20 pixels proporcional)
+      int offsetY = (alturaImg - alturaCorte) ~/ 2 - (alturaImg * 0.03).toInt();
 
-      // Validações de segurança estritas para os limites da imagem
+      // Validações de segurança para os limites da imagem
       if (offsetX < 0) offsetX = 0;
       if (offsetY < 0) offsetY = 0;
-      if (offsetX + tamanhoCorte > larguraImg) offsetX = larguraImg - tamanhoCorte;
-      if (offsetY + tamanhoCorte > alturaImg) offsetY = alturaImg - tamanhoCorte;
+      if (offsetX + larguraCorte > larguraImg) larguraCorte = larguraImg - offsetX;
+      if (offsetY + alturaCorte > alturaImg) alturaCorte = alturaImg - offsetY;
 
-      // 1. Recorta o quadrado perfeito da face
+      // 1. Recorta a região oval exata da face
       img.Image imagemCropped = img.copyCrop(
         imagemDecodificada,
         x: offsetX,
         y: offsetY,
-        width: tamanhoCorte,
-        height: tamanhoCorte,
+        width: larguraCorte,
+        height: alturaCorte,
       );
 
-      // 2. Padroniza exatamente para 512x512 (Quadrado para quadrado = Proporção 100% real, sem distorção)
+      // 2. Padroniza para uma resolução limpa mantendo a proporção correta
       img.Image imagemFinal = img.copyResize(
         imagemCropped,
         width: 512,
-        height: 512,
+        height: (512 * (alturaCorte / larguraCorte)).toInt(),
         interpolation: img.Interpolation.linear,
       );
 
@@ -214,10 +217,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
                         'Enquadramento Facial',
                         style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
                       ),
-                      IconButton(
-                        icon: const Icon(Icons.switch_camera, color: Colors.white, size: 28),
-                        onPressed: _switchCamera,
-                      ),
+                      const SizedBox(width: 48), // Espaçamento para equilibrar o topo
                     ],
                   ),
                 ),
@@ -240,6 +240,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
               ],
             ),
           ),
+          // BARRA INFERIOR COM OS TRÊS BOTÕES ALINHADOS (Galeria, Disparador e Inverter Câmera)
           Positioned(
             bottom: 40,
             left: 0,
@@ -247,12 +248,15 @@ class _CaptureScreenState extends State<CaptureScreen> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
+                // 1. Botão da Galeria
                 FloatingActionButton(
                   heroTag: 'btnGaleria',
                   backgroundColor: Colors.blue[300],
                   onPressed: _isCapturing ? null : _pickFromGallery,
                   child: const Icon(Icons.photo_library, color: Colors.white),
                 ),
+
+                // 2. Botão de Disparo Central
                 _isCapturing
                     ? const CircularProgressIndicator(color: Colors.white)
                     : GestureDetector(
@@ -279,7 +283,14 @@ class _CaptureScreenState extends State<CaptureScreen> {
                     ),
                   ),
                 ),
-                const SizedBox(width: 56),
+
+                // 3. Botão de Inverter Câmera (Agora embaixo e lado a lado)
+                FloatingActionButton(
+                  heroTag: 'btnSwitchCamera',
+                  backgroundColor: Colors.grey[800],
+                  onPressed: _isCapturing ? null : _switchCamera,
+                  child: const Icon(Icons.switch_camera, color: Colors.white),
+                ),
               ],
             ),
           ),

@@ -275,14 +275,13 @@ def process_smile():
         print(f"📥 [TELEMETRIA ENTRADA] Original recebida: {orig_image.width} x {orig_image.height}")
         print("=" * 60)
 
-        # 🚀 Mantém a imagem original intacta para exibição e comparador
         rgb_image = orig_image.convert("RGB")
 
         buffered_orig = io.BytesIO()
         rgb_image.save(buffered_orig, format="JPEG", quality=90)
         original_processed_b64 = base64.b64encode(buffered_orig.getvalue()).decode('utf-8')
 
-        # 🚀 CORREÇÃO DE ZOOM: Padding proporcional para quadrado (1024x1024)
+        # 🚀 1. GERAÇÃO DO PADDING PROPORCIONAL (1024x1024)
         target_size = 1024
         orig_w, orig_h = rgb_image.size
 
@@ -338,11 +337,15 @@ def process_smile():
                                     ai_image = ImageOps.exif_transpose(ai_image) or ai_image
 
                                     print("=" * 60)
-                                    print(f"📤 [TELEMETRIA SAÍDA] IA processou com sucesso com padding proporcional")
+                                    print(f"📤 [TELEMETRIA SAÍDA] Processando reversão de padding e proporção")
                                     print("=" * 60)
 
-                                    # Redimensiona o resultado da IA para casar exatamente com as dimensões da original
-                                    ai_image_final = ai_image.convert("RGB").resize(rgb_image.size, Image.Resampling.LANCZOS)
+                                    # 🚀 2. REMOVE O PADDING DA SAÍDA DA IA E DEVOLVE NA PROPORÇÃO EXATA DA ORIGINAL
+                                    # Corta exatamente a área útil que continha a imagem redimensionada (new_w x new_h) no centro (paste_x, paste_y)
+                                    ai_cropped = ai_image.convert("RGB").crop((paste_x, paste_y, paste_x + new_w, paste_y + new_h))
+
+                                    # Redimensiona de volta para as dimensões exatas da foto original do cliente
+                                    ai_image_final = ai_cropped.resize((orig_w, orig_h), Image.Resampling.LANCZOS)
                             break
                         elif status in ["failed", "canceled"]:
                             break
