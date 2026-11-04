@@ -6,7 +6,7 @@ import requests
 import psycopg2
 import traceback
 from flask import Flask, request, jsonify
-from PIL import Image, ImageOps
+from PIL import Image, ImageOps, ImageDraw
 
 app = Flask(__name__)
 
@@ -242,23 +242,15 @@ def process_smile():
     }
     color_desc = bleach_modifiers.get(selected_color, bleach_modifiers['bl2'])
 
+    # Prompt otimizado para inpainting estrito na região da boca
     prompt_custom = (
-        f"photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1> "
-        f"(Beautiful natural teeth, aligned bite teeth), {color_desc}, "
-        f"aligned white teeth, human like teeth, (no teeth gap), "
-        f"celebrity-like teeth, healthy teeth with a perfect smile, not big incisor, "
-        f"good proportion teeth, good proportion smile,"
+        f"perfect aesthetic human teeth, {color_desc}, aligned white teeth, "
+        f"healthy teeth with a perfect smile, professional dental restoration, photorealistic"
     )
 
     negative_prompt_custom = (
-        "(deformed teeth, semi-realistic, cgi, 3d, render, sketch, cartoon, drawing, anime), "
-        "(deformed, distorted, abnormal teeth:1.3, disfigured:1.3, large teeth:2), poorly drawn, "
-        "bad anatomy, rabbit teeth, wrong anatomy, missing teeth, disconnected teeth, "
-        "unnatural mouth, bunny teeth, big incisor teeth, disproportionate front teeth, "
-        "bad smile, reflection, crooked teeth, distorted teeth, cropped, out of frame, "
-        "worst quality, low quality, jpeg artifacts, ugly, morbid, disfigured, "
-        "gross proportions, too many teeth, lipstick, lip gloss, too less teeth, "
-        "unnatural size teeth, poorly drawn mouth, poorly drawn teeth"
+        "deformed teeth, ugly, disfigured, bad anatomy, crooked teeth, "
+        "worst quality, low quality, jpeg artifacts, extra teeth, missing teeth"
     )
 
     if not image_b64:
@@ -272,43 +264,48 @@ def process_smile():
         orig_image = ImageOps.exif_transpose(orig_image) or orig_image
 
         print("=" * 60)
-        print(f"📥 [TELEMETRIA ENTRADA] Original recebida: {orig_image.width} x {orig_image.height}")
+        print(f"📥 [INPAINTING] Imagem original recebida: {orig_image.width} x {orig_image.height}")
         print("=" * 60)
 
         rgb_image = orig_image.convert("RGB")
+        w, h = rgb_image.size
+
+        # Redimensiona para 512x512 para o Stable Diffusion Inpainting processar perfeitamente sem distorcer
+        img_512 = rgb_image.resize((512, 512), Image.Resampling.LANCZOS)
 
         buffered_orig = io.BytesIO()
         rgb_image.save(buffered_orig, format="JPEG", quality=90)
         original_processed_b64 = base64.b64encode(buffered_orig.getvalue()).decode('utf-8')
 
-        # 🚀 GERAÇÃO DO PADDING PROPORCIONAL (1024x1024)
-        target_size = 1024
-        orig_w, orig_h = rgb_image.size
+        buffered_input = io.BytesIO()
+        img_512.save(buffered_input, format="JPEG", quality=90)
+        image_b64_512 = base64.b64encode(buffered_input.getvalue()).decode('utf-8')
+        image_data_uri = f"data:image/jpeg;base64,{image_b64_512}"
 
-        ai_input_image = Image.new("RGB", (target_size, target_size), (255, 255, 255))
-        ratio = min(target_size / orig_w, target_size / orig_h)
-        new_w = int(orig_w * ratio)
-        new_h = int(orig_h * ratio)
+        # 🎯 Criação automática da Máscara focada na região central inferior (boca/sorriso)
+        mask_img = Image.new("L", (512, 512), 0) # Fundo preto (preserva tudo)
+        draw = ImageDraw.Draw(mask_img)
+        # Desenha uma elipse branca exatamente na zona da boca (centro-baixo)
+        draw.ellipse([160, 300, 352, 430], fill=255) # Branco (área que a IA vai modificar)
 
-        resized_orig = rgb_image.resize((new_w, new_h), Image.Resampling.LANCZOS)
-        paste_x = (target_size - new_w) // 2
-        paste_y = (target_size - new_h) // 2
-        ai_input_image.paste(resized_orig, (paste_x, paste_y))
-
-        buffered_work = io.BytesIO()
-        ai_input_image.save(buffered_work, format="JPEG", quality=90)
-        optimized_b64 = base64.b64encode(buffered_work.getvalue()).decode('utf-8')
-        image_data_uri = f"data:image/jpeg;base64,{optimized_b64}"
+        buffered_mask = io.BytesIO()
+        mask_img.save(buffered_mask, format="PNG")
+        mask_b64 = base64.b64encode(buffered_mask.getvalue()).decode('utf-8')
+        mask_data_uri = f"data:image/png;base64,{mask_b64}"
 
         ai_image_final = None
 
+        # Usando o modelo oficial e estável de Inpainting do Replicate
         payload = {
-            "version": "4956c634b9aa976129f13166c713f8cf38bd337cd58c77925e8cd71d935d5696",
+            "version": "95b7223104132402a9ae91cc677285bc0eb997013cd357bffa40d9ae41a9d91a",
             "input": {
                 "image": image_data_uri,
+                "mask": mask_data_uri,
                 "prompt": prompt_custom,
                 "negative_prompt": negative_prompt_custom,
-                "num_outputs": 1
+                "num_outputs": 1,
+                "guidance_scale": 7.5,
+                "prompt_strength": 0.75
             }
         }
 
@@ -337,23 +334,11 @@ def process_smile():
                                     ai_image = ImageOps.exif_transpose(ai_image) or ai_image
 
                                     print("=" * 60)
-                                    print(f"📤 [TELEMETRIA SAÍDA] Resolução real da IA: {ai_image.width} x {ai_image.height}")
+                                    print(f"📤 [INPAINTING] Sucesso! Redimensionando para o tamanho original: {w}x{h}")
                                     print("=" * 60)
 
-                                    # 🚀 CORREÇÃO DE ALINHAMENTO DE SAÍDA (Elimina o zoom interno da IA)
-                                    out_w, out_h = ai_image.size
-                                    scale_x = out_w / target_size
-                                    scale_y = out_h / target_size
-
-                                    box_x1 = int(paste_x * scale_x)
-                                    box_y1 = int(paste_y * scale_y)
-                                    box_x2 = int((paste_x + new_w) * scale_x)
-                                    box_y2 = int((paste_y + new_h) * scale_y)
-
-                                    ai_cropped = ai_image.convert("RGB").crop((box_x1, box_y1, box_x2, box_y2))
-
-                                    # Redimensiona mantendo a proporção exata da foto original do usuário
-                                    ai_image_final = ai_cropped.resize((orig_w, orig_h), Image.Resampling.LANCZOS)
+                                    # Redimensiona diretamente para o tamanho original exato da foto do celular
+                                    ai_image_final = ai_image.convert("RGB").resize((w, h), Image.Resampling.LANCZOS)
                             break
                         elif status in ["failed", "canceled"]:
                             break
