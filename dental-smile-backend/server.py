@@ -272,7 +272,7 @@ def process_smile():
         orig_image = ImageOps.exif_transpose(orig_image) or orig_image
 
         print("=" * 60)
-        print(f"📥 [OVERLAY] Original recebida: {orig_image.width} x {orig_image.height} | Tom: {selected_color.upper()}")
+        print(f"📥 [OVERLAY CORRIGIDO] Original: {orig_image.width} x {orig_image.height} | Tom: {selected_color.upper()}")
         print("=" * 60)
 
         rgb_image = orig_image.convert("RGB")
@@ -282,7 +282,6 @@ def process_smile():
         rgb_image.save(buffered_orig, format="JPEG", quality=90)
         original_processed_b64 = base64.b64encode(buffered_orig.getvalue()).decode('utf-8')
 
-        # 🚀 Padding proporcional para enviar ao PerfectSmile
         target_size = 1024
         ai_input_image = Image.new("RGB", (target_size, target_size), (255, 255, 255))
         ratio = min(target_size / orig_w, target_size / orig_h)
@@ -335,8 +334,6 @@ def process_smile():
                                     ai_image = Image.open(io.BytesIO(img_resp.content))
                                     ai_image = ImageOps.exif_transpose(ai_image) or ai_image
 
-                                    # 🚀 TÉCNICA DE OVERLAY CIRÚRGICO DA BOCA
-                                    # 1. Reverte o padding do modelo para extrair a foto gerada com o mesmo tamanho útil
                                     out_w, out_h = ai_image.size
                                     scale_x = out_w / target_size
                                     scale_y = out_h / target_size
@@ -349,22 +346,20 @@ def process_smile():
                                     ai_cropped = ai_image.convert("RGB").crop((box_x1, box_y1, box_x2, box_y2))
                                     ai_resized_full = ai_cropped.resize((orig_w, orig_h), Image.Resampling.LANCZOS)
 
-                                    # 2. Como o modelo foca na região central/inferior para o sorriso,
-                                    # recortamos apenas a faixa da boca gerada pela IA e colamos na foto original!
+                                    # 🚀 Recorte mais amplo da boca (abrangendo a área central com segurança)
                                     mouth_box = (
-                                        int(orig_w * 0.25),  # x1 (esquerda)
-                                        int(orig_h * 0.55),  # y1 (topo da boca)
-                                        int(orig_w * 0.75),  # x2 (direita)
-                                        int(orig_h * 0.88)   # y2 (fundo do queixo)
+                                        int(orig_w * 0.20),  # x1
+                                        int(orig_h * 0.50),  # y1
+                                        int(orig_w * 0.80),  # x2
+                                        int(orig_h * 0.90)   # y2
                                     )
 
                                     mouth_cropped = ai_resized_full.crop(mouth_box)
 
-                                    # Cola cirurgicamente por cima da foto original do usuário
                                     ai_image_final = rgb_image.copy()
                                     ai_image_final.paste(mouth_cropped, (mouth_box[0], mouth_box[1]))
                                     print("=" * 60)
-                                    print("📤 [OVERLAY] Boca gerada pela IA aplicada com sucesso na foto original!")
+                                    print("📤 [OVERLAY] Sucesso total sem erro 500!")
                                     print("=" * 60)
                             break
                         elif status in ["failed", "canceled"]:
@@ -383,7 +378,7 @@ def process_smile():
             cur.execute("UPDATE dispositivos SET creditos = creditos - 1 WHERE device_id = %s RETURNING creditos;", (device_id,))
             novo_saldo = cur.fetchone()[0]
         else:
-            cur.execute("UPDATE usuarios SET creditos = creditos - 1 WHERE api_key = %s OR email = %s RETURNING credições;", (api_key, api_key))
+            cur.execute("UPDATE usuarios SET creditos = creditos - 1 WHERE api_key = %s OR email = %s RETURNING creditos;", (api_key, api_key))
             novo_saldo = cur.fetchone()[0]
 
         conn.commit()
@@ -400,6 +395,8 @@ def process_smile():
     except Exception as e:
         if 'cur' in locals() and cur: cur.close()
         if 'conn' in locals() and conn: conn.close()
+        print(f"❌ Erro crítico: {str(e)}")
+        traceback.print_exc()
         return jsonify({"success": False, "error": str(e)}), 500
 
 if __name__ == '__main__':
