@@ -337,12 +337,21 @@ def process_smile():
                                     ai_image = ImageOps.exif_transpose(ai_image) or ai_image
 
                                     print("=" * 60)
-                                    print(f"📤 [TELEMETRIA SAÍDA] Processando reversão de padding e proporção")
+                                    print(f"📤 [TELEMETRIA SAÍDA] Resolução real da IA: {ai_image.width} x {ai_image.height}")
                                     print("=" * 60)
 
-                                    # 🚀 2. REMOVE O PADDING DA SAÍDA DA IA E DEVOLVE NA PROPORÇÃO EXATA DA ORIGINAL
-                                    # Corta exatamente a área útil que continha a imagem redimensionada (new_w x new_h) no centro (paste_x, paste_y)
-                                    ai_cropped = ai_image.convert("RGB").crop((paste_x, paste_y, paste_x + new_w, paste_y + new_h))
+                                    # 🚀 2. CORREÇÃO DINÂMICA DE SAÍDA (Ajusta proporcionalmente à resolução real retornada pela IA)
+                                    out_w, out_h = ai_image.size
+                                    scale_x = out_w / target_size
+                                    scale_y = out_h / target_size
+
+                                    box_x1 = int(paste_x * scale_x)
+                                    box_y1 = int(paste_y * scale_y)
+                                    box_x2 = int((paste_x + new_w) * scale_x)
+                                    box_y2 = int((paste_y + new_h) * scale_y)
+
+                                    # Corta a área útil ignorando o padding de forma proporcional
+                                    ai_cropped = ai_image.convert("RGB").crop((box_x1, box_y1, box_x2, box_y2))
 
                                     # Redimensiona de volta para as dimensões exatas da foto original do cliente
                                     ai_image_final = ai_cropped.resize((orig_w, orig_h), Image.Resampling.LANCZOS)
