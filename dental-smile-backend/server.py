@@ -272,7 +272,7 @@ def process_smile():
         orig_image = ImageOps.exif_transpose(orig_image) or orig_image
 
         print("=" * 60)
-        print(f"📥 [OVERLAY SUAVIZADO] Original: {orig_image.width} x {orig_image.height} | Tom: {selected_color.upper()}")
+        print(f"📥 [OVERLAY PRECISO] Original: {orig_image.width} x {orig_image.height} | Tom: {selected_color.upper()}")
         print("=" * 60)
 
         rgb_image = orig_image.convert("RGB")
@@ -346,33 +346,29 @@ def process_smile():
                                     ai_cropped = ai_image.convert("RGB").crop((box_x1, box_y1, box_x2, box_y2))
                                     ai_resized_full = ai_cropped.resize((orig_w, orig_h), Image.Resampling.LANCZOS)
 
-                                    # Coordenadas da boca
+                                    # 🚀 Coordenadas ajustadas e restritas estritamente à zona dos lábios/dentes
                                     mouth_box = (
-                                        int(orig_w * 0.20),  # x1
-                                        int(orig_h * 0.50),  # y1
-                                        int(orig_w * 0.80),  # x2
-                                        int(orig_h * 0.90)   # y2
+                                        int(orig_w * 0.35),  # x1 (mais fechado nas laterais)
+                                        int(orig_h * 0.62),  # y1 (topo dos lábios)
+                                        int(orig_w * 0.65),  # x2 (mais fechado nas laterais)
+                                        int(orig_h * 0.82)   # y2 (base do queixo/lábio inferior)
                                     )
 
                                     mouth_cropped = ai_resized_full.crop(mouth_box)
 
-                                    # 🚀 CRIAR MÁSCARA SUAVIZADA (FEATHERING) PARA SUMIR O QUADRADO
                                     m_w = mouth_box[2] - mouth_box[0]
                                     m_h = mouth_box[3] - mouth_box[1]
 
                                     mask = Image.new("L", (m_w, m_h), 0)
                                     draw_mask = ImageDraw.Draw(mask)
-                                    # Desenha elipse central branca com margem interna para o desfoque
-                                    draw_mask.ellipse([15, 15, m_w - 15, m_h - 15], fill=255)
-                                    # Aplica desfoque gaussiano nas bordas para criar transição invisível
-                                    mask = mask.filter(ImageFilter.GaussianBlur(18))
+                                    draw_mask.ellipse([8, 8, m_w - 8, m_h - 8], fill=255)
+                                    mask = mask.filter(ImageFilter.GaussianBlur(10))
 
-                                    # Cola com mesclagem baseada na máscara suavizada
                                     ai_image_final = rgb_image.copy()
                                     ai_image_final.paste(mouth_cropped, (mouth_box[0], mouth_box[1]), mask)
 
                                     print("=" * 60)
-                                    print("📤 [OVERLAY] Boca colada e fundida com sucesso (adeus Chucky)!")
+                                    print("📤 [OVERLAY] Sorriso aplicado cirurgicamente no ponto exato!")
                                     print("=" * 60)
                             break
                         elif status in ["failed", "canceled"]:
