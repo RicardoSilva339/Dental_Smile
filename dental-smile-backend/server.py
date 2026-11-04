@@ -275,16 +275,26 @@ def process_smile():
         print(f"📥 [TELEMETRIA ENTRADA] Original recebida: {orig_image.width} x {orig_image.height}")
         print("=" * 60)
 
-        # 🚀 Mantém a imagem original intacta para exibição e comparador, sem cortes cegos!
+        # 🚀 Mantém a imagem original intacta para exibição e comparador
         rgb_image = orig_image.convert("RGB")
 
         buffered_orig = io.BytesIO()
         rgb_image.save(buffered_orig, format="JPEG", quality=90)
         original_processed_b64 = base64.b64encode(buffered_orig.getvalue()).decode('utf-8')
 
-        # Cria uma versão otimizada para enviar à IA (redimensionada proporcionalmente se necessário)
-        ai_input_image = rgb_image.copy()
-        ai_input_image.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
+        # 🚀 CORREÇÃO DE ZOOM: Padding proporcional para quadrado (1024x1024)
+        target_size = 1024
+        orig_w, orig_h = rgb_image.size
+
+        ai_input_image = Image.new("RGB", (target_size, target_size), (255, 255, 255))
+        ratio = min(target_size / orig_w, target_size / orig_h)
+        new_w = int(orig_w * ratio)
+        new_h = int(orig_h * ratio)
+
+        resized_orig = rgb_image.resize((new_w, new_h), Image.Resampling.LANCZOS)
+        paste_x = (target_size - new_w) // 2
+        paste_y = (target_size - new_h) // 2
+        ai_input_image.paste(resized_orig, (paste_x, paste_y))
 
         buffered_work = io.BytesIO()
         ai_input_image.save(buffered_work, format="JPEG", quality=90)
@@ -328,7 +338,7 @@ def process_smile():
                                     ai_image = ImageOps.exif_transpose(ai_image) or ai_image
 
                                     print("=" * 60)
-                                    print(f"📤 [TELEMETRIA SAÍDA] IA processou com sucesso mantendo a proporção natural")
+                                    print(f"📤 [TELEMETRIA SAÍDA] IA processou com sucesso com padding proporcional")
                                     print("=" * 60)
 
                                     # Redimensiona o resultado da IA para casar exatamente com as dimensões da original
@@ -359,8 +369,8 @@ def process_smile():
 
         return jsonify({
             "success": True,
-            "original_image": original_processed_b64,  # <-- Retorna a original intacta na proporção correta
-            "processed_image": processed_b64,          # <-- Retorna o resultado ajustado exatamente à mesma dimensão
+            "original_image": original_processed_b64,
+            "processed_image": processed_b64,
             "creditos_restantes": novo_saldo
         }), 200
 
