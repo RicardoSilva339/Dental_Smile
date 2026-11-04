@@ -281,7 +281,7 @@ def process_smile():
         rgb_image.save(buffered_orig, format="JPEG", quality=90)
         original_processed_b64 = base64.b64encode(buffered_orig.getvalue()).decode('utf-8')
 
-        # 🚀 1. GERAÇÃO DO PADDING PROPORCIONAL (1024x1024)
+        # 🚀 GERAÇÃO DO PADDING PROPORCIONAL (1024x1024)
         target_size = 1024
         orig_w, orig_h = rgb_image.size
 
@@ -340,7 +340,7 @@ def process_smile():
                                     print(f"📤 [TELEMETRIA SAÍDA] Resolução real da IA: {ai_image.width} x {ai_image.height}")
                                     print("=" * 60)
 
-                                    # 🚀 2. CORREÇÃO DINÂMICA DE SAÍDA (Ajusta proporcionalmente à resolução real retornada pela IA)
+                                    # 🚀 CORREÇÃO DE ALINHAMENTO DE SAÍDA (Elimina o zoom interno da IA)
                                     out_w, out_h = ai_image.size
                                     scale_x = out_w / target_size
                                     scale_y = out_h / target_size
@@ -350,10 +350,9 @@ def process_smile():
                                     box_x2 = int((paste_x + new_w) * scale_x)
                                     box_y2 = int((paste_y + new_h) * scale_y)
 
-                                    # Corta a área útil ignorando o padding de forma proporcional
                                     ai_cropped = ai_image.convert("RGB").crop((box_x1, box_y1, box_x2, box_y2))
 
-                                    # Redimensiona de volta para as dimensões exatas da foto original do cliente
+                                    # Redimensiona mantendo a proporção exata da foto original do usuário
                                     ai_image_final = ai_cropped.resize((orig_w, orig_h), Image.Resampling.LANCZOS)
                             break
                         elif status in ["failed", "canceled"]:
