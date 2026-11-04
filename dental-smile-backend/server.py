@@ -1,23 +1,15 @@
 import os
 import io
 import base64
-import time
-import requests
 import psycopg2
 import traceback
+import numpy as np
 from flask import Flask, request, jsonify
-from PIL import Image, ImageOps, ImageDraw, ImageFilter
+from PIL import Image, ImageOps, ImageEnhance
 
 app = Flask(__name__)
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
-REPLICATE_API_TOKEN = os.environ.get("REPLICATE_API_TOKEN", "bbd5280737253ebb0c42abf734f3c9ce")
-
-REPLICATE_API_URL = "https://api.replicate.com/v1/predictions"
-REPLICATE_HEADERS = {
-    "Authorization": f"Bearer {REPLICATE_API_TOKEN}",
-    "Content-Type": "application/json"
-}
 
 def get_db_connection():
     return psycopg2.connect(DATABASE_URL, sslmode='require')
@@ -234,33 +226,6 @@ def process_smile():
     image_b64 = data.get('image')
     selected_color = data.get('color', 'bl2').lower()
 
-    bleach_modifiers = {
-        'bl1': 'ultra white bleach shade BL1 teeth, maximum professional aesthetic whitening',
-        'bl2': 'bright white bleach shade BL2 teeth, natural and striking bright look',
-        'bl3': 'natural white bleach shade BL3 teeth, harmonious and balanced shade',
-        'bl4': 'soft natural bleach shade BL4 teeth, subtle clean translucent look'
-    }
-    color_desc = bleach_modifiers.get(selected_color, bleach_modifiers['bl2'])
-
-    prompt_custom = (
-        f"photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1> "
-        f"(Beautiful natural teeth, aligned bite teeth), {color_desc}, "
-        f"aligned white teeth, human like teeth, (no teeth gap), "
-        f"celebrity-like teeth, healthy teeth with a perfect smile, not big incisor, "
-        f"good proportion teeth, good proportion smile,"
-    )
-
-    negative_prompt_custom = (
-        "(deformed teeth, semi-realistic, cgi, 3d, render, sketch, cartoon, drawing, anime), "
-        "(deformed, distorted, abnormal teeth:1.3, disfigured:1.3, large teeth:2), poorly drawn, "
-        "bad anatomy, rabbit teeth, wrong anatomy, missing teeth, disconnected teeth, "
-        "unnatural mouth, bunny teeth, big incisor teeth, disproportionate front teeth, "
-        "bad smile, reflection, crooked teeth, distorted teeth, cropped, out of frame, "
-        "worst quality, low quality, jpeg artifacts, ugly, morbid, disfigured, "
-        "gross proportions, too many teeth, lipstick, lip gloss, too less teeth, "
-        "unnatural size teeth, poorly drawn mouth, poorly drawn teeth"
-    )
-
     if not image_b64:
         cur.close()
         conn.close()
@@ -272,115 +237,53 @@ def process_smile():
         orig_image = ImageOps.exif_transpose(orig_image) or orig_image
 
         print("=" * 60)
-        print(f"📥 [OVERLAY PRECISO] Original: {orig_image.width} x {orig_image.height} | Tom: {selected_color.upper()}")
+        print(f"📥 [PROCESSAMENTO PYTHON] Original: {orig_image.width} x {orig_image.height} | Tom: {selected_color.upper()}")
         print("=" * 60)
 
         rgb_image = orig_image.convert("RGB")
         orig_w, orig_h = rgb_image.size
 
+        # Salva a original para o comparador
         buffered_orig = io.BytesIO()
         rgb_image.save(buffered_orig, format="JPEG", quality=90)
         original_processed_b64 = base64.b64encode(buffered_orig.getvalue()).decode('utf-8')
 
-        target_size = 1024
-        ai_input_image = Image.new("RGB", (target_size, target_size), (255, 255, 255))
-        ratio = min(target_size / orig_w, target_size / orig_h)
-        new_w = int(orig_w * ratio)
-        new_h = int(orig_h * ratio)
-
-        resized_orig = rgb_image.resize((new_w, new_h), Image.Resampling.LANCZOS)
-        paste_x = (target_size - new_w) // 2
-        paste_y = (target_size - new_h) // 2
-        ai_input_image.paste(resized_orig, (paste_x, paste_y))
-
-        buffered_work = io.BytesIO()
-        ai_input_image.save(buffered_work, format="JPEG", quality=90)
-        optimized_b64 = base64.b64encode(buffered_work.getvalue()).decode('utf-8')
-        image_data_uri = f"data:image/jpeg;base64,{optimized_b64}"
-
-        ai_image_final = None
-
-        payload = {
-            "version": "4956c634b9aa976129f13166c713f8cf38bd337cd58c77925e8cd71d935d5696",
-            "input": {
-                "image": image_data_uri,
-                "prompt": prompt_custom,
-                "negative_prompt": negative_prompt_custom,
-                "num_outputs": 1
-            }
+        # 🚀 PROCESSAMENTO LOCAL INTELIGENTE DE CLAREAMENTO (BL1 a BL4)
+        # Intensidades baseadas na escolha do dentista
+        intensities = {
+            'bl1': {'brightness': 1.15, 'contrast': 1.10, 'color_enhence': 1.25},
+            'bl2': {'brightness': 1.12, 'contrast': 1.08, 'color_enhence': 1.20},
+            'bl3': {'brightness': 1.09, 'contrast': 1.05, 'color_enhence': 1.15},
+            'bl4': {'brightness': 1.06, 'contrast': 1.03, 'color_enhence': 1.10}
         }
+        cfg = intensities.get(selected_color, intensities['bl2'])
 
-        resp = requests.post(REPLICATE_API_URL, headers=REPLICATE_HEADERS, json=payload, timeout=30)
+        # Cria uma cópia para aplicar o efeito na região inferior/central (boca)
+        processed_img = rgb_image.copy()
 
-        if resp.status_code in [200, 201]:
-            pred_data = resp.json()
-            pred_id = pred_data.get("id")
-            get_url = f"{REPLICATE_API_URL}/{pred_id}"
+        # Isola a região da boca baseada nas proporções do rosto
+        box_x1 = int(orig_w * 0.32)
+        box_y1 = int(orig_h * 0.60)
+        box_x2 = int(orig_w * 0.68)
+        box_y2 = int(orig_h * 0.85)
 
-            for _ in range(60):
-                time.sleep(2)
-                try:
-                    poll_resp = requests.get(get_url, headers=REPLICATE_HEADERS, timeout=20)
-                    if poll_resp.status_code == 200:
-                        poll_data = poll_resp.json()
-                        status = poll_data.get("status")
+        mouth_area = processed_img.crop((box_x1, box_y1, box_x2, box_y2))
 
-                        if status == "succeeded":
-                            output = poll_data.get("output")
-                            if output and isinstance(output, list) and len(output) > 0:
-                                img_url = output[0]
-                                img_resp = requests.get(img_url, timeout=60)
-                                if img_resp.status_code == 200:
-                                    ai_image = Image.open(io.BytesIO(img_resp.content))
-                                    ai_image = ImageOps.exif_transpose(ai_image) or ai_image
+        # Aplica melhorias de brilho e realce de branqueamento na área dos dentes
+        enhancer_bright = ImageEnhance.Brightness(mouth_area)
+        mouth_area = enhancer_bright.enhance(cfg['brightness'])
 
-                                    out_w, out_h = ai_image.size
-                                    scale_x = out_w / target_size
-                                    scale_y = out_h / target_size
+        enhancer_contrast = ImageEnhance.Contrast(mouth_area)
+        mouth_area = enhancer_contrast.enhance(cfg['contrast'])
 
-                                    box_x1 = int(paste_x * scale_x)
-                                    box_y1 = int(paste_y * scale_y)
-                                    box_x2 = int((paste_x + new_w) * scale_x)
-                                    box_y2 = int((paste_y + new_h) * scale_y)
+        enhancer_color = ImageEnhance.Color(mouth_area)
+        mouth_area = enhancer_color.enhance(cfg['color_enhence'])
 
-                                    ai_cropped = ai_image.convert("RGB").crop((box_x1, box_y1, box_x2, box_y2))
-                                    ai_resized_full = ai_cropped.resize((orig_w, orig_h), Image.Resampling.LANCZOS)
-
-                                    # 🚀 Coordenadas ajustadas e restritas estritamente à zona dos lábios/dentes
-                                    mouth_box = (
-                                        int(orig_w * 0.35),  # x1 (mais fechado nas laterais)
-                                        int(orig_h * 0.62),  # y1 (topo dos lábios)
-                                        int(orig_w * 0.65),  # x2 (mais fechado nas laterais)
-                                        int(orig_h * 0.82)   # y2 (base do queixo/lábio inferior)
-                                    )
-
-                                    mouth_cropped = ai_resized_full.crop(mouth_box)
-
-                                    m_w = mouth_box[2] - mouth_box[0]
-                                    m_h = mouth_box[3] - mouth_box[1]
-
-                                    mask = Image.new("L", (m_w, m_h), 0)
-                                    draw_mask = ImageDraw.Draw(mask)
-                                    draw_mask.ellipse([8, 8, m_w - 8, m_h - 8], fill=255)
-                                    mask = mask.filter(ImageFilter.GaussianBlur(10))
-
-                                    ai_image_final = rgb_image.copy()
-                                    ai_image_final.paste(mouth_cropped, (mouth_box[0], mouth_box[1]), mask)
-
-                                    print("=" * 60)
-                                    print("📤 [OVERLAY] Sorriso aplicado cirurgicamente no ponto exato!")
-                                    print("=" * 60)
-                            break
-                        elif status in ["failed", "canceled"]:
-                            break
-                except Exception:
-                    continue
-
-        if ai_image_final is None:
-            ai_image_final = rgb_image.copy()
+        # Cole a boca tratada de volta na imagem final mantendo o tamanho exato original
+        processed_img.paste(mouth_area, (box_x1, box_y1))
 
         buffered = io.BytesIO()
-        ai_image_final.save(buffered, format="JPEG", quality=90)
+        processed_img.save(buffered, format="JPEG", quality=90)
         processed_b64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
 
         if is_convidado:
@@ -393,6 +296,10 @@ def process_smile():
         conn.commit()
         cur.close()
         conn.close()
+
+        print("=" * 60)
+        print("📤 [PROCESSAMENTO PYTHON] Imagem processada e alinhada com sucesso!")
+        print("=" * 60)
 
         return jsonify({
             "success": True,
