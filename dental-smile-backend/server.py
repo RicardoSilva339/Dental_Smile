@@ -6,7 +6,7 @@ import requests
 import psycopg2
 import traceback
 from flask import Flask, request, jsonify
-from PIL import Image, ImageOps, ImageDraw
+from PIL import Image, ImageOps
 
 app = Flask(__name__)
 
@@ -235,23 +235,30 @@ def process_smile():
     selected_color = data.get('color', 'bl2').lower()
 
     bleach_modifiers = {
-        'bl1': 'ultra white bleach shade BL1 teeth, maximum professional aesthetic whitening, bright flawless smile',
-        'bl2': 'bright white bleach shade BL2 teeth, natural and striking bright look, clean aesthetic smile',
-        'bl3': 'natural white bleach shade BL3 teeth, harmonious and balanced shade, healthy smile',
+        'bl1': 'ultra white bleach shade BL1 teeth, maximum professional aesthetic whitening',
+        'bl2': 'bright white bleach shade BL2 teeth, natural and striking bright look',
+        'bl3': 'natural white bleach shade BL3 teeth, harmonious and balanced shade',
         'bl4': 'soft natural bleach shade BL4 teeth, subtle clean translucent look'
     }
     color_desc = bleach_modifiers.get(selected_color, bleach_modifiers['bl2'])
 
-    # Prompt forte direcionado para modificar e clarear os dentes na máscara
     prompt_custom = (
-        f"professional dental aesthetic restoration, whitening procedure, "
-        f"{color_desc}, perfectly aligned white teeth, natural human teeth texture, "
-        f"healthy gums, clean bright smile"
+        f"photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1> "
+        f"(Beautiful natural teeth, aligned bite teeth), {color_desc}, "
+        f"aligned white teeth, human like teeth, (no teeth gap), "
+        f"celebrity-like teeth, healthy teeth with a perfect smile, not big incisor, "
+        f"good proportion teeth, good proportion smile,"
     )
 
     negative_prompt_custom = (
-        "blurry, deformed teeth, yellow teeth, dark stains, ugly, disfigured, "
-        "bad anatomy, crooked teeth, worst quality, low quality, extra teeth, missing teeth"
+        "(deformed teeth, semi-realistic, cgi, 3d, render, sketch, cartoon, drawing, anime), "
+        "(deformed, distorted, abnormal teeth:1.3, disfigured:1.3, large teeth:2), poorly drawn, "
+        "bad anatomy, rabbit teeth, wrong anatomy, missing teeth, disconnected teeth, "
+        "unnatural mouth, bunny teeth, big incisor teeth, disproportionate front teeth, "
+        "bad smile, reflection, crooked teeth, distorted teeth, cropped, out of frame, "
+        "worst quality, low quality, jpeg artifacts, ugly, morbid, disfigured, "
+        "gross proportions, too many teeth, lipstick, lip gloss, too less teeth, "
+        "unnatural size teeth, poorly drawn mouth, poorly drawn teeth"
     )
 
     if not image_b64:
@@ -265,47 +272,42 @@ def process_smile():
         orig_image = ImageOps.exif_transpose(orig_image) or orig_image
 
         print("=" * 60)
-        print(f"📥 [INPAINTING] Imagem original recebida: {orig_image.width} x {orig_image.height} | Tom: {selected_color.upper()}")
+        print(f"📥 [OVERLAY] Original recebida: {orig_image.width} x {orig_image.height} | Tom: {selected_color.upper()}")
         print("=" * 60)
 
         rgb_image = orig_image.convert("RGB")
-        w, h = rgb_image.size
-
-        # Redimensiona para 512x512 para processamento estável no Stable Diffusion
-        img_512 = rgb_image.resize((512, 512), Image.Resampling.LANCZOS)
+        orig_w, orig_h = rgb_image.size
 
         buffered_orig = io.BytesIO()
         rgb_image.save(buffered_orig, format="JPEG", quality=90)
         original_processed_b64 = base64.b64encode(buffered_orig.getvalue()).decode('utf-8')
 
-        buffered_input = io.BytesIO()
-        img_512.save(buffered_input, format="JPEG", quality=90)
-        image_b64_512 = base64.b64encode(buffered_input.getvalue()).decode('utf-8')
-        image_data_uri = f"data:image/jpeg;base64,{image_b64_512}"
+        # 🚀 Padding proporcional para enviar ao PerfectSmile
+        target_size = 1024
+        ai_input_image = Image.new("RGB", (target_size, target_size), (255, 255, 255))
+        ratio = min(target_size / orig_w, target_size / orig_h)
+        new_w = int(orig_w * ratio)
+        new_h = int(orig_h * ratio)
 
-        # 🎯 Máscara ajustada e ligeiramente mais ampla na região central da boca
-        mask_img = Image.new("L", (512, 512), 0)
-        draw = ImageDraw.Draw(mask_img)
-        # Área da boca expandida para garantir que abranja toda a arcada dentária
-        draw.ellipse([140, 280, 372, 440], fill=255)
+        resized_orig = rgb_image.resize((new_w, new_h), Image.Resampling.LANCZOS)
+        paste_x = (target_size - new_w) // 2
+        paste_y = (target_size - new_h) // 2
+        ai_input_image.paste(resized_orig, (paste_x, paste_y))
 
-        buffered_mask = io.BytesIO()
-        mask_img.save(buffered_mask, format="PNG")
-        mask_b64 = base64.b64encode(buffered_mask.getvalue()).decode('utf-8')
-        mask_data_uri = f"data:image/png;base64,{mask_b64}"
+        buffered_work = io.BytesIO()
+        ai_input_image.save(buffered_work, format="JPEG", quality=90)
+        optimized_b64 = base64.b64encode(buffered_work.getvalue()).decode('utf-8')
+        image_data_uri = f"data:image/jpeg;base64,{optimized_b64}"
 
         ai_image_final = None
 
         payload = {
-            "version": "95b7223104132402a9ae91cc677285bc0eb997013cd357bffa40d9ae41a9d91a",
+            "version": "4956c634b9aa976129f13166c713f8cf38bd337cd58c77925e8cd71d935d5696",
             "input": {
                 "image": image_data_uri,
-                "mask": mask_data_uri,
                 "prompt": prompt_custom,
                 "negative_prompt": negative_prompt_custom,
-                "num_outputs": 1,
-                "guidance_scale": 8.0,
-                "prompt_strength": 0.90  # 🚀 Aumentado para 0.90 para forçar a IA a alterar os dentes de fato
+                "num_outputs": 1
             }
         }
 
@@ -333,11 +335,37 @@ def process_smile():
                                     ai_image = Image.open(io.BytesIO(img_resp.content))
                                     ai_image = ImageOps.exif_transpose(ai_image) or ai_image
 
-                                    print("=" * 60)
-                                    print(f"📤 [INPAINTING] Sucesso! Aplicando redimensionamento para: {w}x{h}")
-                                    print("=" * 60)
+                                    # 🚀 TÉCNICA DE OVERLAY CIRÚRGICO DA BOCA
+                                    # 1. Reverte o padding do modelo para extrair a foto gerada com o mesmo tamanho útil
+                                    out_w, out_h = ai_image.size
+                                    scale_x = out_w / target_size
+                                    scale_y = out_h / target_size
 
-                                    ai_image_final = ai_image.convert("RGB").resize((w, h), Image.Resampling.LANCZOS)
+                                    box_x1 = int(paste_x * scale_x)
+                                    box_y1 = int(paste_y * scale_y)
+                                    box_x2 = int((paste_x + new_w) * scale_x)
+                                    box_y2 = int((paste_y + new_h) * scale_y)
+
+                                    ai_cropped = ai_image.convert("RGB").crop((box_x1, box_y1, box_x2, box_y2))
+                                    ai_resized_full = ai_cropped.resize((orig_w, orig_h), Image.Resampling.LANCZOS)
+
+                                    # 2. Como o modelo foca na região central/inferior para o sorriso,
+                                    # recortamos apenas a faixa da boca gerada pela IA e colamos na foto original!
+                                    mouth_box = (
+                                        int(orig_w * 0.25),  # x1 (esquerda)
+                                        int(orig_h * 0.55),  # y1 (topo da boca)
+                                        int(orig_w * 0.75),  # x2 (direita)
+                                        int(orig_h * 0.88)   # y2 (fundo do queixo)
+                                    )
+
+                                    mouth_cropped = ai_resized_full.crop(mouth_box)
+
+                                    # Cola cirurgicamente por cima da foto original do usuário
+                                    ai_image_final = rgb_image.copy()
+                                    ai_image_final.paste(mouth_cropped, (mouth_box[0], mouth_box[1]))
+                                    print("=" * 60)
+                                    print("📤 [OVERLAY] Boca gerada pela IA aplicada com sucesso na foto original!")
+                                    print("=" * 60)
                             break
                         elif status in ["failed", "canceled"]:
                             break
@@ -355,7 +383,7 @@ def process_smile():
             cur.execute("UPDATE dispositivos SET creditos = creditos - 1 WHERE device_id = %s RETURNING creditos;", (device_id,))
             novo_saldo = cur.fetchone()[0]
         else:
-            cur.execute("UPDATE usuarios SET creditos = creditos - 1 WHERE api_key = %s OR email = %s RETURNING creditos;", (api_key, api_key))
+            cur.execute("UPDATE usuarios SET creditos = creditos - 1 WHERE api_key = %s OR email = %s RETURNING credições;", (api_key, api_key))
             novo_saldo = cur.fetchone()[0]
 
         conn.commit()
