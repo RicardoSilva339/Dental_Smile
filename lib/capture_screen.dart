@@ -98,7 +98,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
     }
   }
 
-  // 🎯 Recorte Proporcional Oval (Retangular Vertical idêntico ao Overlay)
+  // 🎯 Recorte Proporcional Oval corrigido
   Future<File?> _processarRecorteOval(File imagemOriginal) async {
     try {
       final bytes = await imagemOriginal.readAsBytes();
@@ -108,7 +108,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
       int larguraImg = imagemDecodificada.width;
       int alturaImg = imagemDecodificada.height;
 
-      // Proporção baseada exatamente no OvalOverlayPainter (Largura ~72%, Altura ~48%)
+      // Proporção baseada exatamente no OvalOverlayPainter
       double ovalRatioWidth = 0.72;
       double ovalRatioHeight = 0.48;
 
@@ -116,8 +116,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
       int alturaCorte = (alturaImg * ovalRatioHeight).toInt();
 
       int offsetX = (larguraImg - larguraCorte) ~/ 2;
-      // Deslocamento vertical ajustado para alinhar com o centro com leve offset para cima (-20 pixels proporcional)
-      int offsetY = (alturaImg - alturaCorte) ~/ 2 - (alturaImg * 0.03).toInt();
+      int offsetY = ((alturaImg - alturaCorte) ~/ 2) - (alturaImg * 0.03).toInt();
 
       // Validações de segurança para os limites da imagem
       if (offsetX < 0) offsetX = 0;
@@ -217,7 +216,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
                         'Enquadramento Facial',
                         style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
                       ),
-                      const SizedBox(width: 48), // Espaçamento para equilibrar o topo
+                      const SizedBox(width: 48),
                     ],
                   ),
                 ),
@@ -240,7 +239,6 @@ class _CaptureScreenState extends State<CaptureScreen> {
               ],
             ),
           ),
-          // BARRA INFERIOR COM OS TRÊS BOTÕES ALINHADOS (Galeria, Disparador e Inverter Câmera)
           Positioned(
             bottom: 40,
             left: 0,
@@ -248,15 +246,12 @@ class _CaptureScreenState extends State<CaptureScreen> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
-                // 1. Botão da Galeria
                 FloatingActionButton(
                   heroTag: 'btnGaleria',
                   backgroundColor: Colors.blue[300],
                   onPressed: _isCapturing ? null : _pickFromGallery,
                   child: const Icon(Icons.photo_library, color: Colors.white),
                 ),
-
-                // 2. Botão de Disparo Central
                 _isCapturing
                     ? const CircularProgressIndicator(color: Colors.white)
                     : GestureDetector(
@@ -283,8 +278,6 @@ class _CaptureScreenState extends State<CaptureScreen> {
                     ),
                   ),
                 ),
-
-                // 3. Botão de Inverter Câmera (Agora embaixo e lado a lado)
                 FloatingActionButton(
                   heroTag: 'btnSwitchCamera',
                   backgroundColor: Colors.grey[800],
@@ -312,7 +305,7 @@ class OvalOverlayPainter extends CustomPainter {
     final double ovalWidth = size.width * 0.72;
     final double ovalHeight = size.height * 0.48;
     final Rect ovalRect = Rect.fromCenter(
-      center: Offset(size.width / 2, size.height / 2 - 20),
+      center: Offset(size.width / 2, (size.height / 2) - 20),
       width: ovalWidth,
       height: ovalHeight,
     );

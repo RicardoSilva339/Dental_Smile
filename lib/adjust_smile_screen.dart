@@ -163,7 +163,7 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
             if (resultado['creditos_restantes'] != null && resultado['creditos_restantes'] is int) {
               _creditos = resultado['creditos_restantes'];
             } else if (_creditos > 0) {
-              _creditos = _creditos - 1; // 👈 Corrigido aqui perfeitamente
+              _creditos = _creditos - 1; // 👈 Corrigido com o operador de subtração correto
             }
           });
         }
@@ -194,7 +194,7 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
       context,
       '/compare',
       arguments: {
-        'originalPath': originalPaddedPath, // 👈 Aponta para a foto padronizada sem zoom/Frankenstein
+        'originalPath': originalPaddedPath,
         'processedPath': processedImagePath,
         'color': _colors[_selectedColor] ?? _selectedColor,
         'shape': 'Natural',

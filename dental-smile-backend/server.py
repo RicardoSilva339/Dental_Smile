@@ -106,7 +106,7 @@ def register():
         cur.execute("""
             INSERT INTO usuarios (api_key, nome, email, cro, senha, creditos, tentativas_login)
             VALUES (%s, %s, %s, %s, %s, 0, 0);
-        """, (email, nome, email, cro, senha, 0))
+        """, (email, nome, email, cro, senha))
         conn.commit()
         cur.close()
         conn.close()
@@ -172,7 +172,6 @@ def check_credits():
 def add_credits():
     data = request.get_json(force=True, silent=True) or {}
     api_key = data.get('api_key', '').strip().lower()
-    device_id = data.get('device_id', '').strip()
     quantidade = int(data.get('quantidade', 10))
 
     conn = get_db_connection()
@@ -181,10 +180,6 @@ def add_credits():
 
     if api_key:
         cur.execute("UPDATE usuarios SET creditos = creditos + %s WHERE api_key = %s OR email = %s RETURNING creditos;", (quantidade, api_key, api_key))
-        res = cur.fetchone()
-        if res: novo_saldo = res[0]
-    elif device_id:
-        cur.execute("UPDATE dispositivos SET creditos = creditos + %s WHERE device_id = %s RETURNING creditos;", (quantidade, device_id))
         res = cur.fetchone()
         if res: novo_saldo = res[0]
 
@@ -225,6 +220,8 @@ def process_smile():
 
     image_b64 = data.get('image')
     selected_color = data.get('color', 'bl2').lower()
+    selected_shape = data.get('shape', 'natural').lower()
+    selected_size = data.get('size', 'medio').lower()
 
     if not image_b64:
         cur.close()
@@ -237,31 +234,29 @@ def process_smile():
         orig_image = ImageOps.exif_transpose(orig_image) or orig_image
 
         print("=" * 60)
-        print(f"📥 [PROCESSAMENTO PYTHON] Original: {orig_image.width} x {orig_image.height} | Tom: {selected_color.upper()}")
+        print(f"📥 [PYTHON] Recebido | Dimensões: {orig_image.width}x{orig_image.height} | Cor: {selected_color.upper()} | Formato: {selected_shape} | Tamanho: {selected_size}")
         print("=" * 60)
 
         rgb_image = orig_image.convert("RGB")
         orig_w, orig_h = rgb_image.size
 
-        # Salva a original para o comparador
+        # Salva a original para o comparador do app
         buffered_orig = io.BytesIO()
         rgb_image.save(buffered_orig, format="JPEG", quality=90)
         original_processed_b64 = base64.b64encode(buffered_orig.getvalue()).decode('utf-8')
 
-        # 🚀 PROCESSAMENTO LOCAL INTELIGENTE DE CLAREAMENTO (BL1 a BL4)
-        # Intensidades baseadas na escolha do dentista
+        # Configurações dinâmicas de acordo com o tom escolhido (BL1 a BL4)
         intensities = {
-            'bl1': {'brightness': 1.15, 'contrast': 1.10, 'color_enhence': 1.25},
-            'bl2': {'brightness': 1.12, 'contrast': 1.08, 'color_enhence': 1.20},
-            'bl3': {'brightness': 1.09, 'contrast': 1.05, 'color_enhence': 1.15},
-            'bl4': {'brightness': 1.06, 'contrast': 1.03, 'color_enhence': 1.10}
+            'bl1': {'brightness': 1.18, 'contrast': 1.12, 'color_enhence': 1.30},
+            'bl2': {'brightness': 1.14, 'contrast': 1.08, 'color_enhence': 1.20},
+            'bl3': {'brightness': 1.10, 'contrast': 1.05, 'color_enhence': 1.15},
+            'bl4': {'brightness': 1.06, 'contrast': 1.02, 'color_enhence': 1.10}
         }
         cfg = intensities.get(selected_color, intensities['bl2'])
 
-        # Cria uma cópia para aplicar o efeito na região inferior/central (boca)
         processed_img = rgb_image.copy()
 
-        # Isola a região da boca baseada nas proporções do rosto
+        # Isola a região da boca de forma proporcional (preparado para receber o MediaPipe definitivo do servidor)
         box_x1 = int(orig_w * 0.32)
         box_y1 = int(orig_h * 0.60)
         box_x2 = int(orig_w * 0.68)
@@ -269,7 +264,6 @@ def process_smile():
 
         mouth_area = processed_img.crop((box_x1, box_y1, box_x2, box_y2))
 
-        # Aplica melhorias de brilho e realce de branqueamento na área dos dentes
         enhancer_bright = ImageEnhance.Brightness(mouth_area)
         mouth_area = enhancer_bright.enhance(cfg['brightness'])
 
@@ -279,13 +273,13 @@ def process_smile():
         enhancer_color = ImageEnhance.Color(mouth_area)
         mouth_area = enhancer_color.enhance(cfg['color_enhence'])
 
-        # Cole a boca tratada de volta na imagem final mantendo o tamanho exato original
         processed_img.paste(mouth_area, (box_x1, box_y1))
 
         buffered = io.BytesIO()
         processed_img.save(buffered, format="JPEG", quality=90)
         processed_b64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
 
+        # Desconta o crédito após o sucesso
         if is_convidado:
             cur.execute("UPDATE dispositivos SET creditos = creditos - 1 WHERE device_id = %s RETURNING creditos;", (device_id,))
             novo_saldo = cur.fetchone()[0]
@@ -298,7 +292,7 @@ def process_smile():
         conn.close()
 
         print("=" * 60)
-        print("📤 [PROCESSAMENTO PYTHON] Imagem processada e alinhada com sucesso!")
+        print("📤 [PYTHON] Processamento concluído com sucesso e crédito descontado!")
         print("=" * 60)
 
         return jsonify({
