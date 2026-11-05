@@ -3,6 +3,7 @@ import io
 import base64
 import psycopg2
 import traceback
+import replicate
 import numpy as np
 from flask import Flask, request, jsonify
 from PIL import Image, ImageOps, ImageEnhance
@@ -10,6 +11,7 @@ from PIL import Image, ImageOps, ImageEnhance
 app = Flask(__name__)
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
+# Certifique-se de configurar a variável de ambiente REPLICATE_API_TOKEN no seu painel do Render!
 
 def get_db_connection():
     return psycopg2.connect(DATABASE_URL, sslmode='require')
@@ -172,6 +174,7 @@ def check_credits():
 def add_credits():
     data = request.get_json(force=True, silent=True) or {}
     api_key = data.get('api_key', '').strip().lower()
+    device_id = data.get('device_id', '').strip()
     quantidade = int(data.get('quantidade', 10))
 
     conn = get_db_connection()
@@ -180,6 +183,10 @@ def add_credits():
 
     if api_key:
         cur.execute("UPDATE usuarios SET creditos = creditos + %s WHERE api_key = %s OR email = %s RETURNING creditos;", (quantidade, api_key, api_key))
+        res = cur.fetchone()
+        if res: novo_saldo = res[0]
+    elif device_id:
+        cur.execute("UPDATE dispositivos SET creditos = creditos + %s WHERE device_id = %s RETURNING creditos;", (quantidade, device_id))
         res = cur.fetchone()
         if res: novo_saldo = res[0]
 
@@ -234,52 +241,73 @@ def process_smile():
         orig_image = ImageOps.exif_transpose(orig_image) or orig_image
 
         print("=" * 60)
-        print(f"📥 [PYTHON] Recebido | Dimensões: {orig_image.width}x{orig_image.height} | Cor: {selected_color.upper()} | Formato: {selected_shape} | Tamanho: {selected_size}")
+        print(f"📥 [PYTHON REPLICATE] Recebido | Dimensões: {orig_image.width}x{orig_image.height} | Cor: {selected_color.upper()} | Formato: {selected_shape}")
         print("=" * 60)
 
         rgb_image = orig_image.convert("RGB")
         orig_w, orig_h = rgb_image.size
 
-        # Salva a original para o comparador do app
+        # 1. Salva a imagem original limpa para o comparador do app
         buffered_orig = io.BytesIO()
         rgb_image.save(buffered_orig, format="JPEG", quality=90)
         original_processed_b64 = base64.b64encode(buffered_orig.getvalue()).decode('utf-8')
 
-        # Configurações dinâmicas de acordo com o tom escolhido (BL1 a BL4)
-        intensities = {
-            'bl1': {'brightness': 1.18, 'contrast': 1.12, 'color_enhence': 1.30},
-            'bl2': {'brightness': 1.14, 'contrast': 1.08, 'color_enhence': 1.20},
-            'bl3': {'brightness': 1.10, 'contrast': 1.05, 'color_enhence': 1.15},
-            'bl4': {'brightness': 1.06, 'contrast': 1.02, 'color_enhence': 1.10}
-        }
-        cfg = intensities.get(selected_color, intensities['bl2'])
+        # 2. Criação da Máscara (Inpainting Mask) baseada na região da boca
+        # Fundo preto (0) e a área da boca branca (255) para a IA saber onde atuar
+        mask_img = Image.new("L", (orig_w, orig_h), 0)
+        from PIL import ImageDraw
+        draw = ImageDraw.Draw(mask_img)
 
-        processed_img = rgb_image.copy()
-
-        # Isola a região da boca de forma proporcional (preparado para receber o MediaPipe definitivo do servidor)
         box_x1 = int(orig_w * 0.32)
         box_y1 = int(orig_h * 0.60)
         box_x2 = int(orig_w * 0.68)
         box_y2 = int(orig_h * 0.85)
 
-        mouth_area = processed_img.crop((box_x1, box_y1, box_x2, box_y2))
+        # Desenha a área de inpainting na máscara
+        draw.rectangle([box_x1, box_y1, box_x2, box_y2], fill=255)
 
-        enhancer_bright = ImageEnhance.Brightness(mouth_area)
-        mouth_area = enhancer_bright.enhance(cfg['brightness'])
+        buffered_mask = io.BytesIO()
+        mask_img.save(buffered_mask, format="JPEG")
+        mask_b64 = base64.b64encode(buffered_mask.getvalue()).decode('utf-8')
 
-        enhancer_contrast = ImageEnhance.Contrast(mouth_area)
-        mouth_area = enhancer_contrast.enhance(cfg['contrast'])
+        # Formata a imagem original e a máscara para o padrão Data URI que o Replicate aceita
+        image_uri = f"data:image/jpeg;base64,{original_processed_b64}"
+        mask_uri = f"data:image/jpeg;base64,{mask_b64}"
 
-        enhancer_color = ImageEnhance.Color(mouth_area)
-        mouth_area = enhancer_color.enhance(cfg['color_enhence'])
+        print("🚀 [REPLICATE] Enviando requisição para a IA generativa...")
 
-        processed_img.paste(mouth_area, (box_x1, box_y1))
+        # 3. Chamada Oficial da API do Replicate (Stable Diffusion Inpainting)
+        # Utiliza o modelo padrão robusto de inpainting da Stability AI
+        output = replicate.run(
+            "stability-ai/stable-diffusion-inpainting:95b7223104132402a9ae91cc6772ed2bc6ef76e4315039304a008e3328e75292",
+            input={
+                "image": image_uri,
+                "mask": mask_uri,
+                "prompt": f"Perfect dental alignment, natural teeth shape, aesthetic veneer restoration, bright shade {selected_color.upper()}, professional dentistry outcome, photorealistic",
+                "negative_prompt": "deformed teeth, ugly, blurry, bad anatomy, distorted mouth, extra teeth",
+                "num_inference_steps": 25,
+                "guidance_scale": 7.5
+            }
+        )
 
-        buffered = io.BytesIO()
-        processed_img.save(buffered, format="JPEG", quality=90)
-        processed_b64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
+        print(f"📥 [REPLICATE] Resposta recebida da nuvem: {output}")
 
-        # Desconta o crédito após o sucesso
+        # O Replicate retorna uma URL (ou lista de URLs) com a imagem gerada
+        import urllib.request
+        image_url = output[0] if isinstance(output, list) else output
+
+        # Baixa a imagem gerada pelo Replicate
+        with urllib.request.urlopen(image_url) as url_response:
+            ai_image_bytes = url_response.read()
+
+        ai_image = Image.open(io.BytesIO(ai_image_bytes)).convert("RGB")
+
+        # Salva em buffer para enviar em Base64 para o Flutter
+        buffered_ai = io.BytesIO()
+        ai_image.save(buffered_ai, format="JPEG", quality=90)
+        processed_b64 = base64.b64encode(buffered_ai.getvalue()).decode('utf-8')
+
+        # 4. Desconta o crédito do usuário (ou convidado) após o sucesso completo
         if is_convidado:
             cur.execute("UPDATE dispositivos SET creditos = creditos - 1 WHERE device_id = %s RETURNING creditos;", (device_id,))
             novo_saldo = cur.fetchone()[0]
@@ -292,7 +320,7 @@ def process_smile():
         conn.close()
 
         print("=" * 60)
-        print("📤 [PYTHON] Processamento concluído com sucesso e crédito descontado!")
+        print("📤 [PYTHON REPLICATE] Processamento completo com IA e crédito descontado!")
         print("=" * 60)
 
         return jsonify({
@@ -305,7 +333,7 @@ def process_smile():
     except Exception as e:
         if 'cur' in locals() and cur: cur.close()
         if 'conn' in locals() and conn: conn.close()
-        print(f"❌ Erro crítico: {str(e)}")
+        print(f"❌ Erro crítico no Replicate: {str(e)}")
         traceback.print_exc()
         return jsonify({"success": False, "error": str(e)}), 500
 

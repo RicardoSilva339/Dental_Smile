@@ -6,3 +6,4 @@ gunicorn
 huggingface-hub
 psycopg2-binary
 numpy
+replicate
