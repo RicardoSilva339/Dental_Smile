@@ -242,7 +242,7 @@ def process_smile():
         orig_image = ImageOps.exif_transpose(orig_image) or orig_image
 
         print("=" * 60)
-        print(f"📥 [PYTHON REST] Recebido | Dimensões: {orig_image.width}x{orig_image.height} | Cor: {selected_color.upper()}")
+        print(f"📥 [PYTHON REST CUSTOM] Recebido | Dimensões: {orig_image.width}x{orig_image.height} | Cor: {selected_color.upper()}")
         print("=" * 60)
 
         rgb_image = orig_image.convert("RGB")
@@ -271,7 +271,7 @@ def process_smile():
         image_uri = f"data:image/jpeg;base64,{original_processed_b64}"
         mask_uri = f"data:image/jpeg;base64,{mask_b64}"
 
-        print("🚀 [REPLICATE REST] Enviando requisição HTTP para a API do Replicate...")
+        print("🚀 [REPLICATE REST CUSTOM] Enviando requisição para o modelo customizado smile-correct...")
 
         replicate_token = os.environ.get("REPLICATE_API_TOKEN")
         headers = {
@@ -279,13 +279,15 @@ def process_smile():
             "Content-Type": "application/json"
         }
 
+        # Payload utilizando o seu modelo exato do Colab com o LoRA e prompts calibrados
         payload = {
-            "version": "95b7223104132402a9ae91cc6772ed2bc6ef76e4315039304a008e3328e75292",
+            "version": "4956c634b9aa976129f13166c713f8cf38bd337cd58c77925e8cd71d935d5696",
             "input": {
                 "image": image_uri,
                 "mask": mask_uri,
-                "prompt": f"Perfect dental alignment, natural teeth shape, aesthetic veneer restoration, bright shade {selected_color.upper()}, professional dentistry outcome, photorealistic",
-                "negative_prompt": "deformed teeth, ugly, blurry, bad anatomy, distorted mouth, extra teeth",
+                "prompt": f"photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1>(Beautiful natural teeth, aligned bite teeth), aligned white teeth, human like teeth, (no teeth gap), celebrity-like teeth, healthy teeth with a perfect smile, shade {selected_color.upper()}, not big incisor, good proportion teeth, good proportion smile,",
+                "negative_prompt": "(deformed teeth, semi-realistic, cgi, 3d, render, sketch, cartoon, drawing, anime), (deformed, distorted, abnormal teeth:1.3, disfigured:1.3, large teeth:2), poorly drawn, Fixer, bad anatomy, rabbit teeth, wrong anatomy, missing teeth, disconnected teeth, unnatural mouth, bunny teeth, big incisor teeth, disproportionate front teeth, bad smile, reflection, crooked teeth, distorted teeth, cropped, out of frame, worst quality, low quality, jpeg artifacts, ugly, morbid, disfigured, gross proportions, too many teeth, lipstick, lip gloss, too less teeth, unnatural size teeth, poorly drawn mouth, poorly drawn teeth",
+                "num_outputs": 1,
                 "num_inference_steps": 25,
                 "guidance_scale": 7.5
             }
@@ -319,7 +321,7 @@ def process_smile():
         if not image_url:
             raise Exception("Tempo limite excedido aguardando o Replicate processar a imagem.")
 
-        print(f"📥 [REPLICATE] Imagem gerada com sucesso: {image_url}")
+        print(f"📥 [REPLICATE] Imagem gerada com sucesso pelo smile-correct: {image_url}")
 
         with urllib.request.urlopen(image_url) as url_response:
             ai_image_bytes = url_response.read()
@@ -342,7 +344,7 @@ def process_smile():
         conn.close()
 
         print("=" * 60)
-        print("📤 [PYTHON REST] Processamento completo com IA e crédito descontado!")
+        print("📤 [PYTHON REST CUSTOM] Processamento completo com IA customizada e crédito descontado!")
         print("=" * 60)
 
         return jsonify({
@@ -355,7 +357,7 @@ def process_smile():
     except Exception as e:
         if 'cur' in locals() and cur: cur.close()
         if 'conn' in locals() and conn: conn.close()
-        print(f"❌ Erro crítico no Replicate REST: {str(e)}")
+        print(f"❌ Erro crítico no Replicate REST Custom: {str(e)}")
         traceback.print_exc()
         return jsonify({"success": False, "error": str(e)}), 500
 
