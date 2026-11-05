@@ -1,13 +1,14 @@
 import os
 import io
 import base64
+import time
+import urllib.request
 import psycopg2
 import traceback
-import replicate
+import requests
 import numpy as np
 from flask import Flask, request, jsonify
 from PIL import Image, ImageOps, ImageEnhance, ImageDraw
-import urllib.request
 
 app = Flask(__name__)
 
@@ -241,7 +242,7 @@ def process_smile():
         orig_image = ImageOps.exif_transpose(orig_image) or orig_image
 
         print("=" * 60)
-        print(f"📥 [PYTHON REPLICATE] Recebido | Dimensões: {orig_image.width}x{orig_image.height} | Cor: {selected_color.upper()} | Formato: {selected_shape}")
+        print(f"📥 [PYTHON REST] Recebido | Dimensões: {orig_image.width}x{orig_image.height} | Cor: {selected_color.upper()}")
         print("=" * 60)
 
         rgb_image = orig_image.convert("RGB")
@@ -270,12 +271,17 @@ def process_smile():
         image_uri = f"data:image/jpeg;base64,{original_processed_b64}"
         mask_uri = f"data:image/jpeg;base64,{mask_b64}"
 
-        print("🚀 [REPLICATE] Enviando requisição para a IA generativa...")
+        print("🚀 [REPLICATE REST] Enviando requisição HTTP para a API do Replicate...")
 
-        # Chamada limpa do Replicate sem hash engessado
-        output = replicate.run(
-            "stability-ai/stable-diffusion-inpainting",
-            input={
+        replicate_token = os.environ.get("REPLICATE_API_TOKEN")
+        headers = {
+            "Authorization": f"Bearer {replicate_token}",
+            "Content-Type": "application/json"
+        }
+
+        payload = {
+            "version": "95b7223104132402a9ae91cc6772ed2bc6ef76e4315039304a008e3328e75292",
+            "input": {
                 "image": image_uri,
                 "mask": mask_uri,
                 "prompt": f"Perfect dental alignment, natural teeth shape, aesthetic veneer restoration, bright shade {selected_color.upper()}, professional dentistry outcome, photorealistic",
@@ -283,11 +289,37 @@ def process_smile():
                 "num_inference_steps": 25,
                 "guidance_scale": 7.5
             }
-        )
+        }
 
-        print(f"📥 [REPLICATE] Resposta recebida da nuvem: {output}")
+        response = requests.post("https://api.replicate.com/v1/predictions", json=payload, headers=headers, timeout=60)
 
-        image_url = output[0] if isinstance(output, list) else output
+        if response.status_code != 201:
+            raise Exception(f"Erro na API do Replicate ({response.status_code}): {response.text}")
+
+        pred_data = response.json()
+        get_url = pred_data.get("urls", {}).get("get")
+
+        if not get_url:
+            raise Exception("URL de rastreio do Replicate não retornada.")
+
+        image_url = None
+        for _ in range(30):
+            time.sleep(2)
+            poll_resp = requests.get(get_url, headers=headers)
+            poll_data = poll_resp.json()
+            status = poll_data.get("status")
+
+            if status == "succeeded":
+                output = poll_data.get("output")
+                image_url = output[0] if isinstance(output, list) else output
+                break
+            elif status == "failed":
+                raise Exception(f"Processamento da IA falhou: {poll_data.get('error')}")
+
+        if not image_url:
+            raise Exception("Tempo limite excedido aguardando o Replicate processar a imagem.")
+
+        print(f"📥 [REPLICATE] Imagem gerada com sucesso: {image_url}")
 
         with urllib.request.urlopen(image_url) as url_response:
             ai_image_bytes = url_response.read()
@@ -310,7 +342,7 @@ def process_smile():
         conn.close()
 
         print("=" * 60)
-        print("📤 [PYTHON REPLICATE] Processamento completo com IA e crédito descontado!")
+        print("📤 [PYTHON REST] Processamento completo com IA e crédito descontado!")
         print("=" * 60)
 
         return jsonify({
@@ -323,7 +355,7 @@ def process_smile():
     except Exception as e:
         if 'cur' in locals() and cur: cur.close()
         if 'conn' in locals() and conn: conn.close()
-        print(f"❌ Erro crítico no Replicate: {str(e)}")
+        print(f"❌ Erro crítico no Replicate REST: {str(e)}")
         traceback.print_exc()
         return jsonify({"success": False, "error": str(e)}), 500
 
