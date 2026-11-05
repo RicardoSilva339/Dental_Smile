@@ -6,12 +6,12 @@ import traceback
 import replicate
 import numpy as np
 from flask import Flask, request, jsonify
-from PIL import Image, ImageOps, ImageEnhance
+from PIL import Image, ImageOps, ImageEnhance, ImageDraw
+import urllib.request
 
 app = Flask(__name__)
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
-# Certifique-se de configurar a variável de ambiente REPLICATE_API_TOKEN no seu painel do Render!
 
 def get_db_connection():
     return psycopg2.connect(DATABASE_URL, sslmode='require')
@@ -247,15 +247,13 @@ def process_smile():
         rgb_image = orig_image.convert("RGB")
         orig_w, orig_h = rgb_image.size
 
-        # 1. Salva a imagem original limpa para o comparador do app
+        # Salva a original limpa para o comparador
         buffered_orig = io.BytesIO()
         rgb_image.save(buffered_orig, format="JPEG", quality=90)
         original_processed_b64 = base64.b64encode(buffered_orig.getvalue()).decode('utf-8')
 
-        # 2. Criação da Máscara (Inpainting Mask) baseada na região da boca
-        # Fundo preto (0) e a área da boca branca (255) para a IA saber onde atuar
+        # Criação da máscara da boca
         mask_img = Image.new("L", (orig_w, orig_h), 0)
-        from PIL import ImageDraw
         draw = ImageDraw.Draw(mask_img)
 
         box_x1 = int(orig_w * 0.32)
@@ -263,23 +261,20 @@ def process_smile():
         box_x2 = int(orig_w * 0.68)
         box_y2 = int(orig_h * 0.85)
 
-        # Desenha a área de inpainting na máscara
         draw.rectangle([box_x1, box_y1, box_x2, box_y2], fill=255)
 
         buffered_mask = io.BytesIO()
         mask_img.save(buffered_mask, format="JPEG")
         mask_b64 = base64.b64encode(buffered_mask.getvalue()).decode('utf-8')
 
-        # Formata a imagem original e a máscara para o padrão Data URI que o Replicate aceita
         image_uri = f"data:image/jpeg;base64,{original_processed_b64}"
         mask_uri = f"data:image/jpeg;base64,{mask_b64}"
 
         print("🚀 [REPLICATE] Enviando requisição para a IA generativa...")
 
-        # 3. Chamada Oficial da API do Replicate (Stable Diffusion Inpainting)
-        # Utiliza o modelo padrão robusto de inpainting da Stability AI
+        # Chamada limpa do Replicate sem hash engessado
         output = replicate.run(
-            "stability-ai/stable-diffusion-inpainting:95b7223104132402a9ae91cc6772ed2bc6ef76e4315039304a008e3328e75292",
+            "stability-ai/stable-diffusion-inpainting",
             input={
                 "image": image_uri,
                 "mask": mask_uri,
@@ -292,22 +287,17 @@ def process_smile():
 
         print(f"📥 [REPLICATE] Resposta recebida da nuvem: {output}")
 
-        # O Replicate retorna uma URL (ou lista de URLs) com a imagem gerada
-        import urllib.request
         image_url = output[0] if isinstance(output, list) else output
 
-        # Baixa a imagem gerada pelo Replicate
         with urllib.request.urlopen(image_url) as url_response:
             ai_image_bytes = url_response.read()
 
         ai_image = Image.open(io.BytesIO(ai_image_bytes)).convert("RGB")
 
-        # Salva em buffer para enviar em Base64 para o Flutter
         buffered_ai = io.BytesIO()
         ai_image.save(buffered_ai, format="JPEG", quality=90)
         processed_b64 = base64.b64encode(buffered_ai.getvalue()).decode('utf-8')
 
-        # 4. Desconta o crédito do usuário (ou convidado) após o sucesso completo
         if is_convidado:
             cur.execute("UPDATE dispositivos SET creditos = creditos - 1 WHERE device_id = %s RETURNING creditos;", (device_id,))
             novo_saldo = cur.fetchone()[0]
