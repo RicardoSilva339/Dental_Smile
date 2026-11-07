@@ -254,10 +254,12 @@ def process_smile():
 
         img_512 = rgb_image.resize((512, 512), Image.Resampling.LANCZOS)
 
-        # 🛠️ MÁSCARA DA IA RESTRITA À ABERTURA INTERNA DA BOCA
+        # 🛠️ POSICIONAMENTO DA MÁSCARA CORRIGIDO PARA A ABERTURA REAL DOS DENTES
         mask_512 = Image.new("L", (512, 512), 0)
         draw_512 = ImageDraw.Draw(mask_512)
-        draw_512.ellipse([int(512 * 0.36), int(512 * 0.64), int(512 * 0.64), int(512 * 0.79)], fill=255)
+
+        # y1 ajustado para 0.68 (evita o lábio superior/filtro) e y2 em 0.84
+        draw_512.ellipse([int(512 * 0.30), int(512 * 0.68), int(512 * 0.70), int(512 * 0.84)], fill=255)
 
         buffered_img_512 = io.BytesIO()
         img_512.save(buffered_img_512, format="JPEG", quality=90)
@@ -267,7 +269,7 @@ def process_smile():
         mask_512.save(buffered_mask_512, format="JPEG")
         mask_uri = f"data:image/jpeg;base64,{base64.b64encode(buffered_mask_512.getvalue()).decode('utf-8')}"
 
-        print("🚀 [REPLICATE REST] Disparando IA com profundidade anatômica ajustada...")
+        print("🚀 [REPLICATE REST] Disparando IA com máscara alinhada nos dentes...")
 
         replicate_token = os.environ.get("REPLICATE_API_TOKEN")
         headers = {
@@ -275,16 +277,15 @@ def process_smile():
             "Content-Type": "application/json"
         }
 
-        # Prompts calibrados para dentes recuados e naturais
         prompt_text = (
             f"photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1>(Beautiful natural teeth, aligned bite teeth inside mouth cavity), "
             f"natural dental arch, realistic mouth depth, aligned white teeth, human like teeth, proportional lips, healthy teeth with a perfect smile, shade {selected_color.upper()}, good proportion smile,"
         )
         negative_prompt_text = (
             "(deformed teeth, semi-realistic, cgi, 3d, render, sketch, cartoon, drawing, anime), "
-            "(protruding teeth:2.0, buck teeth:2.0, overbite:2.0, teeth sticking out:2.0, teeth outside mouth:2.0, unnatural protrusion:2.0), "
-            "(giant mouth:2.0, wide mouth:2.0, oversized smile:2.0, big mouth:2.0, stretched mouth:1.5), "
-            "bright red lipstick, unnatural lip color, deformed, distorted, abnormal teeth, disfigured, large teeth, poorly drawn, Fixer, bad anatomy, rabbit teeth, wrong anatomy, missing teeth, disconnected teeth, unnatural mouth, bunny teeth, big incisor teeth, disproportionate front teeth, bad smile, reflection, crooked teeth, distorted teeth, cropped, out of frame, worst quality, low quality, jpeg artifacts, ugly, morbid, disfigured, gross proportions, too many teeth, too less teeth, unnatural size teeth, poorly drawn mouth, poorly drawn teeth"
+            "(teeth on upper lip:2.0, teeth outside mouth:2.0, floating teeth:2.0, protruding teeth:2.0, buck teeth:2.0), "
+            "(giant mouth:2.0, wide mouth:2.0, oversized smile:2.0, big mouth:2.0), "
+            "deformed, distorted, abnormal teeth, disfigured, large teeth, poorly drawn, Fixer, bad anatomy, rabbit teeth, wrong anatomy, missing teeth, disconnected teeth, unnatural mouth, bunny teeth, big incisor teeth, disproportionate front teeth, bad smile, reflection, crooked teeth, distorted teeth, cropped, out of frame, worst quality, low quality, jpeg artifacts, ugly, morbid, disfigured, gross proportions, too many teeth, too less teeth, unnatural size teeth, poorly drawn mouth, poorly drawn teeth"
         )
 
         payload = {
@@ -336,18 +337,10 @@ def process_smile():
         ai_image_raw = Image.open(io.BytesIO(ai_image_bytes)).convert("RGB")
         ai_image_resized = ai_image_raw.resize((orig_w, orig_h), Image.Resampling.LANCZOS)
 
-        # 🛠️ FUSÃO RESTRITA APENAS ÀS ARCADAS DENTÁRIAS (Mantendo lábios e pele originais)
-        mask_blend = Image.new("L", (orig_w, orig_h), 0)
-        draw_blend = ImageDraw.Draw(mask_blend)
-
-        b_x1 = int(orig_w * 0.36)
-        b_y1 = int(orig_h * 0.64)
-        b_x2 = int(orig_w * 0.64)
-        b_y2 = int(orig_h * 0.79)
-        draw_blend.ellipse([b_x1, b_y1, b_x2, b_y2], fill=255)
-
-        mask_blur_radius = max(2, int(orig_w * 0.015))
-        mask_blend_soft = mask_blend.filter(ImageFilter.GaussianBlur(radius=mask_blur_radius))
+        # 🛠️ FUSÃO USANDO A MESMA MÁSCARA ALINHADA E SUAVIZADA
+        mask_blend_resized = mask_512.resize((orig_w, orig_h), Image.Resampling.LANCZOS)
+        mask_blur_radius = max(3, int(orig_w * 0.02))
+        mask_blend_soft = mask_blend_resized.filter(ImageFilter.GaussianBlur(radius=mask_blur_radius))
 
         final_image = Image.composite(ai_image_resized, rgb_image, mask_blend_soft)
 
@@ -367,7 +360,7 @@ def process_smile():
         conn.close()
 
         print("=" * 60)
-        print("📤 [PYTHON REST] Processamento anatômico concluído com sucesso!")
+        print("📤 [PYTHON REST] Fusão alinhada com sucesso!")
         print("=" * 60)
 
         return jsonify({
