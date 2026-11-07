@@ -248,17 +248,18 @@ def process_smile():
         print(f"📥 [PYTHON REST] Recebido | Dimensões: {orig_w}x{orig_h} | Cor: {selected_color.upper()}")
         print("=" * 60)
 
-        # 1. Salvar a imagem original exata para o comparador
+        # 1. Imagem original pura para exibição base
         buffered_orig = io.BytesIO()
         rgb_image.save(buffered_orig, format="JPEG", quality=90)
         original_processed_b64 = base64.b64encode(buffered_orig.getvalue()).decode('utf-8')
 
-        # 2. Preparar imagem em 512x512 para a API do Replicate
+        # 2. Imagem 512x512 para o Replicate
         img_512 = rgb_image.resize((512, 512), Image.Resampling.LANCZOS)
 
+        # 🛠️ MÁSCARA DA IA COMPACTA E PROPORCIONAL (Focada apenas nos dentes/lábios)
         mask_512 = Image.new("L", (512, 512), 0)
         draw_512 = ImageDraw.Draw(mask_512)
-        draw_512.rectangle([int(512 * 0.30), int(512 * 0.58), int(512 * 0.70), int(512 * 0.86)], fill=255)
+        draw_512.ellipse([int(512 * 0.35), int(512 * 0.63), int(512 * 0.65), int(512 * 0.82)], fill=255)
 
         buffered_img_512 = io.BytesIO()
         img_512.save(buffered_img_512, format="JPEG", quality=90)
@@ -268,7 +269,7 @@ def process_smile():
         mask_512.save(buffered_mask_512, format="JPEG")
         mask_uri = f"data:image/jpeg;base64,{base64.b64encode(buffered_mask_512.getvalue()).decode('utf-8')}"
 
-        print("🚀 [REPLICATE REST] Disparando IA para gerar os novos dentes...")
+        print("🚀 [REPLICATE REST] Disparando IA para gerar novos dentes proporcionais...")
 
         replicate_token = os.environ.get("REPLICATE_API_TOKEN")
         headers = {
@@ -276,13 +277,24 @@ def process_smile():
             "Content-Type": "application/json"
         }
 
+        # Prompt calibrado com restrições rígidas para boca gigante
+        prompt_text = (
+            f"photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1>(Beautiful natural teeth, aligned bite teeth), "
+            f"aligned white teeth, human like teeth, natural size mouth, proportional lips, celebrity-like teeth, healthy teeth with a perfect smile, shade {selected_color.upper()}, not big incisor, good proportion teeth, good proportion smile,"
+        )
+        negative_prompt_text = (
+            "(deformed teeth, semi-realistic, cgi, 3d, render, sketch, cartoon, drawing, anime), "
+            "(giant mouth:2.0, wide mouth:2.0, oversized smile:2.0, big mouth:2.0, stretched mouth:1.5), "
+            "(deformed, distorted, abnormal teeth:1.3, disfigured:1.3, large teeth:2), poorly drawn, Fixer, bad anatomy, rabbit teeth, wrong anatomy, missing teeth, disconnected teeth, unnatural mouth, bunny teeth, big incisor teeth, disproportionate front teeth, bad smile, reflection, crooked teeth, distorted teeth, cropped, out of frame, worst quality, low quality, jpeg artifacts, ugly, morbid, disfigured, gross proportions, too many teeth, lipstick, lip gloss, too less teeth, unnatural size teeth, poorly drawn mouth, poorly drawn teeth"
+        )
+
         payload = {
             "version": "4956c634b9aa976129f13166c713f8cf38bd337cd58c77925e8cd71d935d5696",
             "input": {
                 "image": image_uri,
                 "mask": mask_uri,
-                "prompt": f"photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1>(Beautiful natural teeth, aligned bite teeth), aligned white teeth, human like teeth, (no teeth gap), celebrity-like teeth, healthy teeth with a perfect smile, shade {selected_color.upper()}, not big incisor, good proportion teeth, good proportion smile,",
-                "negative_prompt": "(deformed teeth, semi-realistic, cgi, 3d, render, sketch, cartoon, drawing, anime), (deformed, distorted, abnormal teeth:1.3, disfigured:1.3, large teeth:2), poorly drawn, Fixer, bad anatomy, rabbit teeth, wrong anatomy, missing teeth, disconnected teeth, unnatural mouth, bunny teeth, big incisor teeth, disproportionate front teeth, bad smile, reflection, crooked teeth, distorted teeth, cropped, out of frame, worst quality, low quality, jpeg artifacts, ugly, morbid, disfigured, gross proportions, too many teeth, lipstick, lip gloss, too less teeth, unnatural size teeth, poorly drawn mouth, poorly drawn teeth",
+                "prompt": prompt_text,
+                "negative_prompt": negative_prompt_text,
                 "num_outputs": 1,
                 "num_inference_steps": 25,
                 "guidance_scale": 7.5
@@ -322,25 +334,25 @@ def process_smile():
         with urllib.request.urlopen(image_url) as url_response:
             ai_image_bytes = url_response.read()
 
-        # 3. 🎯 FUSÃO DE IMAGENS (SOLUÇÃO DEFINITIVA ANTI-ZOOM)
+        # 3. 🎯 FUSÃO PROPORCIONAL E DELICADA
         ai_image_raw = Image.open(io.BytesIO(ai_image_bytes)).convert("RGB")
         ai_image_resized = ai_image_raw.resize((orig_w, orig_h), Image.Resampling.LANCZOS)
 
-        # Criar máscara oval com transição suave (Gaussian Blur) na região da boca
+        # Máscara de fusão cirúrgica restrita apenas ao espaço dos lábios
         mask_blend = Image.new("L", (orig_w, orig_h), 0)
         draw_blend = ImageDraw.Draw(mask_blend)
 
-        b_x1 = int(orig_w * 0.25)
-        b_y1 = int(orig_h * 0.55)
-        b_x2 = int(orig_w * 0.75)
-        b_y2 = int(orig_h * 0.88)
+        b_x1 = int(orig_w * 0.35)
+        b_y1 = int(orig_h * 0.63)
+        b_x2 = int(orig_w * 0.65)
+        b_y2 = int(orig_h * 0.83)
         draw_blend.ellipse([b_x1, b_y1, b_x2, b_y2], fill=255)
 
-        # Suaviza as bordas da fusão para não deixar marcas
-        mask_blur_radius = max(5, int(orig_w * 0.04))
+        # Transição sutil sem espalhar para as bochechas
+        mask_blur_radius = max(3, int(orig_w * 0.02))
         mask_blend_soft = mask_blend.filter(ImageFilter.GaussianBlur(radius=mask_blur_radius))
 
-        # Funde a boca gerada pela IA na foto original mantendo 100% da escala, óculos e rosto intactos!
+        # Aplica a fusão perfeita
         final_image = Image.composite(ai_image_resized, rgb_image, mask_blend_soft)
 
         buffered_ai = io.BytesIO()
@@ -359,7 +371,7 @@ def process_smile():
         conn.close()
 
         print("=" * 60)
-        print("📤 [PYTHON REST] Fusão concluída com alinhamento 1:1 perfeito e zero zoom!")
+        print("📤 [PYTHON REST] Fusão concluída com proporções naturais e alinhamento 1:1!")
         print("=" * 60)
 
         return jsonify({
