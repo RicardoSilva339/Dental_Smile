@@ -248,12 +248,12 @@ def process_smile():
         rgb_image = orig_image.convert("RGB")
         orig_w, orig_h = rgb_image.size
 
-        # Salva a original limpa para o comparador
+        # 1. Salva a original limpa para o comparador
         buffered_orig = io.BytesIO()
         rgb_image.save(buffered_orig, format="JPEG", quality=90)
         original_processed_b64 = base64.b64encode(buffered_orig.getvalue()).decode('utf-8')
 
-        # Criação da máscara da boca
+        # 2. Criação da máscara da boca
         mask_img = Image.new("L", (orig_w, orig_h), 0)
         draw = ImageDraw.Draw(mask_img)
 
@@ -264,14 +264,30 @@ def process_smile():
 
         draw.rectangle([box_x1, box_y1, box_x2, box_y2], fill=255)
 
-        buffered_mask = io.BytesIO()
-        mask_img.save(buffered_mask, format="JPEG")
-        mask_b64 = base64.b64encode(buffered_mask.getvalue()).decode('utf-8')
+        # 3. 🛡️ PROTEÇÃO CONTRA ZOOM: Transforma a imagem e máscara em QUADRADO com padding
+        max_dim = max(orig_w, orig_h)
+        sq_image = Image.new("RGB", (max_dim, max_dim), (0, 0, 0))
+        sq_mask = Image.new("L", (max_dim, max_dim), 0)
 
-        image_uri = f"data:image/jpeg;base64,{original_processed_b64}"
-        mask_uri = f"data:image/jpeg;base64,{mask_b64}"
+        offset_x = (max_dim - orig_w) // 2
+        offset_y = (max_dim - orig_h) // 2
 
-        print("🚀 [REPLICATE REST CUSTOM] Enviando requisição para o modelo customizado smile-correct...")
+        sq_image.paste(rgb_image, (offset_x, offset_y))
+        sq_mask.paste(mask_img, (offset_x, offset_y))
+
+        # Redimensiona para 512x512 padrão do Replicate sem cortar nada do enquadramento
+        sq_image_512 = sq_image.resize((512, 512), Image.Resampling.LANCZOS)
+        sq_mask_512 = sq_mask.resize((512, 512), Image.Resampling.LANCZOS)
+
+        buffered_img_sq = io.BytesIO()
+        sq_image_512.save(buffered_img_sq, format="JPEG", quality=90)
+        image_uri = f"data:image/jpeg;base64,{base64.b64encode(buffered_img_sq.getvalue()).decode('utf-8')}"
+
+        buffered_mask_sq = io.BytesIO()
+        sq_mask_512.save(buffered_mask_sq, format="JPEG")
+        mask_uri = f"data:image/jpeg;base64,{base64.b64encode(buffered_mask_sq.getvalue()).decode('utf-8')}"
+
+        print("🚀 [REPLICATE REST CUSTOM] Enviando requisição quadrada anti-zoom para o Replicate...")
 
         replicate_token = os.environ.get("REPLICATE_API_TOKEN")
         headers = {
@@ -292,7 +308,6 @@ def process_smile():
             }
         }
 
-        # Timeout da requisição HTTP aumentado para 120s
         response = requests.post("https://api.replicate.com/v1/predictions", json=payload, headers=headers, timeout=120)
 
         if response.status_code != 201:
@@ -305,7 +320,6 @@ def process_smile():
             raise Exception("URL de rastreio do Replicate não retornada.")
 
         image_url = None
-        # 🛠️ Aumentado para 90 tentativas de 2s (3 minutos de tolerância total)
         for _ in range(90):
             time.sleep(2)
             poll_resp = requests.get(get_url, headers=headers, timeout=30)
@@ -327,14 +341,14 @@ def process_smile():
         with urllib.request.urlopen(image_url) as url_response:
             ai_image_bytes = url_response.read()
 
-        ai_image = Image.open(io.BytesIO(ai_image_bytes)).convert("RGB")
+        ai_sq_512 = Image.open(io.BytesIO(ai_image_bytes)).convert("RGB")
 
-        # 🛠️ Força o redimensionamento exato para bater com a largura e altura originais
-        if ai_image.size != (orig_w, orig_h):
-            ai_image = ai_image.resize((orig_w, orig_h), Image.Resampling.LANCZOS)
+        # 4. 🎯 DESFAZ O PADDING: Restaura a imagem gerada para o tamanho exato da foto original (orig_w, orig_h)
+        ai_sq_max = ai_sq_512.resize((max_dim, max_dim), Image.Resampling.LANCZOS)
+        ai_final = ai_sq_max.crop((offset_x, offset_y, offset_x + orig_w, offset_y + orig_h))
 
         buffered_ai = io.BytesIO()
-        ai_image.save(buffered_ai, format="JPEG", quality=90)
+        ai_final.save(buffered_ai, format="JPEG", quality=90)
         processed_b64 = base64.b64encode(buffered_ai.getvalue()).decode('utf-8')
 
         if is_convidado:
@@ -349,7 +363,7 @@ def process_smile():
         conn.close()
 
         print("=" * 60)
-        print("📤 [PYTHON REST CUSTOM] Processamento completo com IA customizada e crédito descontado!")
+        print("📤 [PYTHON REST CUSTOM] Processamento anti-zoom concluído com alinhamento 1:1 perfeito!")
         print("=" * 60)
 
         return jsonify({
