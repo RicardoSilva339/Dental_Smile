@@ -279,7 +279,6 @@ def process_smile():
             "Content-Type": "application/json"
         }
 
-        # Payload utilizando o seu modelo exato do Colab com o LoRA e prompts calibrados
         payload = {
             "version": "4956c634b9aa976129f13166c713f8cf38bd337cd58c77925e8cd71d935d5696",
             "input": {
@@ -327,6 +326,10 @@ def process_smile():
             ai_image_bytes = url_response.read()
 
         ai_image = Image.open(io.BytesIO(ai_image_bytes)).convert("RGB")
+
+        # 🛠️ CORREÇÃO DE ZOOM APLICADA: Força o redimensionamento exato para bater com a largura e altura originais
+        if ai_image.size != (orig_w, orig_h):
+            ai_image = ai_image.resize((orig_w, orig_h), Image.Resampling.LANCZOS)
 
         buffered_ai = io.BytesIO()
         ai_image.save(buffered_ai, format="JPEG", quality=90)

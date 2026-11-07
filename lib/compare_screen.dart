@@ -355,13 +355,13 @@ class _CompareScreenState extends State<CompareScreen> {
                                   if (processedFile != null && processedFile.existsSync())
                                     Image.file(
                                       processedFile,
-                                      fit: BoxFit.cover,
+                                      fit: BoxFit.fill, // 🛠️ Ajustado para fill para sincronizar com a original
                                       alignment: Alignment.center,
                                     )
                                   else
                                     const Center(child: Text('Erro ao carregar imagem processada', style: TextStyle(color: Colors.white))),
 
-                                  // 2️⃣ CAMADA SOBREPOSTA (ESQUERDA): Imagem Original Padronizada (512x512)
+                                  // 2️⃣ CAMADA SOBREPOSTA (ESQUERDA): Imagem Original Padronizada
                                   if (originalFile != null && originalFile.existsSync())
                                     Align(
                                       alignment: Alignment.centerLeft,
@@ -379,7 +379,7 @@ class _CompareScreenState extends State<CompareScreen> {
                                               originalFile,
                                               width: containerWidth,
                                               height: containerHeight,
-                                              fit: BoxFit.cover,
+                                              fit: BoxFit.fill, // 🛠️ Ajustado para fill para sincronizar com a IA
                                               alignment: Alignment.center,
                                             ),
                                           ),
@@ -496,7 +496,6 @@ class _CompareScreenState extends State<CompareScreen> {
                         ),
                       ),
                       onPressed: () {
-                        // 🛠️ Botão Ajustar volta para a tela de ajuste enviando a imagem padronizada atual
                         if (_originalPath != null && _originalPath!.isNotEmpty) {
                           Navigator.push(
                             context,

@@ -133,7 +133,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
         height: alturaCorte,
       );
 
-      // 2. Padroniza para uma resolução limpa mantendo a proporção correta
+      // 2. Padroniza para uma resolução limpa mantendo a proporção correta (Com o '*' corrigido)
       img.Image imagemFinal = img.copyResize(
         imagemCropped,
         width: 512,
@@ -302,8 +302,10 @@ class OvalOverlayPainter extends CustomPainter {
 
     final rectTotal = Rect.fromLTWH(0, 0, size.width, size.height);
 
+    // 🛠️ Com os operadores '*' corrigidos
     final double ovalWidth = size.width * 0.72;
     final double ovalHeight = size.height * 0.48;
+
     final Rect ovalRect = Rect.fromCenter(
       center: Offset(size.width / 2, (size.height / 2) - 20),
       width: ovalWidth,
