@@ -292,7 +292,8 @@ def process_smile():
             }
         }
 
-        response = requests.post("https://api.replicate.com/v1/predictions", json=payload, headers=headers, timeout=60)
+        # Timeout da requisição HTTP aumentado para 120s
+        response = requests.post("https://api.replicate.com/v1/predictions", json=payload, headers=headers, timeout=120)
 
         if response.status_code != 201:
             raise Exception(f"Erro na API do Replicate ({response.status_code}): {response.text}")
@@ -304,9 +305,10 @@ def process_smile():
             raise Exception("URL de rastreio do Replicate não retornada.")
 
         image_url = None
-        for _ in range(30):
+        # 🛠️ Aumentado para 90 tentativas de 2s (3 minutos de tolerância total)
+        for _ in range(90):
             time.sleep(2)
-            poll_resp = requests.get(get_url, headers=headers)
+            poll_resp = requests.get(get_url, headers=headers, timeout=30)
             poll_data = poll_resp.json()
             status = poll_data.get("status")
 
@@ -318,7 +320,7 @@ def process_smile():
                 raise Exception(f"Processamento da IA falhou: {poll_data.get('error')}")
 
         if not image_url:
-            raise Exception("Tempo limite excedido aguardando o Replicate processar a imagem.")
+            raise Exception("Tempo limite de 3 minutos excedido aguardando o Replicate processar a imagem.")
 
         print(f"📥 [REPLICATE] Imagem gerada com sucesso pelo smile-correct: {image_url}")
 
@@ -327,7 +329,7 @@ def process_smile():
 
         ai_image = Image.open(io.BytesIO(ai_image_bytes)).convert("RGB")
 
-        # 🛠️ CORREÇÃO DE ZOOM APLICADA: Força o redimensionamento exato para bater com a largura e altura originais
+        # 🛠️ Força o redimensionamento exato para bater com a largura e altura originais
         if ai_image.size != (orig_w, orig_h):
             ai_image = ai_image.resize((orig_w, orig_h), Image.Resampling.LANCZOS)
 
