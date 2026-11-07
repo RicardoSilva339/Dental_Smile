@@ -8,7 +8,7 @@ import traceback
 import requests
 import numpy as np
 from flask import Flask, request, jsonify
-from PIL import Image, ImageOps, ImageEnhance, ImageDraw
+from PIL import Image, ImageOps, ImageEnhance, ImageDraw, ImageFilter
 
 app = Flask(__name__)
 
@@ -242,38 +242,33 @@ def process_smile():
         orig_image = ImageOps.exif_transpose(orig_image) or orig_image
 
         rgb_image = orig_image.convert("RGB")
-        # 🛠️ Garante dimensão 512x512 nativa perfeita para a IA
-        rgb_image = rgb_image.resize((512, 512), Image.Resampling.LANCZOS)
-        orig_w, orig_h = 512, 512
+        orig_w, orig_h = rgb_image.size
 
         print("=" * 60)
-        print(f"📥 [PYTHON REST] Processando imagem nativa 512x512 | Cor: {selected_color.upper()}")
+        print(f"📥 [PYTHON REST] Recebido | Dimensões: {orig_w}x{orig_h} | Cor: {selected_color.upper()}")
         print("=" * 60)
 
-        # Salva a original limpa 512x512 para o comparador
+        # 1. Salvar a imagem original exata para o comparador
         buffered_orig = io.BytesIO()
         rgb_image.save(buffered_orig, format="JPEG", quality=90)
         original_processed_b64 = base64.b64encode(buffered_orig.getvalue()).decode('utf-8')
 
-        # Criação da máscara da boca (proporcional no quadrado 512x512)
-        mask_img = Image.new("L", (512, 512), 0)
-        draw = ImageDraw.Draw(mask_img)
+        # 2. Preparar imagem em 512x512 para a API do Replicate
+        img_512 = rgb_image.resize((512, 512), Image.Resampling.LANCZOS)
 
-        box_x1 = int(512 * 0.32)
-        box_y1 = int(512 * 0.60)
-        box_x2 = int(512 * 0.68)
-        box_y2 = int(512 * 0.85)
+        mask_512 = Image.new("L", (512, 512), 0)
+        draw_512 = ImageDraw.Draw(mask_512)
+        draw_512.rectangle([int(512 * 0.30), int(512 * 0.58), int(512 * 0.70), int(512 * 0.86)], fill=255)
 
-        draw.rectangle([box_x1, box_y1, box_x2, box_y2], fill=255)
+        buffered_img_512 = io.BytesIO()
+        img_512.save(buffered_img_512, format="JPEG", quality=90)
+        image_uri = f"data:image/jpeg;base64,{base64.b64encode(buffered_img_512.getvalue()).decode('utf-8')}"
 
-        buffered_mask = io.BytesIO()
-        mask_img.save(buffered_mask, format="JPEG")
-        mask_b64 = base64.b64encode(buffered_mask.getvalue()).decode('utf-8')
+        buffered_mask_512 = io.BytesIO()
+        mask_512.save(buffered_mask_512, format="JPEG")
+        mask_uri = f"data:image/jpeg;base64,{base64.b64encode(buffered_mask_512.getvalue()).decode('utf-8')}"
 
-        image_uri = f"data:image/jpeg;base64,{original_processed_b64}"
-        mask_uri = f"data:image/jpeg;base64,{mask_b64}"
-
-        print("🚀 [REPLICATE REST] Enviando imagem nativa 512x512 para o modelo customizado...")
+        print("🚀 [REPLICATE REST] Disparando IA para gerar os novos dentes...")
 
         replicate_token = os.environ.get("REPLICATE_API_TOKEN")
         headers = {
@@ -327,11 +322,29 @@ def process_smile():
         with urllib.request.urlopen(image_url) as url_response:
             ai_image_bytes = url_response.read()
 
-        ai_image = Image.open(io.BytesIO(ai_image_bytes)).convert("RGB")
-        ai_image = ai_image.resize((512, 512), Image.Resampling.LANCZOS)
+        # 3. 🎯 FUSÃO DE IMAGENS (SOLUÇÃO DEFINITIVA ANTI-ZOOM)
+        ai_image_raw = Image.open(io.BytesIO(ai_image_bytes)).convert("RGB")
+        ai_image_resized = ai_image_raw.resize((orig_w, orig_h), Image.Resampling.LANCZOS)
+
+        # Criar máscara oval com transição suave (Gaussian Blur) na região da boca
+        mask_blend = Image.new("L", (orig_w, orig_h), 0)
+        draw_blend = ImageDraw.Draw(mask_blend)
+
+        b_x1 = int(orig_w * 0.25)
+        b_y1 = int(orig_h * 0.55)
+        b_x2 = int(orig_w * 0.75)
+        b_y2 = int(orig_h * 0.88)
+        draw_blend.ellipse([b_x1, b_y1, b_x2, b_y2], fill=255)
+
+        # Suaviza as bordas da fusão para não deixar marcas
+        mask_blur_radius = max(5, int(orig_w * 0.04))
+        mask_blend_soft = mask_blend.filter(ImageFilter.GaussianBlur(radius=mask_blur_radius))
+
+        # Funde a boca gerada pela IA na foto original mantendo 100% da escala, óculos e rosto intactos!
+        final_image = Image.composite(ai_image_resized, rgb_image, mask_blend_soft)
 
         buffered_ai = io.BytesIO()
-        ai_image.save(buffered_ai, format="JPEG", quality=90)
+        final_image.save(buffered_ai, format="JPEG", quality=90)
         processed_b64 = base64.b64encode(buffered_ai.getvalue()).decode('utf-8')
 
         if is_convidado:
@@ -346,7 +359,7 @@ def process_smile():
         conn.close()
 
         print("=" * 60)
-        print("📤 [PYTHON REST] Processamento 512x512 concluído com alinhamento 1:1 perfeito!")
+        print("📤 [PYTHON REST] Fusão concluída com alinhamento 1:1 perfeito e zero zoom!")
         print("=" * 60)
 
         return jsonify({
