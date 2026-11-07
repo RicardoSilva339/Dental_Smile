@@ -98,7 +98,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
     }
   }
 
-  // 🎯 Recorte Proporcional Oval corrigido
+  // 🎯 Recorte Proporcional Oval com Padronização Quadrada 512x512
   Future<File?> _processarRecorteOval(File imagemOriginal) async {
     try {
       final bytes = await imagemOriginal.readAsBytes();
@@ -108,7 +108,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
       int larguraImg = imagemDecodificada.width;
       int alturaImg = imagemDecodificada.height;
 
-      // Proporção baseada exatamente no OvalOverlayPainter
+      // Proporção baseada no OvalOverlayPainter
       double ovalRatioWidth = 0.72;
       double ovalRatioHeight = 0.48;
 
@@ -118,13 +118,12 @@ class _CaptureScreenState extends State<CaptureScreen> {
       int offsetX = (larguraImg - larguraCorte) ~/ 2;
       int offsetY = ((alturaImg - alturaCorte) ~/ 2) - (alturaImg * 0.03).toInt();
 
-      // Validações de segurança para os limites da imagem
       if (offsetX < 0) offsetX = 0;
       if (offsetY < 0) offsetY = 0;
       if (offsetX + larguraCorte > larguraImg) larguraCorte = larguraImg - offsetX;
       if (offsetY + alturaCorte > alturaImg) alturaCorte = alturaImg - offsetY;
 
-      // 1. Recorta a região oval exata da face
+      // 1. Recorta a região da face
       img.Image imagemCropped = img.copyCrop(
         imagemDecodificada,
         x: offsetX,
@@ -133,11 +132,11 @@ class _CaptureScreenState extends State<CaptureScreen> {
         height: alturaCorte,
       );
 
-      // 2. Padroniza para uma resolução limpa mantendo a proporção correta (Com o '*' corrigido)
+      // 2. 🛠️ PADRONIZAÇÃO ANTI-ZOOM: Força resolução quadrada 512x512 nativa para o Replicate
       img.Image imagemFinal = img.copyResize(
         imagemCropped,
         width: 512,
-        height: (512 * (alturaCorte / larguraCorte)).toInt(),
+        height: 512,
         interpolation: img.Interpolation.linear,
       );
 
@@ -302,7 +301,6 @@ class OvalOverlayPainter extends CustomPainter {
 
     final rectTotal = Rect.fromLTWH(0, 0, size.width, size.height);
 
-    // 🛠️ Com os operadores '*' corrigidos
     final double ovalWidth = size.width * 0.72;
     final double ovalHeight = size.height * 0.48;
 

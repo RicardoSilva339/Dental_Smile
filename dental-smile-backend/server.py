@@ -241,53 +241,39 @@ def process_smile():
         orig_image = Image.open(io.BytesIO(image_data))
         orig_image = ImageOps.exif_transpose(orig_image) or orig_image
 
-        print("=" * 60)
-        print(f"📥 [PYTHON REST CUSTOM] Recebido | Dimensões: {orig_image.width}x{orig_image.height} | Cor: {selected_color.upper()}")
-        print("=" * 60)
-
         rgb_image = orig_image.convert("RGB")
-        orig_w, orig_h = rgb_image.size
+        # 🛠️ Garante dimensão 512x512 nativa perfeita para a IA
+        rgb_image = rgb_image.resize((512, 512), Image.Resampling.LANCZOS)
+        orig_w, orig_h = 512, 512
 
-        # 1. Salva a original limpa para o comparador
+        print("=" * 60)
+        print(f"📥 [PYTHON REST] Processando imagem nativa 512x512 | Cor: {selected_color.upper()}")
+        print("=" * 60)
+
+        # Salva a original limpa 512x512 para o comparador
         buffered_orig = io.BytesIO()
         rgb_image.save(buffered_orig, format="JPEG", quality=90)
         original_processed_b64 = base64.b64encode(buffered_orig.getvalue()).decode('utf-8')
 
-        # 2. Criação da máscara da boca
-        mask_img = Image.new("L", (orig_w, orig_h), 0)
+        # Criação da máscara da boca (proporcional no quadrado 512x512)
+        mask_img = Image.new("L", (512, 512), 0)
         draw = ImageDraw.Draw(mask_img)
 
-        box_x1 = int(orig_w * 0.32)
-        box_y1 = int(orig_h * 0.60)
-        box_x2 = int(orig_w * 0.68)
-        box_y2 = int(orig_h * 0.85)
+        box_x1 = int(512 * 0.32)
+        box_y1 = int(512 * 0.60)
+        box_x2 = int(512 * 0.68)
+        box_y2 = int(512 * 0.85)
 
         draw.rectangle([box_x1, box_y1, box_x2, box_y2], fill=255)
 
-        # 3. 🛡️ PROTEÇÃO CONTRA ZOOM: Transforma a imagem e máscara em QUADRADO com padding
-        max_dim = max(orig_w, orig_h)
-        sq_image = Image.new("RGB", (max_dim, max_dim), (0, 0, 0))
-        sq_mask = Image.new("L", (max_dim, max_dim), 0)
+        buffered_mask = io.BytesIO()
+        mask_img.save(buffered_mask, format="JPEG")
+        mask_b64 = base64.b64encode(buffered_mask.getvalue()).decode('utf-8')
 
-        offset_x = (max_dim - orig_w) // 2
-        offset_y = (max_dim - orig_h) // 2
+        image_uri = f"data:image/jpeg;base64,{original_processed_b64}"
+        mask_uri = f"data:image/jpeg;base64,{mask_b64}"
 
-        sq_image.paste(rgb_image, (offset_x, offset_y))
-        sq_mask.paste(mask_img, (offset_x, offset_y))
-
-        # Redimensiona para 512x512 padrão do Replicate sem cortar nada do enquadramento
-        sq_image_512 = sq_image.resize((512, 512), Image.Resampling.LANCZOS)
-        sq_mask_512 = sq_mask.resize((512, 512), Image.Resampling.LANCZOS)
-
-        buffered_img_sq = io.BytesIO()
-        sq_image_512.save(buffered_img_sq, format="JPEG", quality=90)
-        image_uri = f"data:image/jpeg;base64,{base64.b64encode(buffered_img_sq.getvalue()).decode('utf-8')}"
-
-        buffered_mask_sq = io.BytesIO()
-        sq_mask_512.save(buffered_mask_sq, format="JPEG")
-        mask_uri = f"data:image/jpeg;base64,{base64.b64encode(buffered_mask_sq.getvalue()).decode('utf-8')}"
-
-        print("🚀 [REPLICATE REST CUSTOM] Enviando requisição quadrada anti-zoom para o Replicate...")
+        print("🚀 [REPLICATE REST] Enviando imagem nativa 512x512 para o modelo customizado...")
 
         replicate_token = os.environ.get("REPLICATE_API_TOKEN")
         headers = {
@@ -334,21 +320,18 @@ def process_smile():
                 raise Exception(f"Processamento da IA falhou: {poll_data.get('error')}")
 
         if not image_url:
-            raise Exception("Tempo limite de 3 minutos excedido aguardando o Replicate processar a imagem.")
+            raise Exception("Tempo limite excedido aguardando o Replicate processar a imagem.")
 
-        print(f"📥 [REPLICATE] Imagem gerada com sucesso pelo smile-correct: {image_url}")
+        print(f"📥 [REPLICATE] Imagem gerada com sucesso: {image_url}")
 
         with urllib.request.urlopen(image_url) as url_response:
             ai_image_bytes = url_response.read()
 
-        ai_sq_512 = Image.open(io.BytesIO(ai_image_bytes)).convert("RGB")
-
-        # 4. 🎯 DESFAZ O PADDING: Restaura a imagem gerada para o tamanho exato da foto original (orig_w, orig_h)
-        ai_sq_max = ai_sq_512.resize((max_dim, max_dim), Image.Resampling.LANCZOS)
-        ai_final = ai_sq_max.crop((offset_x, offset_y, offset_x + orig_w, offset_y + orig_h))
+        ai_image = Image.open(io.BytesIO(ai_image_bytes)).convert("RGB")
+        ai_image = ai_image.resize((512, 512), Image.Resampling.LANCZOS)
 
         buffered_ai = io.BytesIO()
-        ai_final.save(buffered_ai, format="JPEG", quality=90)
+        ai_image.save(buffered_ai, format="JPEG", quality=90)
         processed_b64 = base64.b64encode(buffered_ai.getvalue()).decode('utf-8')
 
         if is_convidado:
@@ -363,7 +346,7 @@ def process_smile():
         conn.close()
 
         print("=" * 60)
-        print("📤 [PYTHON REST CUSTOM] Processamento anti-zoom concluído com alinhamento 1:1 perfeito!")
+        print("📤 [PYTHON REST] Processamento 512x512 concluído com alinhamento 1:1 perfeito!")
         print("=" * 60)
 
         return jsonify({
@@ -376,7 +359,7 @@ def process_smile():
     except Exception as e:
         if 'cur' in locals() and cur: cur.close()
         if 'conn' in locals() and conn: conn.close()
-        print(f"❌ Erro crítico no Replicate REST Custom: {str(e)}")
+        print(f"❌ Erro crítico no Replicate REST: {str(e)}")
         traceback.print_exc()
         return jsonify({"success": False, "error": str(e)}), 500
 
