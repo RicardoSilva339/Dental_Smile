@@ -61,7 +61,7 @@ def init_device_db():
 init_db()
 init_device_db()
 
-print("⚙️ Servidor iniciado com sucesso (Modo Otimizado para Produção Headless)")
+print("⚙️ Servidor iniciado com sucesso (Modo Integrado com Flutter Crop)")
 
 @app.route('/check-device', methods=['POST'])
 def check_device():
@@ -246,38 +246,32 @@ def process_smile():
         orig_image = ImageOps.exif_transpose(orig_image) or orig_image
 
         rgb_image = orig_image.convert("RGB")
-        imagem_rgb = np.array(rgb_image)
+
+        # Como o app já envia o recorte 512x512 centralizado na boca, garantimos o tamanho exato
+        img_512 = rgb_image.resize((512, 512), Image.Resampling.LANCZOS)
+        imagem_rgb = np.array(img_512)
         altura, largura, _ = imagem_rgb.shape
 
         print("=" * 60)
-        print(f"📥 [PYTHON REST] Recebido | Dimensões: {largura}x{altura} | Cor: {selected_color.upper()}")
+        print(f"📥 [PYTHON REST] Imagem 512x512 recebida do Flutter | Cor: {selected_color.upper()}")
         print("=" * 60)
 
         buffered_orig = io.BytesIO()
-        rgb_image.save(buffered_orig, format="JPEG", quality=90)
+        img_512.save(buffered_orig, format="JPEG", quality=90)
         original_processed_b64 = base64.b64encode(buffered_orig.getvalue()).decode('utf-8')
 
-        # 1. SMART SQUARE FACE CROP baseado em proporção geométrica segura
-        S = min(largura, altura)
-        y1 = int(altura * 0.15)
-        y2 = y1 + S
-        if y2 > altura:
-            y2 = altura
-            y1 = altura - S
-        x1, x2 = 0, S
+        # Máscaras centralizadas perfeitamente no frame 512x512 que o Flutter recortou
+        mascara_sup = np.zeros((512, 512), dtype=np.uint8)
+        mascara_inf = np.zeros((512, 512), dtype=np.uint8)
 
-        # 2. Máscaras da Arcada Superior e Inferior posicionadas precisamente
-        mascara_sup = np.zeros((altura, largura), dtype=np.uint8)
-        mascara_inf = np.zeros((altura, largura), dtype=np.uint8)
+        box_x1 = int(512 * 0.28)
+        box_x2 = int(512 * 0.72)
 
-        box_x1 = int(largura * 0.30)
-        box_x2 = int(largura * 0.70)
+        box_sup_y1 = int(512 * 0.38)
+        box_sup_y2 = int(512 * 0.48)
 
-        box_sup_y1 = int(altura * 0.58)
-        box_sup_y2 = int(altura * 0.67)
-
-        box_inf_y1 = int(altura * 0.67)
-        box_inf_y2 = int(altura * 0.75)
+        box_inf_y1 = int(512 * 0.48)
+        box_inf_y2 = int(512 * 0.58)
 
         cv2.rectangle(mascara_sup, (box_x1, box_sup_y1), (box_x2, box_sup_y2), 255, -1)
         cv2.rectangle(mascara_inf, (box_x1, box_inf_y1), (box_x2, box_inf_y2), 255, -1)
@@ -286,12 +280,7 @@ def process_smile():
         mascara_sup_dilatada = cv2.dilate(mascara_sup, kernel, iterations=1)
         mascara_inf_dilatada = cv2.dilate(mascara_inf, kernel, iterations=1)
 
-        # Recorta a região quadrada do rosto para o Replicate
-        crop_sq_img = imagem_rgb[y1:y2, x1:x2]
-        crop_sq_mask = mascara_sup_dilatada[y1:y2, x1:x2]
-
-        img_512 = Image.fromarray(crop_sq_img).resize((512, 512), Image.Resampling.LANCZOS)
-        mask_512 = Image.fromarray(crop_sq_mask).resize((512, 512), Image.Resampling.NEAREST)
+        mask_512 = Image.fromarray(mascara_sup_dilatada)
 
         buffered_img_512 = io.BytesIO()
         img_512.save(buffered_img_512, format="JPEG", quality=90)
@@ -301,7 +290,7 @@ def process_smile():
         mask_512.save(buffered_mask_512, format="PNG")
         mask_uri = f"data:image/png;base64,{base64.b64encode(buffered_mask_512.getvalue()).decode('utf-8')}"
 
-        print("🚀 [REPLICATE REST] Disparando IA com máscara alinhada apenas na arcada superior...")
+        print("🚀 [REPLICATE REST] Disparando IA na arcada superior...")
 
         replicate_token = os.environ.get("REPLICATE_API_TOKEN")
         headers = {
@@ -361,29 +350,23 @@ def process_smile():
                 raise Exception(f"Processamento da IA falhou: {poll_data.get('error')}")
 
         if not image_url:
-            raise Exception("Tempo limite excedido aguardando o Replicate processar a imagem.")
-
-        print(f"📥 [REPLICATE] Imagem gerada com sucesso: {image_url}")
+            raise Exception("Tempo limite excedido aguardando o Replicate.")
 
         with urllib.request.urlopen(image_url) as url_response:
             ai_image_bytes = url_response.read()
 
         ai_image_raw = Image.open(io.BytesIO(ai_image_bytes)).convert("RGB")
-        ai_crop_restaurado = ai_image_raw.resize((S, S), Image.Resampling.LANCZOS)
+        ai_crop_restaurado = ai_image_raw.resize((512, 512), Image.Resampling.LANCZOS)
 
-        # Fusão suave na arcada superior (com IA)
-        crop_orig_pil = Image.fromarray(crop_sq_img)
-        crop_mask_pil = Image.fromarray(crop_sq_mask)
+        # Fusão suave na arcada superior
+        crop_orig_pil = Image.fromarray(imagem_rgb)
+        crop_mask_pil = Image.fromarray(mascara_sup_dilatada)
         mask_soft = crop_mask_pil.filter(ImageFilter.GaussianBlur(radius=2))
 
         crop_final_pil = Image.composite(ai_crop_restaurado, crop_orig_pil, mask_soft)
-        crop_final_np = np.array(crop_final_pil)
+        imagem_final_rgb = np.array(crop_final_pil)
 
-        # Reconstrói a imagem com a arcada superior corrigida
-        imagem_final_rgb = np.copy(imagem_rgb)
-        imagem_final_rgb[y1:y2, x1:x2] = crop_final_np
-
-        # 4. Tratamento suave da Arcada Inferior (Clareamento / Tonalidade)
+        # Tratamento da Arcada Inferior (Clareamento mantendo a anatomia natural)
         hsv = cv2.cvtColor(imagem_final_rgb, cv2.COLOR_RGB2HSV).astype(np.float32)
         hsv[:, :, 2] = np.where(mascara_inf_dilatada > 0, np.clip(hsv[:, :, 2] * 1.15, 0, 255), hsv[:, :, 2])
         hsv[:, :, 1] = np.where(mascara_inf_dilatada > 128, np.clip(hsv[:, :, 1] * 0.85, 0, 255), hsv[:, :, 1])
@@ -405,7 +388,7 @@ def process_smile():
         conn.close()
 
         print("=" * 60)
-        print("📤 [PYTHON REST] Simulação de sorriso concluída com sucesso!")
+        print("📤 [PYTHON REST] Simulação concluída perfeitamente!")
         print("=" * 60)
 
         return jsonify({

@@ -309,12 +309,12 @@ class _CompareScreenState extends State<CompareScreen> {
                 ),
               const SizedBox(height: 12),
 
-              // 🖼️ ÁREA DE COMPARAÇÃO COM PROPORÇÃO 3:4 E ALINHAMENTO SINCRONIZADO
+              // 🖼️ ÁREA DE COMPARAÇÃO COM PROPORÇÃO 1:1 (QUADRADA 512x512) PARA PERFEITO ALINHAMENTO
               Center(
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 450),
+                  constraints: const BoxConstraints(maxHeight: 400, maxWidth: 400),
                   child: AspectRatio(
-                    aspectRatio: 3 / 4,
+                    aspectRatio: 1 / 1,
                     child: LayoutBuilder(
                       builder: (context, constraints) {
                         final containerWidth = constraints.maxWidth;
@@ -355,7 +355,7 @@ class _CompareScreenState extends State<CompareScreen> {
                                   if (processedFile != null && processedFile.existsSync())
                                     Image.file(
                                       processedFile,
-                                      fit: BoxFit.fill, // 🛠️ Ajustado para fill para sincronizar com a original
+                                      fit: BoxFit.cover,
                                       alignment: Alignment.center,
                                     )
                                   else
@@ -379,7 +379,7 @@ class _CompareScreenState extends State<CompareScreen> {
                                               originalFile,
                                               width: containerWidth,
                                               height: containerHeight,
-                                              fit: BoxFit.fill, // 🛠️ Ajustado para fill para sincronizar com a IA
+                                              fit: BoxFit.cover,
                                               alignment: Alignment.center,
                                             ),
                                           ),
