@@ -10,7 +10,6 @@ import numpy as np
 from flask import Flask, request, jsonify
 from PIL import Image, ImageOps, ImageEnhance, ImageDraw, ImageFilter
 import cv2
-import mediapipe as mp
 
 app = Flask(__name__)
 
@@ -62,15 +61,7 @@ def init_device_db():
 init_db()
 init_device_db()
 
-# Inicializa o Face Landmarker do MediaPipe uma única vez ao iniciar o servidor
-base_options = mp.tasks.BaseOptions(model_asset_path='face_landmarker.task')
-options = mp.tasks.vision.FaceLandmarkerOptions(
-    base_options=base_options,
-    output_face_blendshapes=False,
-    output_facial_transformation_matrixes=False,
-    num_faces=1
-)
-detector = mp.tasks.vision.FaceLandmarker.create_from_options(options)
+print("⚙️ Servidor iniciado com sucesso (Modo Otimizado para Produção Headless)")
 
 @app.route('/check-device', methods=['POST'])
 def check_device():
@@ -249,7 +240,6 @@ def process_smile():
         return jsonify({"success": False, "error": "Nenhuma imagem enviada."}), 400
 
     try:
-        # Extrai os dados base64 (removendo prefixo data:image/... se presente)
         if "," in image_b64:
             image_b64 = image_b64.split(",")[1]
 
@@ -269,39 +259,31 @@ def process_smile():
         rgb_image.save(buffered_orig, format="JPEG", quality=90)
         original_processed_b64 = base64.b64encode(buffered_orig.getvalue()).decode('utf-8')
 
-        # Detecção com MediaPipe
-        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=imagem_rgb)
-        detection_result = detector.detect(mp_image)
-
-        if not detection_result.face_landmarks:
-            raise Exception("Nenhum rosto detectado na imagem.")
-
-        face_landmarks = detection_result.face_landmarks[0]
-
-        # 1. SMART SQUARE FACE CROP (Recorte Quadrado 1:1 do rosto)
-        y_coords = [int(pt.y * altura) for pt in face_landmarks]
-        center_y = sum(y_coords) // len(y_coords)
+        # 1. SMART SQUARE FACE CROP Baseado na Proporção Geométrica
         S = min(largura, altura)
-        y1 = max(0, center_y - (S // 2))
-        y2 = min(altura, y1 + S)
-        if y2 - S >= 0:
-            y1 = y2 - S
+        y1 = int(altura * 0.1)
+        y2 = y1 + S
+        if y2 > altura:
+            y2 = altura
+            y1 = altura - S
         x1, x2 = 0, S
 
-        # 2. Máscara exclusiva para a Arcada Superior (onde a IA atua)
+        # 2. Máscara geométrica para a Arcada Superior (IA)
         mascara_sup = np.zeros((altura, largura), dtype=np.uint8)
-        pontos_arcada_superior = [78, 191, 80, 81, 82, 13, 312, 311, 310, 415, 308]
-        coordenadas_sup = [(int(face_landmarks[i].x * largura), int(face_landmarks[i].y * altura)) for i in pontos_arcada_superior]
-        cv2.fillPoly(mascara_sup, [np.array(coordenadas_sup, np.int32)], 255)
+        box_x1 = int(largura * 0.32)
+        box_y1 = int(altura * 0.60)
+        box_x2 = int(largura * 0.68)
+        box_y2 = int(altura * 0.70)
+        cv2.rectangle(mascara_sup, (box_x1, box_y1), (box_x2, box_y2), 255, -1)
 
         kernel = np.ones((3, 3), np.uint8)
         mascara_sup_dilatada = cv2.dilate(mascara_sup, kernel, iterations=1)
 
-        # 3. Máscara exclusiva para a Arcada Inferior (recebe apenas clareamento/tonalidade)
+        # 3. Máscara geométrica para a Arcada Inferior (Clareamento)
         mascara_inf = np.zeros((altura, largura), dtype=np.uint8)
-        pontos_arcada_inferior = [318, 402, 317, 14, 87, 178, 88, 95]
-        coordenadas_inf = [(int(face_landmarks[i].x * largura), int(face_landmarks[i].y * altura)) for i in pontos_arcada_inferior]
-        cv2.fillPoly(mascara_inf, [np.array(coordenadas_inf, np.int32)], 255)
+        box_inf_y1 = int(altura * 0.70)
+        box_inf_y2 = int(altura * 0.78)
+        cv2.rectangle(mascara_inf, (box_x1, box_inf_y1), (box_x2, box_inf_y2), 255, -1)
         mascara_inf_dilatada = cv2.dilate(mascara_inf, kernel, iterations=1)
 
         # Recorta a região quadrada do rosto para o Replicate
@@ -401,14 +383,12 @@ def process_smile():
         imagem_final_rgb = np.copy(imagem_rgb)
         imagem_final_rgb[y1:y2, x1:x2] = crop_final_np
 
-        # 4. Tratamento suave da Arcada Inferior (Clareamento / Tonalidade sem alterar formato)
-        # Converte para HSV para ajustar brilho/saturação dos dentes de baixo preservando a anatomia torta original
+        # 4. Tratamento suave da Arcada Inferior (Clareamento / Tonalidade)
         hsv = cv2.cvtColor(imagem_final_rgb, cv2.COLOR_RGB2HSV).astype(np.float32)
-        hsv[:, :, 2] = np.where(mascara_inf_dilatada > 0, np.clip(hsv[:, :, 2] * 1.15, 0, 255), hsv[:, :, 2]) # Aumenta brilho
-        hsv[:, :, 1] = np.where(mascara_inf_dilatada > 128, np.clip(hsv[:, :, 1] * 0.85, 0, 255), hsv[:, :, 1]) # Reduz amarelado (saturação)
+        hsv[:, :, 2] = np.where(mascara_inf_dilatada > 0, np.clip(hsv[:, :, 2] * 1.15, 0, 255), hsv[:, :, 2])
+        hsv[:, :, 1] = np.where(mascara_inf_dilatada > 128, np.clip(hsv[:, :, 1] * 0.85, 0, 255), hsv[:, :, 1])
         imagem_final_rgb = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2RGB)
 
-        # Codifica o resultado final para base64
         final_bgr = cv2.cvtColor(imagem_final_rgb, cv2.COLOR_RGB2BGR)
         _, buffer = cv2.imencode('.jpg', final_bgr, [cv2.IMWRITE_JPEG_QUALITY, 95])
         processed_b64 = base64.b64encode(buffer).decode('utf-8')
