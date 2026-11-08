@@ -61,7 +61,7 @@ def init_device_db():
 init_db()
 init_device_db()
 
-print("⚙️ Servidor iniciado com sucesso (Modo Integrado com Flutter Crop)")
+print("⚙️ Servidor iniciado com sucesso (Coordenadas ajustadas para a boca)")
 
 @app.route('/check-device', methods=['POST'])
 def check_device():
@@ -247,7 +247,6 @@ def process_smile():
 
         rgb_image = orig_image.convert("RGB")
 
-        # Como o app já envia o recorte 512x512 centralizado na boca, garantimos o tamanho exato
         img_512 = rgb_image.resize((512, 512), Image.Resampling.LANCZOS)
         imagem_rgb = np.array(img_512)
         altura, largura, _ = imagem_rgb.shape
@@ -260,18 +259,18 @@ def process_smile():
         img_512.save(buffered_orig, format="JPEG", quality=90)
         original_processed_b64 = base64.b64encode(buffered_orig.getvalue()).decode('utf-8')
 
-        # Máscaras centralizadas perfeitamente no frame 512x512 que o Flutter recortou
         mascara_sup = np.zeros((512, 512), dtype=np.uint8)
         mascara_inf = np.zeros((512, 512), dtype=np.uint8)
 
-        box_x1 = int(512 * 0.28)
-        box_x2 = int(512 * 0.72)
+        # 🛠️ COORDENADAS DESCIDAS PARA CRAVAR NA BOCA
+        box_x1 = int(512 * 0.25)
+        box_x2 = int(512 * 0.75)
 
-        box_sup_y1 = int(512 * 0.38)
-        box_sup_y2 = int(512 * 0.48)
+        box_sup_y1 = int(512 * 0.60) # Início dos dentes superiores
+        box_sup_y2 = int(512 * 0.72) # Fim dos dentes superiores
 
-        box_inf_y1 = int(512 * 0.48)
-        box_inf_y2 = int(512 * 0.58)
+        box_inf_y1 = int(512 * 0.72) # Início dos dentes inferiores
+        box_inf_y2 = int(512 * 0.82) # Fim da boca
 
         cv2.rectangle(mascara_sup, (box_x1, box_sup_y1), (box_x2, box_sup_y2), 255, -1)
         cv2.rectangle(mascara_inf, (box_x1, box_inf_y1), (box_x2, box_inf_y2), 255, -1)
@@ -290,7 +289,7 @@ def process_smile():
         mask_512.save(buffered_mask_512, format="PNG")
         mask_uri = f"data:image/png;base64,{base64.b64encode(buffered_mask_512.getvalue()).decode('utf-8')}"
 
-        print("🚀 [REPLICATE REST] Disparando IA na arcada superior...")
+        print("🚀 [REPLICATE REST] Disparando IA na arcada superior (posição corrigida)...")
 
         replicate_token = os.environ.get("REPLICATE_API_TOKEN")
         headers = {
@@ -366,7 +365,7 @@ def process_smile():
         crop_final_pil = Image.composite(ai_crop_restaurado, crop_orig_pil, mask_soft)
         imagem_final_rgb = np.array(crop_final_pil)
 
-        # Tratamento da Arcada Inferior (Clareamento mantendo a anatomia natural)
+        # Tratamento da Arcada Inferior (Clareamento)
         hsv = cv2.cvtColor(imagem_final_rgb, cv2.COLOR_RGB2HSV).astype(np.float32)
         hsv[:, :, 2] = np.where(mascara_inf_dilatada > 0, np.clip(hsv[:, :, 2] * 1.15, 0, 255), hsv[:, :, 2])
         hsv[:, :, 1] = np.where(mascara_inf_dilatada > 128, np.clip(hsv[:, :, 1] * 0.85, 0, 255), hsv[:, :, 1])
