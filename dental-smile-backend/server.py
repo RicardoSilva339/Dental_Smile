@@ -8,8 +8,9 @@ import traceback
 import requests
 import numpy as np
 from flask import Flask, request, jsonify
-from PIL import Image, ImageOps, ImageEnhance, ImageDraw, ImageFilter
+from PIL import Image, ImageOps, ImageFilter
 import cv2
+import mediapipe as mp
 
 app = Flask(__name__)
 
@@ -61,7 +62,11 @@ def init_device_db():
 init_db()
 init_device_db()
 
-print("⚙️ Servidor iniciado com sucesso (Modo Otimizado para Produção Headless)")
+# Inicializa o detector facial do MediaPipe para rodar na CPU do Render
+mp_face_mesh = mp.solutions.face_mesh
+face_mesh = mp_face_mesh.FaceMesh(static_image_mode=True, max_num_faces=1, refine_landmarks=True)
+
+print("⚙️ Servidor iniciado com MediaPipe FaceMesh ativo em CPU!")
 
 @app.route('/check-device', methods=['POST'])
 def check_device():
@@ -231,8 +236,6 @@ def process_smile():
 
     image_b64 = data.get('image')
     selected_color = data.get('color', 'bl2').lower()
-    selected_shape = data.get('shape', 'natural').lower()
-    selected_size = data.get('size', 'medio').lower()
 
     if not image_b64:
         cur.close()
@@ -251,40 +254,40 @@ def process_smile():
         imagem_rgb = np.array(rgb_image)
         altura, largura, _ = imagem_rgb.shape
 
-        print("=" * 60)
-        print(f"📥 [PYTHON REST] Recebido | Dimensões: {largura}x{altura} | Cor: {selected_color.upper()}")
-        print("=" * 60)
-
         buffered_orig = io.BytesIO()
         rgb_image.save(buffered_orig, format="JPEG", quality=90)
         original_processed_b64 = base64.b64encode(buffered_orig.getvalue()).decode('utf-8')
 
-        # 1. SMART SQUARE FACE CROP Baseado na Proporção Geométrica
+        # Detecção real do rosto via MediaPipe FaceMesh na CPU
+        results = face_mesh.process(imagem_rgb)
+        if not results.multi_face_landmarks:
+            raise Exception("Nenhum rosto detectado na imagem.")
+
+        face_landmarks = results.multi_face_landmarks[0].landmark
+
+        # 1. SMART SQUARE FACE CROP com base no centro real do rosto detectado
+        y_coords = [int(pt.y * altura) for pt in face_landmarks]
+        center_y = sum(y_coords) // len(y_coords)
         S = min(largura, altura)
-        y1 = int(altura * 0.1)
-        y2 = y1 + S
-        if y2 > altura:
-            y2 = altura
-            y1 = altura - S
+        y1 = max(0, center_y - (S // 2))
+        y2 = min(altura, y1 + S)
+        if y2 - S >= 0:
+            y1 = y2 - S
         x1, x2 = 0, S
 
-        # 2. Máscara geométrica para a Arcada Superior (IA)
+        # 2. Máscara precisa da Arcada Superior baseada nos pontos reais da boca
         mascara_sup = np.zeros((altura, largura), dtype=np.uint8)
-        box_x1 = int(largura * 0.32)
-        box_y1 = int(altura * 0.60)
-        box_x2 = int(largura * 0.68)
-        box_y2 = int(altura * 0.70)
-        cv2.rectangle(mascara_sup, (box_x1, box_y1), (box_x2, box_y2), 255, -1)
+        pontos_sup = [78, 191, 80, 81, 82, 13, 312, 311, 310, 415, 308]
+        coordenadas_sup = [(int(face_landmarks[i].x * largura), int(face_landmarks[i].y * altura)) for i in pontos_sup]
+        cv2.fillPoly(mascara_sup, [np.array(coordenadas_sup, np.int32)], 255)
+        mascara_sup_dilatada = cv2.dilate(mascara_sup, np.ones((3, 3), np.uint8), iterations=1)
 
-        kernel = np.ones((3, 3), np.uint8)
-        mascara_sup_dilatada = cv2.dilate(mascara_sup, kernel, iterations=1)
-
-        # 3. Máscara geométrica para a Arcada Inferior (Clareamento)
+        # 3. Máscara precisa da Arcada Inferior (para clareamento sem alterar o formato)
         mascara_inf = np.zeros((altura, largura), dtype=np.uint8)
-        box_inf_y1 = int(altura * 0.70)
-        box_inf_y2 = int(altura * 0.78)
-        cv2.rectangle(mascara_inf, (box_x1, box_inf_y1), (box_x2, box_inf_y2), 255, -1)
-        mascara_inf_dilatada = cv2.dilate(mascara_inf, kernel, iterations=1)
+        pontos_inf = [318, 402, 317, 14, 87, 178, 88, 95]
+        coordenadas_inf = [(int(face_landmarks[i].x * largura), int(face_landmarks[i].y * altura)) for i in pontos_inf]
+        cv2.fillPoly(mascara_inf, [np.array(coordenadas_inf, np.int32)], 255)
+        mascara_inf_dilatada = cv2.dilate(mascara_inf, np.ones((3, 3), np.uint8), iterations=1)
 
         # Recorta a região quadrada do rosto para o Replicate
         crop_sq_img = imagem_rgb[y1:y2, x1:x2]
@@ -301,34 +304,19 @@ def process_smile():
         mask_512.save(buffered_mask_512, format="PNG")
         mask_uri = f"data:image/png;base64,{base64.b64encode(buffered_mask_512.getvalue()).decode('utf-8')}"
 
-        print("🚀 [REPLICATE REST] Disparando IA com máscara alinhada apenas na arcada superior...")
-
         replicate_token = os.environ.get("REPLICATE_API_TOKEN")
         headers = {
             "Authorization": f"Bearer {replicate_token}",
             "Content-Type": "application/json"
         }
 
-        prompt_text = (
-            f"photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1>(Beautiful natural teeth, aligned bite teeth), "
-            f"aligned white teeth, human like teeth, (no teeth gap), celebrity-like teeth, healthy teeth with a perfect smile, not big incisor, good proportion teeth, shade {selected_color.upper()}, good proportion smile,"
-        )
-        negative_prompt_text = (
-            "(deformed teeth, semi-realistic, cgi, 3d, render, sketch, cartoon, drawing, anime), "
-            "(deformed, distorted, abnormal teeth:1.3, disfigured:1.3, large teeth:2), poorly drawn, Fixer, bad anatomy, rabbit teeth, "
-            "wrong anatomy, missing teeth, disconnected teeth, unnatural mouth, bunny teeth, big incisor teeth, disproportionate front teeth, "
-            "bad smile, reflection, crooked teeth, distorted teeth, cropped, out of frame, worst quality, low quality, "
-            "jpeg artifacts, ugly, morbid, disfigured, gross proportions, too many teeth, lipstick, lip gloss, "
-            "too less teeth, unnatural size teeth, poorly drawn mouth, poorly drawn teeth"
-        )
-
         payload = {
             "version": "4956c634b9aa976129f13166c713f8cf38bd337cd58c77925e8cd71d935d5696",
             "input": {
                 "image": image_uri,
                 "mask": mask_uri,
-                "prompt": prompt_text,
-                "negative_prompt": negative_prompt_text,
+                "prompt": f"photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1>(Beautiful natural teeth, aligned bite teeth), aligned white teeth, human like teeth, healthy teeth with a perfect smile, shade {selected_color.upper()}, good proportion smile,",
+                "negative_prompt": "(deformed teeth, semi-realistic, cgi, 3d, render, sketch, cartoon, drawing, anime), bad anatomy, rabbit teeth, wrong anatomy, missing teeth, disconnected teeth, unnatural mouth, low quality, jpeg artifacts",
                 "num_outputs": 1,
                 "num_inference_steps": 25,
                 "guidance_scale": 6.0
@@ -336,54 +324,43 @@ def process_smile():
         }
 
         response = requests.post("https://api.replicate.com/v1/predictions", json=payload, headers=headers, timeout=120)
-
         if response.status_code != 201:
             raise Exception(f"Erro na API do Replicate ({response.status_code}): {response.text}")
 
         pred_data = response.json()
         get_url = pred_data.get("urls", {}).get("get")
 
-        if not get_url:
-            raise Exception("URL de rastreio do Replicate não retornada.")
-
         image_url = None
         for _ in range(90):
             time.sleep(2)
             poll_resp = requests.get(get_url, headers=headers, timeout=30)
             poll_data = poll_resp.json()
-            status = poll_data.get("status")
-
-            if status == "succeeded":
+            if poll_data.get("status") == "succeeded":
                 output = poll_data.get("output")
                 image_url = output[0] if isinstance(output, list) else output
                 break
-            elif status == "failed":
+            elif poll_data.get("status") == "failed":
                 raise Exception(f"Processamento da IA falhou: {poll_data.get('error')}")
 
         if not image_url:
-            raise Exception("Tempo limite excedido aguardando o Replicate processar a imagem.")
-
-        print(f"📥 [REPLICATE] Imagem gerada com sucesso: {image_url}")
+            raise Exception("Tempo limite excedido aguardando o Replicate.")
 
         with urllib.request.urlopen(image_url) as url_response:
             ai_image_bytes = url_response.read()
 
         ai_image_raw = Image.open(io.BytesIO(ai_image_bytes)).convert("RGB")
-        ai_crop_restaurado = ai_image_512 = ai_image_raw.resize((S, S), Image.Resampling.LANCZOS)
+        ai_crop_restaurado = ai_image_raw.resize((S, S), Image.Resampling.LANCZOS)
 
-        # Fusão suave na arcada superior (com IA)
+        # Fusão suave da arcada superior corrigida pela IA
         crop_orig_pil = Image.fromarray(crop_sq_img)
         crop_mask_pil = Image.fromarray(crop_sq_mask)
         mask_soft = crop_mask_pil.filter(ImageFilter.GaussianBlur(radius=2))
 
         crop_final_pil = Image.composite(ai_crop_restaurado, crop_orig_pil, mask_soft)
-        crop_final_np = np.array(crop_final_pil)
-
-        # Reconstrói a imagem com a arcada superior corrigida
         imagem_final_rgb = np.copy(imagem_rgb)
-        imagem_final_rgb[y1:y2, x1:x2] = crop_final_np
+        imagem_final_rgb[y1:y2, x1:x2] = np.array(crop_final_pil)
 
-        # 4. Tratamento suave da Arcada Inferior (Clareamento / Tonalidade)
+        # Tratamento suave da Arcada Inferior (Clareamento mantendo a anatomia natural)
         hsv = cv2.cvtColor(imagem_final_rgb, cv2.COLOR_RGB2HSV).astype(np.float32)
         hsv[:, :, 2] = np.where(mascara_inf_dilatada > 0, np.clip(hsv[:, :, 2] * 1.15, 0, 255), hsv[:, :, 2])
         hsv[:, :, 1] = np.where(mascara_inf_dilatada > 128, np.clip(hsv[:, :, 1] * 0.85, 0, 255), hsv[:, :, 1])
@@ -404,10 +381,6 @@ def process_smile():
         cur.close()
         conn.close()
 
-        print("=" * 60)
-        print("📤 [PYTHON REST] Simulação de sorriso concluída com sucesso!")
-        print("=" * 60)
-
         return jsonify({
             "success": True,
             "original_image": original_processed_b64,
@@ -418,7 +391,6 @@ def process_smile():
     except Exception as e:
         if 'cur' in locals() and cur: cur.close()
         if 'conn' in locals() and conn: conn.close()
-        print(f"❌ Erro crítico no backend: {str(e)}")
         traceback.print_exc()
         return jsonify({"success": False, "error": str(e)}), 500
 
