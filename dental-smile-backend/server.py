@@ -262,7 +262,7 @@ def process_smile():
         mascara_sup = np.zeros((512, 512), dtype=np.uint8)
         mascara_inf = np.zeros((512, 512), dtype=np.uint8)
 
-        # 🛠️ COORDENADAS DESCIDAS PARA CRAVAR NA BOCA
+        # Coordenadas ajustadas para o enquadramento de close-up facial do Flutter
         box_x1 = int(512 * 0.25)
         box_x2 = int(512 * 0.75)
 
@@ -289,7 +289,7 @@ def process_smile():
         mask_512.save(buffered_mask_512, format="PNG")
         mask_uri = f"data:image/png;base64,{base64.b64encode(buffered_mask_512.getvalue()).decode('utf-8')}"
 
-        print("🚀 [REPLICATE REST] Disparando IA na arcada superior (posição corrigida)...")
+        print("🚀 [REPLICATE REST] Disparando IA na arcada superior...")
 
         replicate_token = os.environ.get("REPLICATE_API_TOKEN")
         headers = {

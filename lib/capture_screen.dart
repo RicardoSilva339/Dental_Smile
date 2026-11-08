@@ -95,7 +95,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
                 }
         }
 
-        // 🎯 RECORTE OTIMIZADO: Quadrado perfeito (1:1) para eliminar o achatamento
+        // 🎯 RECORTE CIRÚRGICO: Quadrado focado EXATAMENTE no Oval do rosto (Elimina ombros e peito)
         Future<File?> _processarRecorteOval(File imagemOriginal) async {
                 try {
                         final bytes = await imagemOriginal.readAsBytes();
@@ -105,15 +105,17 @@ class _CaptureScreenState extends State<CaptureScreen> {
                         int larguraImg = imagemDecodificada.width;
                         int alturaImg = imagemDecodificada.height;
 
-                        // 1. Define o tamanho do corte como um QUADRADO PERFEITO (menor lado)
-                        int tamanhoQuadrado = larguraImg < alturaImg ? larguraImg : alturaImg;
+                        // 1. O oval da interface ocupa 48% da altura. Cortamos um quadrado de 50%
+                        // para focar APENAS no rosto, eliminando peito e ombros!
+                        int tamanhoQuadrado = (alturaImg * 0.50).toInt();
+                        if (tamanhoQuadrado > larguraImg) tamanhoQuadrado = larguraImg;
 
-                        // 2. Centraliza no eixo X
-                        int offsetX = (larguraImg - tamanhoQuadrado) ~/ 2;
+                        // 2. Centraliza o quadrado exatamente onde o Oval está desenhado na tela
+                        int centroX = larguraImg ~/ 2;
+                        int centroY = (alturaImg ~/ 2) - 20;
 
-                        // 3. Posiciona no eixo Y descendo o quadrado para pegar a parte inferior do rosto (boca)
-                        // Adicionamos um deslocamento de 10% da altura para empurrar o corte para a base da foto
-                        int offsetY = ((alturaImg - tamanhoQuadrado) ~/ 2) + (alturaImg * 0.10).toInt();
+                        int offsetX = centroX - (tamanhoQuadrado ~/ 2);
+                        int offsetY = centroY - (tamanhoQuadrado ~/ 2);
 
                         // Travas de segurança para não cortar fora da imagem
                         if (offsetX < 0) offsetX = 0;
@@ -121,7 +123,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
                         if (offsetX + tamanhoQuadrado > larguraImg) offsetX = larguraImg - tamanhoQuadrado;
                         if (offsetY + tamanhoQuadrado > alturaImg) offsetY = alturaImg - tamanhoQuadrado;
 
-                        // 4. Faz o corte quadrado perfeito 1:1
+                        // 3. Faz o corte quadrado em close-up do rosto
                         img.Image imagemCropped = img.copyCrop(
                                 imagemDecodificada,
                                 x: offsetX,
@@ -130,7 +132,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
                                 height: tamanhoQuadrado,
                         );
 
-                        // 5. Redimensiona para 512x512. Como a base já é quadrada, NÃO HÁ MAIS ACHATAMENTO!
+                        // 4. Redimensiona para 512x512 sem achatar
                         img.Image imagemFinal = img.copyResize(
                                 imagemCropped,
                                 width: 512,
@@ -299,7 +301,6 @@ class OvalOverlayPainter extends CustomPainter {
 
                 final rectTotal = Rect.fromLTWH(0, 0, size.width, size.height);
 
-                // 🛠️ CORRIGIDO: Erro de sintaxe da proporção resolvido!
                 final double ovalWidth = size.width * 0.72;
                 final double ovalHeight = size.height * 0.48;
 
