@@ -61,7 +61,7 @@ def init_device_db():
 init_db()
 init_device_db()
 
-print("⚙️ Servidor iniciado com sucesso (Coordenadas ajustadas para a boca)")
+print("⚙️ Servidor iniciado com sucesso (Coordenadas com ajuste fino na linha da boca)")
 
 @app.route('/check-device', methods=['POST'])
 def check_device():
@@ -262,15 +262,15 @@ def process_smile():
         mascara_sup = np.zeros((512, 512), dtype=np.uint8)
         mascara_inf = np.zeros((512, 512), dtype=np.uint8)
 
-        # Coordenadas ajustadas para o enquadramento de close-up facial do Flutter
-        box_x1 = int(512 * 0.25)
-        box_x2 = int(512 * 0.75)
+        # 🛠️ COORDENADAS REFINADAS PARA ALINHAR EXATAMENTE NA LINHA DA BOCA
+        box_x1 = int(512 * 0.23)
+        box_x2 = int(512 * 0.77)
 
-        box_sup_y1 = int(512 * 0.60) # Início dos dentes superiores
-        box_sup_y2 = int(512 * 0.72) # Fim dos dentes superiores
+        box_sup_y1 = int(512 * 0.64)  # Descido para não pegar a pele abaixo do nariz
+        box_sup_y2 = int(512 * 0.75)  # Arcada superior
 
-        box_inf_y1 = int(512 * 0.72) # Início dos dentes inferiores
-        box_inf_y2 = int(512 * 0.82) # Fim da boca
+        box_inf_y1 = int(512 * 0.75)  # Arcada inferior
+        box_inf_y2 = int(512 * 0.84)  # Lábio inferior / fim da boca
 
         cv2.rectangle(mascara_sup, (box_x1, box_sup_y1), (box_x2, box_sup_y2), 255, -1)
         cv2.rectangle(mascara_inf, (box_x1, box_inf_y1), (box_x2, box_inf_y2), 255, -1)
@@ -289,7 +289,7 @@ def process_smile():
         mask_512.save(buffered_mask_512, format="PNG")
         mask_uri = f"data:image/png;base64,{base64.b64encode(buffered_mask_512.getvalue()).decode('utf-8')}"
 
-        print("🚀 [REPLICATE REST] Disparando IA na arcada superior...")
+        print("🚀 [REPLICATE REST] Disparando IA na arcada superior (máscara refinada)...")
 
         replicate_token = os.environ.get("REPLICATE_API_TOKEN")
         headers = {
