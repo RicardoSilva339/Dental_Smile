@@ -9,6 +9,8 @@ import requests
 import numpy as np
 from flask import Flask, request, jsonify
 from PIL import Image, ImageOps, ImageEnhance, ImageDraw, ImageFilter
+import cv2
+import mediapipe as mp
 
 app = Flask(__name__)
 
@@ -59,6 +61,16 @@ def init_device_db():
 
 init_db()
 init_device_db()
+
+# Inicializa o Face Landmarker do MediaPipe uma única vez ao iniciar o servidor
+base_options = mp.tasks.BaseOptions(model_asset_path='face_landmarker.task')
+options = mp.tasks.vision.FaceLandmarkerOptions(
+    base_options=base_options,
+    output_face_blendshapes=False,
+    output_facial_transformation_matrixes=False,
+    num_faces=1
+)
+detector = mp.tasks.vision.FaceLandmarker.create_from_options(options)
 
 @app.route('/check-device', methods=['POST'])
 def check_device():
@@ -237,39 +249,77 @@ def process_smile():
         return jsonify({"success": False, "error": "Nenhuma imagem enviada."}), 400
 
     try:
+        # Extrai os dados base64 (removendo prefixo data:image/... se presente)
+        if "," in image_b64:
+            image_b64 = image_b64.split(",")[1]
+
         image_data = base64.b64decode(image_b64)
         orig_image = Image.open(io.BytesIO(image_data))
         orig_image = ImageOps.exif_transpose(orig_image) or orig_image
 
         rgb_image = orig_image.convert("RGB")
-        orig_w, orig_h = rgb_image.size
+        imagem_rgb = np.array(rgb_image)
+        altura, largura, _ = imagem_rgb.shape
 
         print("=" * 60)
-        print(f"📥 [PYTHON REST] Recebido | Dimensões: {orig_w}x{orig_h} | Cor: {selected_color.upper()}")
+        print(f"📥 [PYTHON REST] Recebido | Dimensões: {largura}x{altura} | Cor: {selected_color.upper()}")
         print("=" * 60)
 
         buffered_orig = io.BytesIO()
         rgb_image.save(buffered_orig, format="JPEG", quality=90)
         original_processed_b64 = base64.b64encode(buffered_orig.getvalue()).decode('utf-8')
 
-        img_512 = rgb_image.resize((512, 512), Image.Resampling.LANCZOS)
+        # Detecção com MediaPipe
+        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=imagem_rgb)
+        detection_result = detector.detect(mp_image)
 
-        # 🛠️ POSICIONAMENTO DA MÁSCARA CORRIGIDO PARA A ABERTURA REAL DOS DENTES
-        mask_512 = Image.new("L", (512, 512), 0)
-        draw_512 = ImageDraw.Draw(mask_512)
+        if not detection_result.face_landmarks:
+            raise Exception("Nenhum rosto detectado na imagem.")
 
-        # y1 ajustado para 0.68 (evita o lábio superior/filtro) e y2 em 0.84
-        draw_512.ellipse([int(512 * 0.30), int(512 * 0.68), int(512 * 0.70), int(512 * 0.84)], fill=255)
+        face_landmarks = detection_result.face_landmarks[0]
+
+        # 1. SMART SQUARE FACE CROP (Recorte Quadrado 1:1 do rosto)
+        y_coords = [int(pt.y * altura) for pt in face_landmarks]
+        center_y = sum(y_coords) // len(y_coords)
+        S = min(largura, altura)
+        y1 = max(0, center_y - (S // 2))
+        y2 = min(altura, y1 + S)
+        if y2 - S >= 0:
+            y1 = y2 - S
+        x1, x2 = 0, S
+
+        # 2. Máscara exclusiva para a Arcada Superior (onde a IA atua)
+        mascara_sup = np.zeros((altura, largura), dtype=np.uint8)
+        pontos_arcada_superior = [78, 191, 80, 81, 82, 13, 312, 311, 310, 415, 308]
+        coordenadas_sup = [(int(face_landmarks[i].x * largura), int(face_landmarks[i].y * altura)) for i in pontos_arcada_superior]
+        cv2.fillPoly(mascara_sup, [np.array(coordenadas_sup, np.int32)], 255)
+
+        kernel = np.ones((3, 3), np.uint8)
+        mascara_sup_dilatada = cv2.dilate(mascara_sup, kernel, iterations=1)
+
+        # 3. Máscara exclusiva para a Arcada Inferior (recebe apenas clareamento/tonalidade)
+        mascara_inf = np.zeros((altura, largura), dtype=np.uint8)
+        pontos_arcada_inferior = [318, 402, 317, 14, 87, 178, 88, 95]
+        coordenadas_inf = [(int(face_landmarks[i].x * largura), int(face_landmarks[i].y * altura)) for i in pontos_arcada_inferior]
+        cv2.fillPoly(mascara_inf, [np.array(coordenadas_inf, np.int32)], 255)
+        mascara_inf_dilatada = cv2.dilate(mascara_inf, kernel, iterations=1)
+
+        # Recorta a região quadrada do rosto para o Replicate
+        crop_sq_img = imagem_rgb[y1:y2, x1:x2]
+        crop_sq_mask = mascara_sup_dilatada[y1:y2, x1:x2]
+
+        img_512 = Image.fromarray(crop_sq_img).resize((512, 512), Image.Resampling.LANCZOS)
+        mask_512 = Image.fromarray(crop_sq_mask).resize((512, 512), Image.Resampling.NEAREST)
 
         buffered_img_512 = io.BytesIO()
         img_512.save(buffered_img_512, format="JPEG", quality=90)
         image_uri = f"data:image/jpeg;base64,{base64.b64encode(buffered_img_512.getvalue()).decode('utf-8')}"
 
         buffered_mask_512 = io.BytesIO()
-        mask_512.save(buffered_mask_512, format="JPEG")
-        mask_uri = f"data:image/jpeg;base64,{base64.b64encode(buffered_mask_512.getvalue()).decode('utf-8')}"
+        mask_512.save(buffered_mask_512, format="PNG")
+        mask_uri = f"data:image/png;base64,{base64.b64encode(buffered_mask_512.getvalue()).decode('utf-8')}"
 
-        print("🚀 [REPLICATE REST] Disparando IA com máscara alinhada nos dentes...")
+        print("🚀 [REPLICATE REST] Disparando IA com máscara alinhada apenas na arcada superior...")
 
         replicate_token = os.environ.get("REPLICATE_API_TOKEN")
         headers = {
@@ -278,14 +328,16 @@ def process_smile():
         }
 
         prompt_text = (
-            f"photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1>(Beautiful natural teeth, aligned bite teeth inside mouth cavity), "
-            f"natural dental arch, realistic mouth depth, aligned white teeth, human like teeth, proportional lips, healthy teeth with a perfect smile, shade {selected_color.upper()}, good proportion smile,"
+            f"photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1>(Beautiful natural teeth, aligned bite teeth), "
+            f"aligned white teeth, human like teeth, (no teeth gap), celebrity-like teeth, healthy teeth with a perfect smile, not big incisor, good proportion teeth, shade {selected_color.upper()}, good proportion smile,"
         )
         negative_prompt_text = (
             "(deformed teeth, semi-realistic, cgi, 3d, render, sketch, cartoon, drawing, anime), "
-            "(teeth on upper lip:2.0, teeth outside mouth:2.0, floating teeth:2.0, protruding teeth:2.0, buck teeth:2.0), "
-            "(giant mouth:2.0, wide mouth:2.0, oversized smile:2.0, big mouth:2.0), "
-            "deformed, distorted, abnormal teeth, disfigured, large teeth, poorly drawn, Fixer, bad anatomy, rabbit teeth, wrong anatomy, missing teeth, disconnected teeth, unnatural mouth, bunny teeth, big incisor teeth, disproportionate front teeth, bad smile, reflection, crooked teeth, distorted teeth, cropped, out of frame, worst quality, low quality, jpeg artifacts, ugly, morbid, disfigured, gross proportions, too many teeth, too less teeth, unnatural size teeth, poorly drawn mouth, poorly drawn teeth"
+            "(deformed, distorted, abnormal teeth:1.3, disfigured:1.3, large teeth:2), poorly drawn, Fixer, bad anatomy, rabbit teeth, "
+            "wrong anatomy, missing teeth, disconnected teeth, unnatural mouth, bunny teeth, big incisor teeth, disproportionate front teeth, "
+            "bad smile, reflection, crooked teeth, distorted teeth, cropped, out of frame, worst quality, low quality, "
+            "jpeg artifacts, ugly, morbid, disfigured, gross proportions, too many teeth, lipstick, lip gloss, "
+            "too less teeth, unnatural size teeth, poorly drawn mouth, poorly drawn teeth"
         )
 
         payload = {
@@ -297,7 +349,7 @@ def process_smile():
                 "negative_prompt": negative_prompt_text,
                 "num_outputs": 1,
                 "num_inference_steps": 25,
-                "guidance_scale": 7.0
+                "guidance_scale": 6.0
             }
         }
 
@@ -335,18 +387,31 @@ def process_smile():
             ai_image_bytes = url_response.read()
 
         ai_image_raw = Image.open(io.BytesIO(ai_image_bytes)).convert("RGB")
-        ai_image_resized = ai_image_raw.resize((orig_w, orig_h), Image.Resampling.LANCZOS)
+        ai_crop_restaurado = ai_image_512 = ai_image_raw.resize((S, S), Image.Resampling.LANCZOS)
 
-        # 🛠️ FUSÃO USANDO A MESMA MÁSCARA ALINHADA E SUAVIZADA
-        mask_blend_resized = mask_512.resize((orig_w, orig_h), Image.Resampling.LANCZOS)
-        mask_blur_radius = max(3, int(orig_w * 0.02))
-        mask_blend_soft = mask_blend_resized.filter(ImageFilter.GaussianBlur(radius=mask_blur_radius))
+        # Fusão suave na arcada superior (com IA)
+        crop_orig_pil = Image.fromarray(crop_sq_img)
+        crop_mask_pil = Image.fromarray(crop_sq_mask)
+        mask_soft = crop_mask_pil.filter(ImageFilter.GaussianBlur(radius=2))
 
-        final_image = Image.composite(ai_image_resized, rgb_image, mask_blend_soft)
+        crop_final_pil = Image.composite(ai_crop_restaurado, crop_orig_pil, mask_soft)
+        crop_final_np = np.array(crop_final_pil)
 
-        buffered_ai = io.BytesIO()
-        final_image.save(buffered_ai, format="JPEG", quality=90)
-        processed_b64 = base64.b64encode(buffered_ai.getvalue()).decode('utf-8')
+        # Reconstrói a imagem com a arcada superior corrigida
+        imagem_final_rgb = np.copy(imagem_rgb)
+        imagem_final_rgb[y1:y2, x1:x2] = crop_final_np
+
+        # 4. Tratamento suave da Arcada Inferior (Clareamento / Tonalidade sem alterar formato)
+        # Converte para HSV para ajustar brilho/saturação dos dentes de baixo preservando a anatomia torta original
+        hsv = cv2.cvtColor(imagem_final_rgb, cv2.COLOR_RGB2HSV).astype(np.float32)
+        hsv[:, :, 2] = np.where(mascara_inf_dilatada > 0, np.clip(hsv[:, :, 2] * 1.15, 0, 255), hsv[:, :, 2]) # Aumenta brilho
+        hsv[:, :, 1] = np.where(mascara_inf_dilatada > 128, np.clip(hsv[:, :, 1] * 0.85, 0, 255), hsv[:, :, 1]) # Reduz amarelado (saturação)
+        imagem_final_rgb = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2RGB)
+
+        # Codifica o resultado final para base64
+        final_bgr = cv2.cvtColor(imagem_final_rgb, cv2.COLOR_RGB2BGR)
+        _, buffer = cv2.imencode('.jpg', final_bgr, [cv2.IMWRITE_JPEG_QUALITY, 95])
+        processed_b64 = base64.b64encode(buffer).decode('utf-8')
 
         if is_convidado:
             cur.execute("UPDATE dispositivos SET creditos = creditos - 1 WHERE device_id = %s RETURNING creditos;", (device_id,))
@@ -360,7 +425,7 @@ def process_smile():
         conn.close()
 
         print("=" * 60)
-        print("📤 [PYTHON REST] Fusão alinhada com sucesso!")
+        print("📤 [PYTHON REST] Simulação de sorriso concluída com sucesso!")
         print("=" * 60)
 
         return jsonify({
@@ -373,7 +438,7 @@ def process_smile():
     except Exception as e:
         if 'cur' in locals() and cur: cur.close()
         if 'conn' in locals() and conn: conn.close()
-        print(f"❌ Erro crítico no Replicate REST: {str(e)}")
+        print(f"❌ Erro crítico no backend: {str(e)}")
         traceback.print_exc()
         return jsonify({"success": False, "error": str(e)}), 500
 
