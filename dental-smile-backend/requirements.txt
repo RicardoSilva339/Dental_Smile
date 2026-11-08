@@ -7,3 +7,5 @@ huggingface-hub
 psycopg2-binary
 numpy
 replicate
+opencv-python-headless
+mediapipe
