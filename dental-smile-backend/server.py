@@ -61,7 +61,7 @@ def init_device_db():
 init_db()
 init_device_db()
 
-print("⚙️ Servidor iniciado com sucesso (Ajustado para o recorte dinâmico do ML Kit)")
+print("⚙️ Servidor iniciado com sucesso (Sem marcações retangulares no lábio)")
 
 @app.route('/check-device', methods=['POST'])
 def check_device():
@@ -260,24 +260,18 @@ def process_smile():
         original_processed_b64 = base64.b64encode(buffered_orig.getvalue()).decode('utf-8')
 
         mascara_sup = np.zeros((512, 512), dtype=np.uint8)
-        mascara_inf = np.zeros((512, 512), dtype=np.uint8)
 
-        # Coordenadas centralizadas para o recorte dinâmico do Google ML Kit
+        # 🛠️ MÁSCARA PRECISA APENAS NA BOCA/DENTES (Sem retângulo no queixo/lábios)
         box_x1 = int(512 * 0.22)
         box_x2 = int(512 * 0.78)
 
         box_sup_y1 = int(512 * 0.38)  # Arcada superior no centro do recorte ML Kit
-        box_sup_y2 = int(512 * 0.52)  # Fim dos dentes superiores
-
-        box_inf_y1 = int(512 * 0.52)  # Arcada inferior
-        box_inf_y2 = int(512 * 0.64)  # Fim da boca
+        box_sup_y2 = int(512 * 0.54)  # Cobertura natural da boca
 
         cv2.rectangle(mascara_sup, (box_x1, box_sup_y1), (box_x2, box_sup_y2), 255, -1)
-        cv2.rectangle(mascara_inf, (box_x1, box_inf_y1), (box_x2, box_inf_y2), 255, -1)
 
         kernel = np.ones((3, 3), np.uint8)
         mascara_sup_dilatada = cv2.dilate(mascara_sup, kernel, iterations=1)
-        mascara_inf_dilatada = cv2.dilate(mascara_inf, kernel, iterations=1)
 
         mask_512 = Image.fromarray(mascara_sup_dilatada)
 
@@ -357,19 +351,13 @@ def process_smile():
         ai_image_raw = Image.open(io.BytesIO(ai_image_bytes)).convert("RGB")
         ai_crop_restaurado = ai_image_raw.resize((512, 512), Image.Resampling.LANCZOS)
 
-        # Fusão suave na arcada superior
+        # Fusão suave e imperceptível da imagem gerada pela IA
         crop_orig_pil = Image.fromarray(imagem_rgb)
         crop_mask_pil = Image.fromarray(mascara_sup_dilatada)
-        mask_soft = crop_mask_pil.filter(ImageFilter.GaussianBlur(radius=2))
+        mask_soft = crop_mask_pil.filter(ImageFilter.GaussianBlur(radius=3))
 
         crop_final_pil = Image.composite(ai_crop_restaurado, crop_orig_pil, mask_soft)
         imagem_final_rgb = np.array(crop_final_pil)
-
-        # Tratamento da Arcada Inferior (Clareamento)
-        hsv = cv2.cvtColor(imagem_final_rgb, cv2.COLOR_RGB2HSV).astype(np.float32)
-        hsv[:, :, 2] = np.where(mascara_inf_dilatada > 0, np.clip(hsv[:, :, 2] * 1.15, 0, 255), hsv[:, :, 2])
-        hsv[:, :, 1] = np.where(mascara_inf_dilatada > 128, np.clip(hsv[:, :, 1] * 0.85, 0, 255), hsv[:, :, 1])
-        imagem_final_rgb = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2RGB)
 
         final_bgr = cv2.cvtColor(imagem_final_rgb, cv2.COLOR_RGB2BGR)
         _, buffer = cv2.imencode('.jpg', final_bgr, [cv2.IMWRITE_JPEG_QUALITY, 95])
