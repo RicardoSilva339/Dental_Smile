@@ -61,7 +61,7 @@ def init_device_db():
 init_db()
 init_device_db()
 
-print("⚙️ Servidor iniciado com sucesso (Máscara reduzida e compacta para os dentes)")
+print("⚙️ Servidor iniciado com sucesso (Ajustado para o recorte dinâmico do ML Kit)")
 
 @app.route('/check-device', methods=['POST'])
 def check_device():
@@ -252,7 +252,7 @@ def process_smile():
         altura, largura, _ = imagem_rgb.shape
 
         print("=" * 60)
-        print(f"📥 [PYTHON REST] Imagem 512x512 recebida do Flutter | Cor: {selected_color.upper()}")
+        print(f"📥 [PYTHON REST] Imagem 512x512 recebida do ML Kit | Cor: {selected_color.upper()}")
         print("=" * 60)
 
         buffered_orig = io.BytesIO()
@@ -262,15 +262,15 @@ def process_smile():
         mascara_sup = np.zeros((512, 512), dtype=np.uint8)
         mascara_inf = np.zeros((512, 512), dtype=np.uint8)
 
-        # 🛠️ MÁSCARA COMPACTA E REDUZIDA PARA ENCAIXAR ESTREITAMENTE NOS DENTES
-        box_x1 = int(512 * 0.30)
-        box_x2 = int(512 * 0.70)
+        # Coordenadas centralizadas para o recorte dinâmico do Google ML Kit
+        box_x1 = int(512 * 0.22)
+        box_x2 = int(512 * 0.78)
 
-        box_sup_y1 = int(512 * 0.66)  # Topo reduzido (início dos dentes superiores)
-        box_sup_y2 = int(512 * 0.73)  # Fim da arcada superior
+        box_sup_y1 = int(512 * 0.38)  # Arcada superior no centro do recorte ML Kit
+        box_sup_y2 = int(512 * 0.52)  # Fim dos dentes superiores
 
-        box_inf_y1 = int(512 * 0.73)  # Início da arcada inferior
-        box_inf_y2 = int(512 * 0.79)  # Base reduzida (fim dos dentes inferiores)
+        box_inf_y1 = int(512 * 0.52)  # Arcada inferior
+        box_inf_y2 = int(512 * 0.64)  # Fim da boca
 
         cv2.rectangle(mascara_sup, (box_x1, box_sup_y1), (box_x2, box_sup_y2), 255, -1)
         cv2.rectangle(mascara_inf, (box_x1, box_inf_y1), (box_x2, box_inf_y2), 255, -1)
@@ -289,7 +289,7 @@ def process_smile():
         mask_512.save(buffered_mask_512, format="PNG")
         mask_uri = f"data:image/png;base64,{base64.b64encode(buffered_mask_512.getvalue()).decode('utf-8')}"
 
-        print("🚀 [REPLICATE REST] Disparando IA na arcada superior (máscara reduzida)...")
+        print("🚀 [REPLICATE REST] Disparando IA na arcada superior...")
 
         replicate_token = os.environ.get("REPLICATE_API_TOKEN")
         headers = {

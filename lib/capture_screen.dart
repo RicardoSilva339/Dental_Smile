@@ -4,6 +4,7 @@ import 'package:camera/camera.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:image/image.dart' as img;
+import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 
 class CaptureScreen extends StatefulWidget {
         const CaptureScreen({super.key});
@@ -18,6 +19,14 @@ class _CaptureScreenState extends State<CaptureScreen> {
         bool _isCameraInitialized = false;
         bool _isCapturing = false;
         int _selectedCameraIndex = 0;
+
+        // 🤖 Detector Facial via Google ML Kit com Landmarks ativados e enum corrigido
+        final FaceDetector _faceDetector = FaceDetector(
+                options: FaceDetectorOptions(
+                        enableLandmarks: true,
+                        performanceMode: FaceDetectorMode.accurate,
+                ),
+        );
 
         @override
         void initState() {
@@ -60,6 +69,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
         @override
         void dispose() {
                 _controller?.dispose();
+                _faceDetector.close();
                 super.dispose();
         }
 
@@ -71,10 +81,22 @@ class _CaptureScreenState extends State<CaptureScreen> {
                 try {
                         final XFile picture = await _controller!.takePicture();
                         File originalFile = File(picture.path);
-                        File? croppedFile = await _processarRecorteOval(originalFile);
+
+                        File? croppedFile = await _processarRecorteInteligente(originalFile);
+
+                        if (croppedFile == null) {
+                                if (!mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                                content: Text("Rosto ou sorriso não detectado. Centralize o rosto e tente novamente."),
+                                                backgroundColor: Colors.redAccent,
+                                        ),
+                                );
+                                return;
+                        }
 
                         if (!mounted) return;
-                        _avancarParaAnalise(croppedFile ?? originalFile);
+                        _avancarParaAnalise(croppedFile);
                 } catch (e) {
                         debugPrint("Erro ao capturar imagem: $e");
                 } finally {
@@ -87,43 +109,83 @@ class _CaptureScreenState extends State<CaptureScreen> {
                 final pickedFile = await picker.pickImage(source: ImageSource.gallery);
 
                 if (pickedFile != null) {
-                        File originalFile = File(pickedFile.path);
-                        File? croppedFile = await _processarRecorteOval(originalFile);
+                        setState(() => _isCapturing = true);
+                        try {
+                                File originalFile = File(pickedFile.path);
+                                File? croppedFile = await _processarRecorteInteligente(originalFile);
 
-                        if (!mounted) return;
-                        _avancarParaAnalise(croppedFile ?? originalFile);
+                                if (croppedFile == null) {
+                                        if (!mounted) return;
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                                const SnackBar(
+                                                        content: Text("Não foi possível identificar o rosto/sorriso na foto selecionada."),
+                                                        backgroundColor: Colors.redAccent,
+                                                ),
+                                        );
+                                        return;
+                                }
+
+                                if (!mounted) return;
+                                _avancarParaAnalise(croppedFile);
+                        } finally {
+                                if (mounted) setState(() => _isCapturing = false);
+                        }
                 }
         }
 
-        // 🎯 RECORTE CIRÚRGICO: Quadrado focado EXATAMENTE no Oval do rosto (Elimina ombros e peito)
-        Future<File?> _processarRecorteOval(File imagemOriginal) async {
+        // 🧠 DETECÇÃO E RECORTE DINÂMICO VIA GOOGLE ML KIT
+        Future<File?> _processarRecorteInteligente(File imagemOriginal) async {
                 try {
+                        final inputImage = InputImage.fromFile(imagemOriginal);
+                        final List<Face> faces = await _faceDetector.processImage(inputImage);
+
+                        if (faces.isEmpty) {
+                                debugPrint("ML Kit: Nenhum rosto encontrado.");
+                                return null;
+                        }
+
+                        final Face face = faces.first;
                         final bytes = await imagemOriginal.readAsBytes();
-                        final imagemDecodificada = img.decodeImage(bytes);
-                        if (imagemDecodificada == null) return imagemOriginal;
+                        final img.Image? imagemDecodificada = img.decodeImage(bytes);
+                        if (imagemDecodificada == null) return null;
 
                         int larguraImg = imagemDecodificada.width;
                         int alturaImg = imagemDecodificada.height;
 
-                        // 1. O oval da interface ocupa 48% da altura. Cortamos um quadrado de 50%
-                        // para focar APENAS no rosto, eliminando peito e ombros!
-                        int tamanhoQuadrado = (alturaImg * 0.50).toInt();
-                        if (tamanhoQuadrado > larguraImg) tamanhoQuadrado = larguraImg;
+                        // Obtém as coordenadas da boca através dos pontos anatômicos (Landmarks)
+                        final bottomMouth = face.landmarks[FaceLandmarkType.bottomMouth]?.position;
+                        final leftMouth = face.landmarks[FaceLandmarkType.leftMouth]?.position;
+                        final rightMouth = face.landmarks[FaceLandmarkType.rightMouth]?.position;
 
-                        // 2. Centraliza o quadrado exatamente onde o Oval está desenhado na tela
-                        int centroX = larguraImg ~/ 2;
-                        int centroY = (alturaImg ~/ 2) - 20;
+                        int centroX;
+                        int centroY;
+
+                        if (leftMouth != null && rightMouth != null && bottomMouth != null) {
+                                // Ponto central cravado nos dentes/boca
+                                centroX = ((leftMouth.x + rightMouth.x) / 2).toInt();
+                                centroY = ((leftMouth.y + bottomMouth.y) / 2).toInt();
+                        } else {
+                                // Fallback: calcula o centro da boca com base na bounding box do rosto
+                                final boundingBox = face.boundingBox;
+                                centroX = boundingBox.center.dx.toInt();
+                                centroY = (boundingBox.top + (boundingBox.height * 0.70)).toInt();
+                        }
+
+                        // Define o tamanho do quadrado delimitador proporcional ao rosto
+                        int tamanhoQuadrado = (face.boundingBox.height * 0.85).toInt();
+                        if (tamanhoQuadrado > larguraImg) tamanhoQuadrado = larguraImg;
+                        if (tamanhoQuadrado > alturaImg) tamanhoQuadrado = alturaImg;
 
                         int offsetX = centroX - (tamanhoQuadrado ~/ 2);
                         int offsetY = centroY - (tamanhoQuadrado ~/ 2);
 
-                        // Travas de segurança para não cortar fora da imagem
+                        // Trava os limites para evitar estouro fora da imagem
                         if (offsetX < 0) offsetX = 0;
                         if (offsetY < 0) offsetY = 0;
                         if (offsetX + tamanhoQuadrado > larguraImg) offsetX = larguraImg - tamanhoQuadrado;
                         if (offsetY + tamanhoQuadrado > alturaImg) offsetY = alturaImg - tamanhoQuadrado;
 
-                        // 3. Faz o corte quadrado em close-up do rosto
+                        // 1. Corte 1:1 quadrado focado dinamicamente na boca
                         img.Image imagemCropped = img.copyCrop(
                                 imagemDecodificada,
                                 x: offsetX,
@@ -132,7 +194,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
                                 height: tamanhoQuadrado,
                         );
 
-                        // 4. Redimensiona para 512x512 sem achatar
+                        // 2. Padronização 512x512 para a API do Replicate
                         img.Image imagemFinal = img.copyResize(
                                 imagemCropped,
                                 width: 512,
@@ -140,13 +202,13 @@ class _CaptureScreenState extends State<CaptureScreen> {
                                 interpolation: img.Interpolation.linear,
                         );
 
-                        final targetPath = '${imagemOriginal.path}_face_oval.jpg';
+                        final targetPath = '${imagemOriginal.path}_mlkit_smile.jpg';
                         File arquivoFinal = File(targetPath)
                                 ..writeAsBytesSync(img.encodeJpg(imagemFinal, quality: 90));
 
                         return arquivoFinal;
                 } catch (e) {
-                        debugPrint("Erro no recorte oval: $e");
+                        debugPrint("Erro no processamento do ML Kit: $e");
                         return null;
                 }
         }
@@ -189,15 +251,11 @@ class _CaptureScreenState extends State<CaptureScreen> {
                 }
 
                 return Scaffold(
+                        backgroundColor: Colors.black,
                         body: Stack(
                                 children: [
                                         Positioned.fill(
                                                 child: CameraPreview(_controller!),
-                                        ),
-                                        Positioned.fill(
-                                                child: CustomPaint(
-                                                        painter: OvalOverlayPainter(),
-                                                ),
                                         ),
                                         SafeArea(
                                                 child: Column(
@@ -212,27 +270,34 @@ class _CaptureScreenState extends State<CaptureScreen> {
                                                                                                 onPressed: () => Navigator.pop(context),
                                                                                         ),
                                                                                         const Text(
-                                                                                                'Enquadramento Facial',
+                                                                                                'Simulação de Sorriso',
                                                                                                 style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
                                                                                         ),
                                                                                         const SizedBox(width: 48),
                                                                                 ],
                                                                         ),
                                                                 ),
-                                                                const SizedBox(height: 8),
+                                                                const SizedBox(height: 12),
                                                                 Container(
                                                                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                                                                         decoration: BoxDecoration(
-                                                                                color: Colors.black.withOpacity(0.6),
+                                                                                color: Colors.black.withOpacity(0.65),
                                                                                 borderRadius: BorderRadius.circular(20),
                                                                         ),
-                                                                        child: const Text(
-                                                                                'Posicione o rosto e o sorriso dentro da oval',
-                                                                                style: TextStyle(
-                                                                                        color: Colors.white,
-                                                                                        fontSize: 13,
-                                                                                        fontWeight: FontWeight.bold,
-                                                                                ),
+                                                                        child: const Row(
+                                                                                mainAxisSize: MainAxisSize.min,
+                                                                                children: [
+                                                                                        Icon(Icons.face_retouching_natural, color: Colors.amberAccent, size: 18),
+                                                                                        SizedBox(width: 8),
+                                                                                        Text(
+                                                                                                'Enquadre o rosto e tire a foto',
+                                                                                                style: TextStyle(
+                                                                                                        color: Colors.white,
+                                                                                                        fontSize: 13,
+                                                                                                        fontWeight: FontWeight.bold,
+                                                                                                ),
+                                                                                        ),
+                                                                                ],
                                                                         ),
                                                                 ),
                                                         ],
@@ -290,45 +355,4 @@ class _CaptureScreenState extends State<CaptureScreen> {
                         ),
                 );
         }
-}
-
-class OvalOverlayPainter extends CustomPainter {
-        @override
-        void paint(Canvas canvas, Size size) {
-                final paintBackground = Paint()
-                        ..color = Colors.black.withOpacity(0.7)
-                        ..style = PaintingStyle.fill;
-
-                final rectTotal = Rect.fromLTWH(0, 0, size.width, size.height);
-
-                final double ovalWidth = size.width * 0.72;
-                final double ovalHeight = size.height * 0.48;
-
-                final Rect ovalRect = Rect.fromCenter(
-                        center: Offset(size.width / 2, (size.height / 2) - 20),
-                        width: ovalWidth,
-                        height: ovalHeight,
-                );
-
-                final Path pathBackground = Path()..addRect(rectTotal);
-                final Path pathOval = Path()..addOval(ovalRect);
-
-                final Path pathFinal = Path.combine(
-                        PathOperation.difference,
-                        pathBackground,
-                        pathOval,
-                );
-
-                canvas.drawPath(pathFinal, paintBackground);
-
-                final paintBorder = Paint()
-                        ..color = Colors.amberAccent
-                        ..style = PaintingStyle.stroke
-                        ..strokeWidth = 3.5;
-
-                canvas.drawOval(ovalRect, paintBorder);
-        }
-
-        @override
-        bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
