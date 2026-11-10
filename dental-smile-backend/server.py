@@ -267,32 +267,31 @@ def process_smile():
 
         mascara_sup = np.zeros((512, 512), dtype=np.uint8)
 
-        # 🛠️ GERAÇÃO DA MÁSCARA DENTÁRIA ANATÔMICA (Cravada na Arcada Superior)
+        # 🛠️ A VOLTA À MÁSCARA "PERFEITA" (Proporção cravada + Centro do ML Kit)
         if mouth_box and len(mouth_box) == 4:
-            print("🎯 Posicionando máscara na arcada superior via ML Kit...")
-            y1 = int(mouth_box[0] * 512)
-            y2 = int(mouth_box[1] * 512)
-            x1 = int(mouth_box[2] * 512)
-            x2 = int(mouth_box[3] * 512)
+            print("🎯 Centralizando via ML Kit, mas usando o tamanho PERFEITO aprovado...")
+            y1_norm = mouth_box[0] # Linha dos dentes superiores
+            x1_norm = mouth_box[2] # Canto esquerdo
+            x2_norm = mouth_box[3] # Canto direito
 
-            altura_boca = y2 - y1
-            largura_boca = x2 - x1
+            # 1. Posicionamento Dinâmico (ML Kit)
+            centro_x = int(((x1_norm + x2_norm) / 2) * 512)
+            # O y1 já foi calculado no Flutter para ficar exatamente sobre os dentes superiores!
+            centro_y = int(y1_norm * 512)
 
-            # Centro horizontal perfeito e centro vertical deslocado aos 35% superiores da boca
-            centro_x = int((x1 + x2) / 2)
-            centro_y = int(y1 + (altura_boca * 0.35))
-
-            # Dimensões adaptativas para envolver a arcada sem tocar lábios/língua
-            raio_x = int((largura_boca / 2) * 0.88)
-            raio_y = int((altura_boca / 2) * 0.50)
+            # 2. O TAMANHO QUE FUNCIONA (A MÁGICA DE ONTEM)
+            # Largura: 25% MAIOR que a boca para não cortar as laterais (Evita o erro da última foto)
+            raio_x = int((((x2_norm - x1_norm) / 2) * 512) * 1.25)
+            # Altura: Fina e travada exatamente na mesma medida do Fallback original (0.06 = 30px)
+            raio_y = int(512 * 0.06)
 
             cv2.ellipse(mascara_sup, (centro_x, centro_y), (raio_x, raio_y), 0, 0, 360, 255, -1)
         else:
-            # Fallback anatômico seguro
+            # Fallback anatômico original e seguro de ontem
             centro_x = 256
-            centro_y = int(512 * 0.44)
-            raio_x = int(512 * 0.26)
-            raio_y = int(512 * 0.08)
+            centro_y = int(512 * 0.46)
+            raio_x = int(512 * 0.28)
+            raio_y = int(512 * 0.06)
             cv2.ellipse(mascara_sup, (centro_x, centro_y), (raio_x, raio_y), 0, 0, 360, 255, -1)
 
         kernel = np.ones((3, 3), np.uint8)
