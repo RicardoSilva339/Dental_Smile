@@ -267,28 +267,32 @@ def process_smile():
 
         mascara_sup = np.zeros((512, 512), dtype=np.uint8)
 
-        # 🛠️ GERAÇÃO DA MÁSCARA DENTÁRIA (Com altura restrita aos dentes)
+        # 🛠️ GERAÇÃO DA MÁSCARA DENTÁRIA ANATÔMICA (Cravada na Arcada Superior)
         if mouth_box and len(mouth_box) == 4:
-            print("🎯 Utilizando centralização dinâmica do ML Kit com altura restrita a dentes...")
+            print("🎯 Posicionando máscara na arcada superior via ML Kit...")
             y1 = int(mouth_box[0] * 512)
             y2 = int(mouth_box[1] * 512)
             x1 = int(mouth_box[2] * 512)
             x2 = int(mouth_box[3] * 512)
 
-            centro_x = int((x1 + x2) / 2)
-            centro_y = int((y1 + y2) / 2)
+            altura_boca = y2 - y1
+            largura_boca = x2 - x1
 
-            # Largura inteligente (85% da boca) e altura travada em 25px para NUNCA pegar os lábios
-            raio_x = int(((x2 - x1) / 2) * 0.85)
-            raio_y = int(512 * 0.05)
+            # Centro horizontal perfeito e centro vertical deslocado aos 35% superiores da boca
+            centro_x = int((x1 + x2) / 2)
+            centro_y = int(y1 + (altura_boca * 0.35))
+
+            # Dimensões adaptativas para envolver a arcada sem tocar lábios/língua
+            raio_x = int((largura_boca / 2) * 0.88)
+            raio_y = int((altura_boca / 2) * 0.50)
 
             cv2.ellipse(mascara_sup, (centro_x, centro_y), (raio_x, raio_y), 0, 0, 360, 255, -1)
         else:
-            # Fallback anatômico
+            # Fallback anatômico seguro
             centro_x = 256
-            centro_y = int(512 * 0.46)
-            raio_x = int(512 * 0.28)
-            raio_y = int(512 * 0.06)
+            centro_y = int(512 * 0.44)
+            raio_x = int(512 * 0.26)
+            raio_y = int(512 * 0.08)
             cv2.ellipse(mascara_sup, (centro_x, centro_y), (raio_x, raio_y), 0, 0, 360, 255, -1)
 
         kernel = np.ones((3, 3), np.uint8)
