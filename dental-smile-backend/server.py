@@ -65,7 +65,7 @@ def init_device_db():
 init_db()
 init_device_db()
 
-print("⚙️ Servidor iniciado com sucesso (Base estável + Calibração Cirúrgica Bleach BL1-BL4)")
+print("⚙️ Servidor iniciado com sucesso (Base estável + Calibração Cirúrgica Bleach BL1-BL4 Agressiva)")
 
 @app.route('/check-device', methods=['POST'])
 def check_device():
@@ -265,7 +265,7 @@ def process_smile():
 
         mascara_sup = np.zeros((512, 512), dtype=np.uint8)
 
-        # 🛠️ Máscara estável comprovada no "Novo Mundo"
+        # 🛠️ Máscara estável do "Novo Mundo"
         box_x1 = int(512 * 0.22)
         box_x2 = int(512 * 0.78)
         box_sup_y1 = int(512 * 0.38)
@@ -354,26 +354,26 @@ def process_smile():
         ai_image_raw = Image.open(io.BytesIO(ai_image_bytes)).convert("RGB")
         ai_crop_restaurado = ai_image_raw.resize((512, 512), Image.Resampling.LANCZOS)
 
-        # 🎨 CALIBRAÇÃO CIRÚRGICA DE CORES BLEACH (BL1 a BL4) - Suavidade natural idêntica à referência
+        # 🎨 CALIBRAÇÃO CIRÚRGICA DE CORES BLEACH (BL1 a BL4) - Variação real e perceptível
         ai_np = np.array(ai_crop_restaurado)
         hsv_ai = cv2.cvtColor(ai_np, cv2.COLOR_RGB2HSV).astype(np.float32)
 
         if selected_color == 'bl1':
-            # BL1: Ultra iluminado e brilhante, preservando a textura do esmalte puro
-            hsv_ai[:, :, 2] = np.clip(hsv_ai[:, :, 2] * 1.02, 0, 255)
-            hsv_ai[:, :, 1] = np.clip(hsv_ai[:, :, 1] * 0.98, 0, 255)
+            # BL1: Branco neve ultra iluminado
+            hsv_ai[:, :, 2] = np.clip(hsv_ai[:, :, 2] * 1.08, 0, 255)
+            hsv_ai[:, :, 1] = np.clip(hsv_ai[:, :, 1] * 0.85, 0, 255)
         elif selected_color == 'bl2':
-            # BL2: Branco intenso com micro-toque natural
-            hsv_ai[:, :, 2] = np.clip(hsv_ai[:, :, 2] * 1.00, 0, 255)
+            # BL2: Branco intenso natural
+            hsv_ai[:, :, 2] = np.clip(hsv_ai[:, :, 2] * 1.02, 0, 255)
             hsv_ai[:, :, 1] = np.clip(hsv_ai[:, :, 1] * 1.00, 0, 255)
         elif selected_color == 'bl3':
-            # BL3: Natural equilibrado (marfim levemente acolhedor)
-            hsv_ai[:, :, 2] = np.clip(hsv_ai[:, :, 2] * 0.98, 0, 255)
-            hsv_ai[:, :, 1] = np.clip(hsv_ai[:, :, 1] * 1.03, 0, 255)
+            # BL3: Marfim equilibrado e acolhedor
+            hsv_ai[:, :, 2] = np.clip(hsv_ai[:, :, 2] * 0.95, 0, 255)
+            hsv_ai[:, :, 1] = np.clip(hsv_ai[:, :, 1] * 1.20, 0, 255)
         elif selected_color == 'bl4':
-            # BL4: Suave e orgânico (tom de esmalte natural mais quente)
-            hsv_ai[:, :, 2] = np.clip(hsv_ai[:, :, 2] * 0.96, 0, 255)
-            hsv_ai[:, :, 1] = np.clip(hsv_ai[:, :, 1] * 1.06, 0, 255)
+            # BL4: Tom de esmalte natural mais quente e orgânico
+            hsv_ai[:, :, 2] = np.clip(hsv_ai[:, :, 2] * 0.88, 0, 255)
+            hsv_ai[:, :, 1] = np.clip(hsv_ai[:, :, 1] * 1.40, 0, 255)
 
         ai_crop_restaurado = Image.fromarray(cv2.cvtColor(hsv_ai.astype(np.uint8), cv2.COLOR_HSV2RGB))
 
@@ -401,7 +401,7 @@ def process_smile():
         conn.close()
 
         print("=" * 60)
-        print("📤 [PYTHON REST] Simulação concluída com calibração de cor cirúrgica!")
+        print("📤 [PYTHON REST] Simulação concluída com calibração de cor agressiva BL1-BL4!")
         print("=" * 60)
 
         return jsonify({
