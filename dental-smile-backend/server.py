@@ -61,7 +61,7 @@ def init_device_db():
 init_db()
 init_device_db()
 
-print("⚙️ Servidor iniciado com sucesso (Sem marcações retangulares no lábio)")
+print("⚙️ Servidor iniciado com sucesso (Máscara ajustada para mordida e gradação de cores BL1-BL4)")
 
 @app.route('/check-device', methods=['POST'])
 def check_device():
@@ -261,12 +261,12 @@ def process_smile():
 
         mascara_sup = np.zeros((512, 512), dtype=np.uint8)
 
-        # 🛠️ MÁSCARA PRECISA APENAS NA BOCA/DENTES (Sem retângulo no queixo/lábios)
+        # 🛠️ MÁSCARA VERTICALMENTE COMPACTA (Evita dentes compridos e abertura indesejada da mordida)
         box_x1 = int(512 * 0.22)
         box_x2 = int(512 * 0.78)
 
-        box_sup_y1 = int(512 * 0.38)  # Arcada superior no centro do recorte ML Kit
-        box_sup_y2 = int(512 * 0.54)  # Cobertura natural da boca
+        box_sup_y1 = int(512 * 0.38)  # Início exato dos dentes superiores
+        box_sup_y2 = int(512 * 0.48)  # Limite inferior rígido na linha do sorriso (impede esticar dentes)
 
         cv2.rectangle(mascara_sup, (box_x1, box_sup_y1), (box_x2, box_sup_y2), 255, -1)
 
@@ -297,7 +297,8 @@ def process_smile():
         )
         negative_prompt_text = (
             "(deformed teeth, semi-realistic, cgi, 3d, render, sketch, cartoon, drawing, anime), "
-            "(deformed, distorted, abnormal teeth:1.3, disfigured:1.3, large teeth:2), poorly drawn, Fixer, bad anatomy, rabbit teeth, "
+            "(deformed, distorted, abnormal teeth:1.3, disfigured:1.3, large teeth:2), (oversized teeth:1.5), (long incisors:1.5), (large front teeth:1.5), "
+            "open mouth gap, changing occlusion, unnatural tooth length, poorly drawn, Fixer, bad anatomy, rabbit teeth, "
             "wrong anatomy, missing teeth, disconnected teeth, unnatural mouth, bunny teeth, big incisor teeth, disproportionate front teeth, "
             "bad smile, reflection, crooked teeth, distorted teeth, cropped, out of frame, worst quality, low quality, "
             "jpeg artifacts, ugly, morbid, disfigured, gross proportions, too many teeth, lipstick, lip gloss, "
@@ -350,6 +351,23 @@ def process_smile():
 
         ai_image_raw = Image.open(io.BytesIO(ai_image_bytes)).convert("RGB")
         ai_crop_restaurado = ai_image_raw.resize((512, 512), Image.Resampling.LANCZOS)
+
+        # 🎨 GRADAÇÃO PRECISA DE CORES (BL1, BL2, BL3, BL4) VIA PÓS-PROCESSAMENTO HSV
+        ai_np = np.array(ai_crop_restaurado)
+        hsv_ai = cv2.cvtColor(ai_np, cv2.COLOR_RGB2HSV).astype(np.float32)
+
+        if selected_color == 'bl2':
+            hsv_ai[:, :, 2] = np.clip(hsv_ai[:, :, 2] * 0.95, 0, 255)  # Suave redução de brilho
+            hsv_ai[:, :, 1] = np.clip(hsv_ai[:, :, 1] * 1.04, 0, 255)  # Pequeno ganho natural de tom
+        elif selected_color == 'bl3':
+            hsv_ai[:, :, 2] = np.clip(hsv_ai[:, :, 2] * 0.90, 0, 255)  # Tom clareado natural
+            hsv_ai[:, :, 1] = np.clip(hsv_ai[:, :, 1] * 1.08, 0, 255)
+        elif selected_color == 'bl4':
+            hsv_ai[:, :, 2] = np.clip(hsv_ai[:, :, 2] * 0.85, 0, 255)  # Tom clareado anatômico suave
+            hsv_ai[:, :, 1] = np.clip(hsv_ai[:, :, 1] * 1.12, 0, 255)
+        # Se for 'bl1', mantém 100% do brilho máximo original gerado pela IA (Hollywood White)
+
+        ai_crop_restaurado = Image.fromarray(cv2.cvtColor(hsv_ai.astype(np.uint8), cv2.COLOR_HSV2RGB))
 
         # Fusão suave e imperceptível da imagem gerada pela IA
         crop_orig_pil = Image.fromarray(imagem_rgb)
