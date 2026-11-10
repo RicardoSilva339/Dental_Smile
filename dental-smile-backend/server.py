@@ -13,6 +13,11 @@ import cv2
 
 app = Flask(__name__)
 
+# 🟢 Rota de Health Check para o Render passar no deploy instantaneamente (200 OK)
+@app.route('/', methods=['GET', 'HEAD'])
+def health_check():
+    return "Dental Smile Backend OK", 200
+
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
 def get_db_connection():
@@ -231,7 +236,7 @@ def process_smile():
 
     image_b64 = data.get('image')
     selected_color = data.get('color', 'bl2').lower()
-    mouth_box = data.get('mouth_box')  # Opcional: [y1, y2, x1, x2] normalizados (0.0 a 1.0) vindo do Flutter
+    mouth_box = data.get('mouth_box')
 
     if not image_b64:
         cur.close()
@@ -264,7 +269,6 @@ def process_smile():
 
         # 🛠️ GERAÇÃO DA MÁSCARA (DINÂMICA OU ELÍPTICA ANATÔMICA)
         if mouth_box and len(mouth_box) == 4:
-            # Caso o app envie as coordenadas exatas detectadas pelo ML Kit
             print("🎯 Utilizando coordenadas dinâmicas recebidas do ML Kit...")
             y1 = int(mouth_box[0] * 512)
             y2 = int(mouth_box[1] * 512)
@@ -276,7 +280,6 @@ def process_smile():
             raio_y = int((y2 - y1) / 2)
             cv2.ellipse(mascara_sup, (centro_x, centro_y), (raio_x, raio_y), 0, 0, 360, 255, -1)
         else:
-            # Fallback anatômico elíptico (Protege lábio superior Y:0.40 e cobre base do dente Y:0.52)
             centro_x = 256
             centro_y = int(512 * 0.46)
             raio_x = int(512 * 0.28)
