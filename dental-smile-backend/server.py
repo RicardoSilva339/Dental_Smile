@@ -13,6 +13,10 @@ import cv2
 
 app = Flask(__name__)
 
+@app.route('/', methods=['GET', 'HEAD'])
+def health_check():
+    return "Dental Smile Backend OK", 200
+
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
 def get_db_connection():
@@ -61,7 +65,7 @@ def init_device_db():
 init_db()
 init_device_db()
 
-print("⚙️ Servidor iniciado com sucesso (Sem marcações retangulares no lábio)")
+print("⚙️ Servidor iniciado com sucesso (Base estável + Calibração Cirúrgica Bleach BL1-BL4)")
 
 @app.route('/check-device', methods=['POST'])
 def check_device():
@@ -252,7 +256,7 @@ def process_smile():
         altura, largura, _ = imagem_rgb.shape
 
         print("=" * 60)
-        print(f"📥 [PYTHON REST] Imagem 512x512 recebida do ML Kit | Cor: {selected_color.upper()}")
+        print(f"📥 [PYTHON REST] Imagem 512x512 recebida | Cor selecionada: {selected_color.upper()}")
         print("=" * 60)
 
         buffered_orig = io.BytesIO()
@@ -261,12 +265,11 @@ def process_smile():
 
         mascara_sup = np.zeros((512, 512), dtype=np.uint8)
 
-        # 🛠️ MÁSCARA PRECISA APENAS NA BOCA/DENTES (Sem retângulo no queixo/lábios)
+        # 🛠️ Máscara estável comprovada no "Novo Mundo"
         box_x1 = int(512 * 0.22)
         box_x2 = int(512 * 0.78)
-
-        box_sup_y1 = int(512 * 0.38)  # Arcada superior no centro do recorte ML Kit
-        box_sup_y2 = int(512 * 0.54)  # Cobertura natural da boca
+        box_sup_y1 = int(512 * 0.38)
+        box_sup_y2 = int(512 * 0.54)
 
         cv2.rectangle(mascara_sup, (box_x1, box_sup_y1), (box_x2, box_sup_y2), 255, -1)
 
@@ -351,7 +354,30 @@ def process_smile():
         ai_image_raw = Image.open(io.BytesIO(ai_image_bytes)).convert("RGB")
         ai_crop_restaurado = ai_image_raw.resize((512, 512), Image.Resampling.LANCZOS)
 
-        # Fusão suave e imperceptível da imagem gerada pela IA
+        # 🎨 CALIBRAÇÃO CIRÚRGICA DE CORES BLEACH (BL1 a BL4) - Suavidade natural idêntica à referência
+        ai_np = np.array(ai_crop_restaurado)
+        hsv_ai = cv2.cvtColor(ai_np, cv2.COLOR_RGB2HSV).astype(np.float32)
+
+        if selected_color == 'bl1':
+            # BL1: Ultra iluminado e brilhante, preservando a textura do esmalte puro
+            hsv_ai[:, :, 2] = np.clip(hsv_ai[:, :, 2] * 1.02, 0, 255)
+            hsv_ai[:, :, 1] = np.clip(hsv_ai[:, :, 1] * 0.98, 0, 255)
+        elif selected_color == 'bl2':
+            # BL2: Branco intenso com micro-toque natural
+            hsv_ai[:, :, 2] = np.clip(hsv_ai[:, :, 2] * 1.00, 0, 255)
+            hsv_ai[:, :, 1] = np.clip(hsv_ai[:, :, 1] * 1.00, 0, 255)
+        elif selected_color == 'bl3':
+            # BL3: Natural equilibrado (marfim levemente acolhedor)
+            hsv_ai[:, :, 2] = np.clip(hsv_ai[:, :, 2] * 0.98, 0, 255)
+            hsv_ai[:, :, 1] = np.clip(hsv_ai[:, :, 1] * 1.03, 0, 255)
+        elif selected_color == 'bl4':
+            # BL4: Suave e orgânico (tom de esmalte natural mais quente)
+            hsv_ai[:, :, 2] = np.clip(hsv_ai[:, :, 2] * 0.96, 0, 255)
+            hsv_ai[:, :, 1] = np.clip(hsv_ai[:, :, 1] * 1.06, 0, 255)
+
+        ai_crop_restaurado = Image.fromarray(cv2.cvtColor(hsv_ai.astype(np.uint8), cv2.COLOR_HSV2RGB))
+
+        # Fusão suave com a imagem original
         crop_orig_pil = Image.fromarray(imagem_rgb)
         crop_mask_pil = Image.fromarray(mascara_sup_dilatada)
         mask_soft = crop_mask_pil.filter(ImageFilter.GaussianBlur(radius=3))
@@ -375,7 +401,7 @@ def process_smile():
         conn.close()
 
         print("=" * 60)
-        print("📤 [PYTHON REST] Simulação concluída perfeitamente!")
+        print("📤 [PYTHON REST] Simulação concluída com calibração de cor cirúrgica!")
         print("=" * 60)
 
         return jsonify({
