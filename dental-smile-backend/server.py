@@ -61,7 +61,7 @@ def init_device_db():
 init_db()
 init_device_db()
 
-print("⚙️ Servidor iniciado com sucesso (Máscara ajustada para mordida e gradação de cores BL1-BL4)")
+print("⚙️ Servidor iniciado com sucesso (Máscara compacta e gradação suave BL1-BL4)")
 
 @app.route('/check-device', methods=['POST'])
 def check_device():
@@ -266,7 +266,7 @@ def process_smile():
         box_x2 = int(512 * 0.78)
 
         box_sup_y1 = int(512 * 0.38)  # Início exato dos dentes superiores
-        box_sup_y2 = int(512 * 0.48)  # Limite inferior rígido na linha do sorriso (impede esticar dentes)
+        box_sup_y2 = int(512 * 0.48)  # Limite inferior rígido na linha do sorriso
 
         cv2.rectangle(mascara_sup, (box_x1, box_sup_y1), (box_x2, box_sup_y2), 255, -1)
 
@@ -352,20 +352,20 @@ def process_smile():
         ai_image_raw = Image.open(io.BytesIO(ai_image_bytes)).convert("RGB")
         ai_crop_restaurado = ai_image_raw.resize((512, 512), Image.Resampling.LANCZOS)
 
-        # 🎨 GRADAÇÃO PRECISA DE CORES (BL1, BL2, BL3, BL4) VIA PÓS-PROCESSAMENTO HSV
+        # 🎨 GRADAÇÃO SUAVE DE CORES (BL1 a BL4) - Sem manchas acinzentadas
         ai_np = np.array(ai_crop_restaurado)
         hsv_ai = cv2.cvtColor(ai_np, cv2.COLOR_RGB2HSV).astype(np.float32)
 
         if selected_color == 'bl2':
-            hsv_ai[:, :, 2] = np.clip(hsv_ai[:, :, 2] * 0.95, 0, 255)  # Suave redução de brilho
-            hsv_ai[:, :, 1] = np.clip(hsv_ai[:, :, 1] * 1.04, 0, 255)  # Pequeno ganho natural de tom
+            hsv_ai[:, :, 2] = np.clip(hsv_ai[:, :, 2] * 0.99, 0, 255)  # Brilho 99%
+            hsv_ai[:, :, 1] = np.clip(hsv_ai[:, :, 1] * 1.02, 0, 255)  # +2% tom natural
         elif selected_color == 'bl3':
-            hsv_ai[:, :, 2] = np.clip(hsv_ai[:, :, 2] * 0.90, 0, 255)  # Tom clareado natural
-            hsv_ai[:, :, 1] = np.clip(hsv_ai[:, :, 1] * 1.08, 0, 255)
+            hsv_ai[:, :, 2] = np.clip(hsv_ai[:, :, 2] * 0.97, 0, 255)  # Brilho 97%
+            hsv_ai[:, :, 1] = np.clip(hsv_ai[:, :, 1] * 1.05, 0, 255)  # +5% tom natural
         elif selected_color == 'bl4':
-            hsv_ai[:, :, 2] = np.clip(hsv_ai[:, :, 2] * 0.85, 0, 255)  # Tom clareado anatômico suave
-            hsv_ai[:, :, 1] = np.clip(hsv_ai[:, :, 1] * 1.12, 0, 255)
-        # Se for 'bl1', mantém 100% do brilho máximo original gerado pela IA (Hollywood White)
+            hsv_ai[:, :, 2] = np.clip(hsv_ai[:, :, 2] * 0.95, 0, 255)  # Brilho 95%
+            hsv_ai[:, :, 1] = np.clip(hsv_ai[:, :, 1] * 1.08, 0, 255)  # +8% marfim suave
+        # BL1 mantém 100% original da IA (Hollywood White)
 
         ai_crop_restaurado = Image.fromarray(cv2.cvtColor(hsv_ai.astype(np.uint8), cv2.COLOR_HSV2RGB))
 
