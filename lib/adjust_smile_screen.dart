@@ -32,6 +32,8 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
   bool _isLoadingCredits = true;
 
   late String _selectedColor;
+  List<double>? _mouthBox; // 🚀 Armazena as coordenadas da boca capturadas pelo ML Kit
+  bool _isInit = true;
 
   // 🔄 Variáveis para controlar as mensagens dinâmicas dentro do botão a cada 15 segundos
   Timer? _timerMensagens;
@@ -60,6 +62,21 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
     super.initState();
     _selectedColor = widget.initialColor ?? 'bl2';
     _carregarCreditos();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_isInit) {
+      final args = ModalRoute.of(context)?.settings.arguments;
+      if (args is Map<String, dynamic> && args.containsKey('mouth_box')) {
+        final box = args['mouth_box'];
+        if (box is List) {
+          _mouthBox = box.map((e) => (e as num).toDouble()).toList();
+        }
+      }
+      _isInit = false;
+    }
   }
 
   @override
@@ -149,6 +166,7 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
         shape: 'natural',
         size: 'medio',
         apiKey: apiKey.isNotEmpty ? apiKey : '',
+        mouthBox: _mouthBox, // 🎯 Envia as coordenadas dinâmicas da boca para o backend
       );
 
       // Para o timer assim que a resposta da IA chega
@@ -156,14 +174,14 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
 
       if (resultado['success'] == true) {
         processedImagePath = resultado['imagePath'];
-        originalPaddedPath = resultado['originalImagePath']; // 👈 Captura a original padronizada
+        originalPaddedPath = resultado['originalImagePath'];
 
         if (mounted) {
           setState(() {
             if (resultado['creditos_restantes'] != null && resultado['creditos_restantes'] is int) {
               _creditos = resultado['creditos_restantes'];
             } else if (_creditos > 0) {
-              _creditos = _creditos - 1; // 👈 Corrigido com o operador de subtração correto
+              _creditos = _creditos - 1; // 👈 Subtração corrigida
             }
           });
         }
@@ -333,7 +351,7 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
           padding: const EdgeInsets.symmetric(vertical: 10.0),
           child: Column(
             children: [
-              // 🖼️ Foto com espaço bastante ampliado e nítido
+              // 🖼️ Foto com espaço ampliado
               Expanded(
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -349,11 +367,11 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
               ),
               const SizedBox(height: 8),
 
-              // 🦷 Seletor em Grade 2x2 limpo
+              // 🦷 Seletor em Grade 2x2
               _buildColorGrid(),
               const SizedBox(height: 14),
 
-              // 🚀 Botão principal onde o texto muda dinamicamente a cada 15 segundos
+              // 🚀 Botão principal
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16.0),
                 child: ElevatedButton.icon(

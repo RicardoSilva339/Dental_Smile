@@ -61,7 +61,7 @@ def init_device_db():
 init_db()
 init_device_db()
 
-print("⚙️ Servidor iniciado com sucesso (Máscara compacta e gradação suave BL1-BL4)")
+print("⚙️ Servidor iniciado com sucesso (Máscara Dinâmica ML Kit + Fallback Anatômico)")
 
 @app.route('/check-device', methods=['POST'])
 def check_device():
@@ -231,6 +231,7 @@ def process_smile():
 
     image_b64 = data.get('image')
     selected_color = data.get('color', 'bl2').lower()
+    mouth_box = data.get('mouth_box')  # Opcional: [y1, y2, x1, x2] normalizados (0.0 a 1.0) vindo do Flutter
 
     if not image_b64:
         cur.close()
@@ -252,7 +253,7 @@ def process_smile():
         altura, largura, _ = imagem_rgb.shape
 
         print("=" * 60)
-        print(f"📥 [PYTHON REST] Imagem 512x512 recebida do ML Kit | Cor: {selected_color.upper()}")
+        print(f"📥 [PYTHON REST] Imagem 512x512 recebida | Cor: {selected_color.upper()}")
         print("=" * 60)
 
         buffered_orig = io.BytesIO()
@@ -261,14 +262,26 @@ def process_smile():
 
         mascara_sup = np.zeros((512, 512), dtype=np.uint8)
 
-        # 🛠️ MÁSCARA VERTICALMENTE COMPACTA (Evita dentes compridos e abertura indesejada da mordida)
-        box_x1 = int(512 * 0.22)
-        box_x2 = int(512 * 0.78)
-
-        box_sup_y1 = int(512 * 0.38)  # Início exato dos dentes superiores
-        box_sup_y2 = int(512 * 0.48)  # Limite inferior rígido na linha do sorriso
-
-        cv2.rectangle(mascara_sup, (box_x1, box_sup_y1), (box_x2, box_sup_y2), 255, -1)
+        # 🛠️ GERAÇÃO DA MÁSCARA (DINÂMICA OU ELÍPTICA ANATÔMICA)
+        if mouth_box and len(mouth_box) == 4:
+            # Caso o app envie as coordenadas exatas detectadas pelo ML Kit
+            print("🎯 Utilizando coordenadas dinâmicas recebidas do ML Kit...")
+            y1 = int(mouth_box[0] * 512)
+            y2 = int(mouth_box[1] * 512)
+            x1 = int(mouth_box[2] * 512)
+            x2 = int(mouth_box[3] * 512)
+            centro_x = int((x1 + x2) / 2)
+            centro_y = int((y1 + y2) / 2)
+            raio_x = int((x2 - x1) / 2)
+            raio_y = int((y2 - y1) / 2)
+            cv2.ellipse(mascara_sup, (centro_x, centro_y), (raio_x, raio_y), 0, 0, 360, 255, -1)
+        else:
+            # Fallback anatômico elíptico (Protege lábio superior Y:0.40 e cobre base do dente Y:0.52)
+            centro_x = 256
+            centro_y = int(512 * 0.46)
+            raio_x = int(512 * 0.28)
+            raio_y = int(512 * 0.06)
+            cv2.ellipse(mascara_sup, (centro_x, centro_y), (raio_x, raio_y), 0, 0, 360, 255, -1)
 
         kernel = np.ones((3, 3), np.uint8)
         mascara_sup_dilatada = cv2.dilate(mascara_sup, kernel, iterations=1)
@@ -352,24 +365,22 @@ def process_smile():
         ai_image_raw = Image.open(io.BytesIO(ai_image_bytes)).convert("RGB")
         ai_crop_restaurado = ai_image_raw.resize((512, 512), Image.Resampling.LANCZOS)
 
-        # 🎨 GRADAÇÃO SUAVE DE CORES (BL1 a BL4) - Sem manchas acinzentadas
+        # 🎨 GRADAÇÃO SUAVE DE CORES (BL1 a BL4)
         ai_np = np.array(ai_crop_restaurado)
         hsv_ai = cv2.cvtColor(ai_np, cv2.COLOR_RGB2HSV).astype(np.float32)
 
         if selected_color == 'bl2':
-            hsv_ai[:, :, 2] = np.clip(hsv_ai[:, :, 2] * 0.99, 0, 255)  # Brilho 99%
-            hsv_ai[:, :, 1] = np.clip(hsv_ai[:, :, 1] * 1.02, 0, 255)  # +2% tom natural
+            hsv_ai[:, :, 2] = np.clip(hsv_ai[:, :, 2] * 0.99, 0, 255)
+            hsv_ai[:, :, 1] = np.clip(hsv_ai[:, :, 1] * 1.02, 0, 255)
         elif selected_color == 'bl3':
-            hsv_ai[:, :, 2] = np.clip(hsv_ai[:, :, 2] * 0.97, 0, 255)  # Brilho 97%
-            hsv_ai[:, :, 1] = np.clip(hsv_ai[:, :, 1] * 1.05, 0, 255)  # +5% tom natural
+            hsv_ai[:, :, 2] = np.clip(hsv_ai[:, :, 2] * 0.97, 0, 255)
+            hsv_ai[:, :, 1] = np.clip(hsv_ai[:, :, 1] * 1.05, 0, 255)
         elif selected_color == 'bl4':
-            hsv_ai[:, :, 2] = np.clip(hsv_ai[:, :, 2] * 0.95, 0, 255)  # Brilho 95%
-            hsv_ai[:, :, 1] = np.clip(hsv_ai[:, :, 1] * 1.08, 0, 255)  # +8% marfim suave
-        # BL1 mantém 100% original da IA (Hollywood White)
+            hsv_ai[:, :, 2] = np.clip(hsv_ai[:, :, 2] * 0.95, 0, 255)
+            hsv_ai[:, :, 1] = np.clip(hsv_ai[:, :, 1] * 1.08, 0, 255)
 
         ai_crop_restaurado = Image.fromarray(cv2.cvtColor(hsv_ai.astype(np.uint8), cv2.COLOR_HSV2RGB))
 
-        # Fusão suave e imperceptível da imagem gerada pela IA
         crop_orig_pil = Image.fromarray(imagem_rgb)
         crop_mask_pil = Image.fromarray(mascara_sup_dilatada)
         mask_soft = crop_mask_pil.filter(ImageFilter.GaussianBlur(radius=3))

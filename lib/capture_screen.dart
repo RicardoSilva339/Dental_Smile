@@ -6,6 +6,13 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:image/image.dart' as img;
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 
+// Classe auxiliar privada para retorno tipado sem erros de casting
+class _ProcessResult {
+        final File file;
+        final List<double>? mouthBox;
+        _ProcessResult({required this.file, this.mouthBox});
+}
+
 class CaptureScreen extends StatefulWidget {
         const CaptureScreen({super.key});
 
@@ -20,7 +27,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
         bool _isCapturing = false;
         int _selectedCameraIndex = 0;
 
-        // 🤖 Detector Facial via Google ML Kit com Landmarks ativados e enum corrigido
+        // 🤖 Detector Facial via Google ML Kit com Landmarks ativados
         final FaceDetector _faceDetector = FaceDetector(
                 options: FaceDetectorOptions(
                         enableLandmarks: true,
@@ -82,9 +89,9 @@ class _CaptureScreenState extends State<CaptureScreen> {
                         final XFile picture = await _controller!.takePicture();
                         File originalFile = File(picture.path);
 
-                        File? croppedFile = await _processarRecorteInteligente(originalFile);
+                        _ProcessResult? resultado = await _processarRecorteInteligente(originalFile);
 
-                        if (croppedFile == null) {
+                        if (resultado == null) {
                                 if (!mounted) return;
                                 ScaffoldMessenger.of(context).showSnackBar(
                                         const SnackBar(
@@ -96,7 +103,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
                         }
 
                         if (!mounted) return;
-                        _avancarParaAnalise(croppedFile);
+                        _avancarParaAnalise(resultado.file, resultado.mouthBox);
                 } catch (e) {
                         debugPrint("Erro ao capturar imagem: $e");
                 } finally {
@@ -112,9 +119,9 @@ class _CaptureScreenState extends State<CaptureScreen> {
                         setState(() => _isCapturing = true);
                         try {
                                 File originalFile = File(pickedFile.path);
-                                File? croppedFile = await _processarRecorteInteligente(originalFile);
+                                _ProcessResult? resultado = await _processarRecorteInteligente(originalFile);
 
-                                if (croppedFile == null) {
+                                if (resultado == null) {
                                         if (!mounted) return;
                                         ScaffoldMessenger.of(context).showSnackBar(
                                                 const SnackBar(
@@ -126,7 +133,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
                                 }
 
                                 if (!mounted) return;
-                                _avancarParaAnalise(croppedFile);
+                                _avancarParaAnalise(resultado.file, resultado.mouthBox);
                         } finally {
                                 if (mounted) setState(() => _isCapturing = false);
                         }
@@ -134,7 +141,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
         }
 
         // 🧠 DETECÇÃO E RECORTE DINÂMICO VIA GOOGLE ML KIT
-        Future<File?> _processarRecorteInteligente(File imagemOriginal) async {
+        Future<_ProcessResult?> _processarRecorteInteligente(File imagemOriginal) async {
                 try {
                         final inputImage = InputImage.fromFile(imagemOriginal);
                         final List<Face> faces = await _faceDetector.processImage(inputImage);
@@ -185,6 +192,22 @@ class _CaptureScreenState extends State<CaptureScreen> {
                         if (offsetX + tamanhoQuadrado > larguraImg) offsetX = larguraImg - tamanhoQuadrado;
                         if (offsetY + tamanhoQuadrado > alturaImg) offsetY = alturaImg - tamanhoQuadrado;
 
+                        // 🎯 Cálculo das coordenadas relativas da boca (0.0 a 1.0) para a máscara do backend
+                        List<double>? mouthBox;
+                        if (leftMouth != null && rightMouth != null && bottomMouth != null) {
+                                double minX = (leftMouth.x - offsetX) / tamanhoQuadrado;
+                                double maxX = (rightMouth.x - offsetX) / tamanhoQuadrado;
+                                double minY = (((leftMouth.y + rightMouth.y) / 2) - offsetY - (tamanhoQuadrado * 0.04)) / tamanhoQuadrado;
+                                double maxY = (bottomMouth.y - offsetY) / tamanhoQuadrado;
+
+                                mouthBox = [
+                                        minY.clamp(0.0, 1.0),
+                                        maxY.clamp(0.0, 1.0),
+                                        minX.clamp(0.0, 1.0),
+                                        maxX.clamp(0.0, 1.0),
+                                ];
+                        }
+
                         // 1. Corte 1:1 quadrado focado dinamicamente na boca
                         img.Image imagemCropped = img.copyCrop(
                                 imagemDecodificada,
@@ -206,14 +229,14 @@ class _CaptureScreenState extends State<CaptureScreen> {
                         File arquivoFinal = File(targetPath)
                                 ..writeAsBytesSync(img.encodeJpg(imagemFinal, quality: 90));
 
-                        return arquivoFinal;
+                        return _ProcessResult(file: arquivoFinal, mouthBox: mouthBox);
                 } catch (e) {
                         debugPrint("Erro no processamento do ML Kit: $e");
                         return null;
                 }
         }
 
-        void _avancarParaAnalise(File imagemFinal) {
+        void _avancarParaAnalise(File imagemFinal, List<double>? mouthBox) {
                 final simulationId = _gerarSimulationId();
                 final userEmail = _obterEmailUsuarioAtual();
 
@@ -224,6 +247,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
                                 'image': imagemFinal.path,
                                 'simulationId': simulationId,
                                 'userEmail': userEmail,
+                                'mouth_box': mouthBox,
                         },
                 );
         }

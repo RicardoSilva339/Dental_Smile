@@ -141,6 +141,7 @@ class ApiService {
     required String shape,
     required String size,
     required String apiKey,
+    List<double>? mouthBox, // 🚀 Coordenadas opcionais [minY, maxY, minX, maxX] do ML Kit
   }) async {
     try {
       final url = Uri.parse('$baseUrl/process-smile');
@@ -160,6 +161,7 @@ class ApiService {
           'color': color,
           'shape': shape,
           'size': size,
+          if (mouthBox != null) 'mouth_box': mouthBox,
         }),
       ).timeout(const Duration(seconds: 120));
 
