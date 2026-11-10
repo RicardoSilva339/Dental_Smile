@@ -13,7 +13,7 @@ import cv2
 
 app = Flask(__name__)
 
-# 🟢 Rota de Health Check para o Render passar no deploy instantaneamente (200 OK)
+# 🟢 Rota de Health Check para o Render
 @app.route('/', methods=['GET', 'HEAD'])
 def health_check():
     return "Dental Smile Backend OK", 200
@@ -66,7 +66,7 @@ def init_device_db():
 init_db()
 init_device_db()
 
-print("⚙️ Servidor iniciado com sucesso (Máscara Dinâmica ML Kit + Fallback Anatômico)")
+print("⚙️ Servidor iniciado com sucesso (Máscara Fixa Centralizada Revertida)")
 
 @app.route('/check-device', methods=['POST'])
 def check_device():
@@ -236,6 +236,8 @@ def process_smile():
 
     image_b64 = data.get('image')
     selected_color = data.get('color', 'bl2').lower()
+
+    # Recebe o mouth_box mas VAMOS IGNORÁ-LO na geração da máscara!
     mouth_box = data.get('mouth_box')
 
     if not image_b64:
@@ -255,7 +257,6 @@ def process_smile():
 
         img_512 = rgb_image.resize((512, 512), Image.Resampling.LANCZOS)
         imagem_rgb = np.array(img_512)
-        altura, largura, _ = imagem_rgb.shape
 
         print("=" * 60)
         print(f"📥 [PYTHON REST] Imagem 512x512 recebida | Cor: {selected_color.upper()}")
@@ -267,32 +268,17 @@ def process_smile():
 
         mascara_sup = np.zeros((512, 512), dtype=np.uint8)
 
-        # 🛠️ A VOLTA À MÁSCARA "PERFEITA" (Proporção cravada + Centro do ML Kit)
-        if mouth_box and len(mouth_box) == 4:
-            print("🎯 Centralizando via ML Kit, mas usando o tamanho PERFEITO aprovado...")
-            y1_norm = mouth_box[0] # Linha dos dentes superiores
-            x1_norm = mouth_box[2] # Canto esquerdo
-            x2_norm = mouth_box[3] # Canto direito
+        # 🛠️ RETORNO À MÁGICA DE ONTEM: Máscara Fixa Centralizada!
+        # A imagem já vem recortada do Flutter, então a boca JÁ ESTÁ NO CENTRO.
+        print("🎯 Ignorando mouth_box e aplicando a máscara anatômica perfeita de ontem...")
+        centro_x = 256
+        centro_y = int(512 * 0.46)
+        raio_x = int(512 * 0.28)
 
-            # 1. Posicionamento Dinâmico (ML Kit)
-            centro_x = int(((x1_norm + x2_norm) / 2) * 512)
-            # O y1 já foi calculado no Flutter para ficar exatamente sobre os dentes superiores!
-            centro_y = int(y1_norm * 512)
-
-            # 2. O TAMANHO QUE FUNCIONA (A MÁGICA DE ONTEM)
-            # Largura: 25% MAIOR que a boca para não cortar as laterais (Evita o erro da última foto)
-            raio_x = int((((x2_norm - x1_norm) / 2) * 512) * 1.25)
-            # Altura: Fina e travada exatamente na mesma medida do Fallback original (0.06 = 30px)
-            raio_y = int(512 * 0.06)
-
-            cv2.ellipse(mascara_sup, (centro_x, centro_y), (raio_x, raio_y), 0, 0, 360, 255, -1)
-        else:
-            # Fallback anatômico original e seguro de ontem
-            centro_x = 256
-            centro_y = int(512 * 0.46)
-            raio_x = int(512 * 0.28)
-            raio_y = int(512 * 0.06)
-            cv2.ellipse(mascara_sup, (centro_x, centro_y), (raio_x, raio_y), 0, 0, 360, 255, -1)
+        # Para evitar que os dentes fiquem grandes demais (única observação de ontem),
+        # a altura (raio_y) continua fininha e cravada em 6%.
+        raio_y = int(512 * 0.06)
+        cv2.ellipse(mascara_sup, (centro_x, centro_y), (raio_x, raio_y), 0, 0, 360, 255, -1)
 
         kernel = np.ones((3, 3), np.uint8)
         mascara_sup_dilatada = cv2.dilate(mascara_sup, kernel, iterations=1)
@@ -415,7 +401,7 @@ def process_smile():
         conn.close()
 
         print("=" * 60)
-        print("📤 [PYTHON REST] Simulação concluída perfeitamente!")
+        print("📤 [PYTHON REST] Simulação concluída perfeitamente (Modo Clássico Revertido)!")
         print("=" * 60)
 
         return jsonify({

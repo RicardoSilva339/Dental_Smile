@@ -6,11 +6,9 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:image/image.dart' as img;
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 
-// Classe auxiliar privada para retorno tipado sem erros de casting
 class _ProcessResult {
         final File file;
-        final List<double>? mouthBox;
-        _ProcessResult({required this.file, this.mouthBox});
+        _ProcessResult({required this.file});
 }
 
 class CaptureScreen extends StatefulWidget {
@@ -103,7 +101,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
                         }
 
                         if (!mounted) return;
-                        _avancarParaAnalise(resultado.file, resultado.mouthBox);
+                        _avancarParaAnalise(resultado.file);
                 } catch (e) {
                         debugPrint("Erro ao capturar imagem: $e");
                 } finally {
@@ -133,7 +131,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
                                 }
 
                                 if (!mounted) return;
-                                _avancarParaAnalise(resultado.file, resultado.mouthBox);
+                                _avancarParaAnalise(resultado.file);
                         } finally {
                                 if (mounted) setState(() => _isCapturing = false);
                         }
@@ -159,7 +157,6 @@ class _CaptureScreenState extends State<CaptureScreen> {
                         int larguraImg = imagemDecodificada.width;
                         int alturaImg = imagemDecodificada.height;
 
-                        // Obtém as coordenadas da boca através dos pontos anatômicos (Landmarks)
                         final bottomMouth = face.landmarks[FaceLandmarkType.bottomMouth]?.position;
                         final leftMouth = face.landmarks[FaceLandmarkType.leftMouth]?.position;
                         final rightMouth = face.landmarks[FaceLandmarkType.rightMouth]?.position;
@@ -168,11 +165,11 @@ class _CaptureScreenState extends State<CaptureScreen> {
                         int centroY;
 
                         if (leftMouth != null && rightMouth != null && bottomMouth != null) {
-                                // Ponto central cravado nos dentes/boca
+                                // Ponto central exato da boca
                                 centroX = ((leftMouth.x + rightMouth.x) / 2).toInt();
                                 centroY = ((leftMouth.y + bottomMouth.y) / 2).toInt();
                         } else {
-                                // Fallback: calcula o centro da boca com base na bounding box do rosto
+                                // Fallback: Centro estimado pela bounding box do rosto
                                 final boundingBox = face.boundingBox;
                                 centroX = boundingBox.center.dx.toInt();
                                 centroY = (boundingBox.top + (boundingBox.height * 0.70)).toInt();
@@ -180,6 +177,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
 
                         // Define o tamanho do quadrado delimitador proporcional ao rosto
                         int tamanhoQuadrado = (face.boundingBox.height * 0.85).toInt();
+
                         if (tamanhoQuadrado > larguraImg) tamanhoQuadrado = larguraImg;
                         if (tamanhoQuadrado > alturaImg) tamanhoQuadrado = alturaImg;
 
@@ -192,22 +190,6 @@ class _CaptureScreenState extends State<CaptureScreen> {
                         if (offsetX + tamanhoQuadrado > larguraImg) offsetX = larguraImg - tamanhoQuadrado;
                         if (offsetY + tamanhoQuadrado > alturaImg) offsetY = alturaImg - tamanhoQuadrado;
 
-                        // 🎯 Cálculo das coordenadas relativas da boca (0.0 a 1.0) para a máscara do backend
-                        List<double>? mouthBox;
-                        if (leftMouth != null && rightMouth != null && bottomMouth != null) {
-                                double minX = (leftMouth.x - offsetX) / tamanhoQuadrado;
-                                double maxX = (rightMouth.x - offsetX) / tamanhoQuadrado;
-                                double minY = (((leftMouth.y + rightMouth.y) / 2) - offsetY - (tamanhoQuadrado * 0.04)) / tamanhoQuadrado;
-                                double maxY = (bottomMouth.y - offsetY) / tamanhoQuadrado;
-
-                                mouthBox = [
-                                        minY.clamp(0.0, 1.0),
-                                        maxY.clamp(0.0, 1.0),
-                                        minX.clamp(0.0, 1.0),
-                                        maxX.clamp(0.0, 1.0),
-                                ];
-                        }
-
                         // 1. Corte 1:1 quadrado focado dinamicamente na boca
                         img.Image imagemCropped = img.copyCrop(
                                 imagemDecodificada,
@@ -217,7 +199,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
                                 height: tamanhoQuadrado,
                         );
 
-                        // 2. Padronização 512x512 para a API do Replicate
+                        // 2. Padronização 512x512
                         img.Image imagemFinal = img.copyResize(
                                 imagemCropped,
                                 width: 512,
@@ -229,14 +211,14 @@ class _CaptureScreenState extends State<CaptureScreen> {
                         File arquivoFinal = File(targetPath)
                                 ..writeAsBytesSync(img.encodeJpg(imagemFinal, quality: 90));
 
-                        return _ProcessResult(file: arquivoFinal, mouthBox: mouthBox);
+                        return _ProcessResult(file: arquivoFinal);
                 } catch (e) {
                         debugPrint("Erro no processamento do ML Kit: $e");
                         return null;
                 }
         }
 
-        void _avancarParaAnalise(File imagemFinal, List<double>? mouthBox) {
+        void _avancarParaAnalise(File imagemFinal) {
                 final simulationId = _gerarSimulationId();
                 final userEmail = _obterEmailUsuarioAtual();
 
@@ -247,7 +229,6 @@ class _CaptureScreenState extends State<CaptureScreen> {
                                 'image': imagemFinal.path,
                                 'simulationId': simulationId,
                                 'userEmail': userEmail,
-                                'mouth_box': mouthBox,
                         },
                 );
         }

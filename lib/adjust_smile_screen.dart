@@ -1,5 +1,5 @@
 import 'dart:io';
-import 'dart:async'; // ⏱️ Necessário para o Timer das mensagens dinâmicas
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:dental_smile/api_service.dart';
@@ -32,7 +32,6 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
   bool _isLoadingCredits = true;
 
   late String _selectedColor;
-  List<double>? _mouthBox; // 🚀 Armazena as coordenadas da boca capturadas pelo ML Kit
   bool _isInit = true;
 
   // 🔄 Variáveis para controlar as mensagens dinâmicas dentro do botão a cada 15 segundos
@@ -68,20 +67,13 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (_isInit) {
-      final args = ModalRoute.of(context)?.settings.arguments;
-      if (args is Map<String, dynamic> && args.containsKey('mouth_box')) {
-        final box = args['mouth_box'];
-        if (box is List) {
-          _mouthBox = box.map((e) => (e as num).toDouble()).toList();
-        }
-      }
       _isInit = false;
     }
   }
 
   @override
   void dispose() {
-    _timerMensagens?.cancel(); // Limpa o timer ao sair da tela
+    _timerMensagens?.cancel();
     super.dispose();
   }
 
@@ -142,7 +134,6 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
       return;
     }
 
-    // 🚀 Inicia o estado de processamento e o ciclo das mensagens dinâmicas a cada 15 segundos
     setState(() {
       _isProcessing = true;
       _mensagemIndex = 0;
@@ -166,10 +157,9 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
         shape: 'natural',
         size: 'medio',
         apiKey: apiKey.isNotEmpty ? apiKey : '',
-        mouthBox: _mouthBox, // 🎯 Envia as coordenadas dinâmicas da boca para o backend
+        // 🧹 mouthBox removido daqui com sucesso!
       );
 
-      // Para o timer assim que a resposta da IA chega
       _timerMensagens?.cancel();
 
       if (resultado['success'] == true) {
@@ -181,7 +171,7 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
             if (resultado['creditos_restantes'] != null && resultado['creditos_restantes'] is int) {
               _creditos = resultado['creditos_restantes'];
             } else if (_creditos > 0) {
-              _creditos = _creditos - 1; // 👈 Subtração corrigida
+              _creditos = _creditos - 1; // 👈 Subtração devidamente corrigida
             }
           });
         }
@@ -203,11 +193,10 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
     if (!mounted) return;
 
     processedImagePath ??= widget.image.path;
-    originalPaddedPath ??= widget.image.path; // Fallback de segurança
+    originalPaddedPath ??= widget.image.path;
 
     setState(() => _isProcessing = false);
 
-    // 🔄 Redireciona para o comparador enviando a original padronizada e a gerada pela IA
     Navigator.pushReplacementNamed(
       context,
       '/compare',
@@ -223,9 +212,8 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
     );
   }
 
-  // 🦷 Grade 2x2 compacta (BL1/BL2 em cima, BL3/BL4 embaixo)
   Widget _buildColorGrid() {
-    final keys = _colors.keys.toList(); // ['bl1', 'bl2', 'bl3', 'bl4']
+    final keys = _colors.keys.toList();
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -351,7 +339,6 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
           padding: const EdgeInsets.symmetric(vertical: 10.0),
           child: Column(
             children: [
-              // 🖼️ Foto com espaço ampliado
               Expanded(
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -367,11 +354,9 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
               ),
               const SizedBox(height: 8),
 
-              // 🦷 Seletor em Grade 2x2
               _buildColorGrid(),
               const SizedBox(height: 14),
 
-              // 🚀 Botão principal
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16.0),
                 child: ElevatedButton.icon(

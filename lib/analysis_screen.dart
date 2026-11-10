@@ -13,7 +13,6 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
   File? _imageFile;
   String _simulationId = '';
   String _userEmail = '';
-  List<double>? _mouthBox; // 🚀 Armazena as coordenadas da boca vindas do ML Kit
   bool _isInit = true;
 
   @override
@@ -33,10 +32,6 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
         _simulationId = args['simulationId'] ?? '';
         _userEmail = args['userEmail'] ?? '';
 
-        // 🎯 Resgata o mouth_box vindo do CaptureScreen
-        if (args['mouth_box'] is List) {
-          _mouthBox = (args['mouth_box'] as List).map((e) => (e as num).toDouble()).toList();
-        }
       } else if (args is String && args.isNotEmpty) {
         _imageFile = File(args);
       } else if (args is File) {
@@ -95,7 +90,7 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                   borderRadius: BorderRadius.circular(16),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.12),
+                      color: Colors.black.withOpacity(0.12),
                       blurRadius: 8,
                       offset: const Offset(0, 4),
                     ),
@@ -170,7 +165,6 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                 ),
                 onPressed: () {
                   if (_imageFile != null) {
-                    // 🚀 Repassa o mouth_box junto para a rota /adjust
                     Navigator.pushNamed(
                       context,
                       '/adjust',
@@ -178,7 +172,7 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                         'image': _imageFile!,
                         'simulationId': _simulationId,
                         'userEmail': _userEmail,
-                        'mouth_box': _mouthBox,
+                        // 🧹 mouth_box totalmente removido daqui!
                       },
                     );
                   }
