@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
 // Telas ativas mantidas na arquitetura
 import 'home_screen.dart';
@@ -25,8 +27,37 @@ void main() async {
   runApp(const MyApp());
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  @override
+  void initState() {
+    super.initState();
+    _acordarServidorRender();
+  }
+
+  // 🚀 Ping silencioso em background para acordar o Render logo na abertura
+  Future<void> _acordarServidorRender() async {
+    try {
+      // URL raiz do backend no Render
+      final url = Uri.parse('https://dental-smile-backend.onrender.com/');
+
+      http.get(url).timeout(const Duration(seconds: 55)).then((response) {
+        if (response.statusCode == 200) {
+          print("🟢 Servidor Render acordado com sucesso em background!");
+        }
+      }).catchError((error) {
+        print("⚠️ Servidor demorou a responder no ping inicial: $error");
+      });
+    } catch (e) {
+      print("Erro no warm-up: $e");
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
