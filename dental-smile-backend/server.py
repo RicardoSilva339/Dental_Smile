@@ -13,7 +13,6 @@ import cv2
 
 app = Flask(__name__)
 
-# 🟢 Rota de Health Check para o Render
 @app.route('/', methods=['GET', 'HEAD'])
 def health_check():
     return "Dental Smile Backend OK", 200
@@ -66,7 +65,7 @@ def init_device_db():
 init_db()
 init_device_db()
 
-print("⚙️ Servidor iniciado com sucesso (Máscara Fixa Centralizada Revertida)")
+print("⚙️ Servidor iniciado com sucesso (Novo Mundo + Máscara Elíptica Sem Borda Retangular)")
 
 @app.route('/check-device', methods=['POST'])
 def check_device():
@@ -237,9 +236,6 @@ def process_smile():
     image_b64 = data.get('image')
     selected_color = data.get('color', 'bl2').lower()
 
-    # Recebe o mouth_box mas VAMOS IGNORÁ-LO na geração da máscara!
-    mouth_box = data.get('mouth_box')
-
     if not image_b64:
         cur.close()
         conn.close()
@@ -259,7 +255,7 @@ def process_smile():
         imagem_rgb = np.array(img_512)
 
         print("=" * 60)
-        print(f"📥 [PYTHON REST] Imagem 512x512 recebida | Cor: {selected_color.upper()}")
+        print(f"📥 [PYTHON REST] Imagem 512x512 recebida | Cor selecionada: {selected_color.upper()}")
         print("=" * 60)
 
         buffered_orig = io.BytesIO()
@@ -268,20 +264,15 @@ def process_smile():
 
         mascara_sup = np.zeros((512, 512), dtype=np.uint8)
 
-        # 🛠️ RETORNO À MÁGICA DE ONTEM: Máscara Fixa Centralizada!
-        # A imagem já vem recortada do Flutter, então a boca JÁ ESTÁ NO CENTRO.
-        print("🎯 Ignorando mouth_box e aplicando a máscara anatômica perfeita de ontem...")
+        # 🛠️ MÁSCARA ELÍPTICA ANATÓMICA (Remove o retângulo e o efeito "batom")
         centro_x = 256
         centro_y = int(512 * 0.46)
         raio_x = int(512 * 0.28)
-
-        # Para evitar que os dentes fiquem grandes demais (única observação de ontem),
-        # a altura (raio_y) continua fininha e cravada em 6%.
-        raio_y = int(512 * 0.06)
+        raio_y = int(512 * 0.07)
         cv2.ellipse(mascara_sup, (centro_x, centro_y), (raio_x, raio_y), 0, 0, 360, 255, -1)
 
-        kernel = np.ones((3, 3), np.uint8)
-        mascara_sup_dilatada = cv2.dilate(mascara_sup, kernel, iterations=1)
+        kernel = np.ones((5, 5), np.uint8)
+        mascara_sup_dilatada = cv2.dilate(mascara_sup, kernel, iterations=2)
 
         mask_512 = Image.fromarray(mascara_sup_dilatada)
 
@@ -362,27 +353,31 @@ def process_smile():
         ai_image_raw = Image.open(io.BytesIO(ai_image_bytes)).convert("RGB")
         ai_crop_restaurado = ai_image_raw.resize((512, 512), Image.Resampling.LANCZOS)
 
-        # 🎨 GRADAÇÃO SUAVE DE CORES (BL1 a BL4)
+        # 🎨 CALIBRAÇÃO DE CORES BL1-BL4 SUAVE E SEGURA
         ai_np = np.array(ai_crop_restaurado)
         hsv_ai = cv2.cvtColor(ai_np, cv2.COLOR_RGB2HSV).astype(np.float32)
 
-        if selected_color == 'bl2':
-            hsv_ai[:, :, 2] = np.clip(hsv_ai[:, :, 2] * 0.99, 0, 255)
-            hsv_ai[:, :, 1] = np.clip(hsv_ai[:, :, 1] * 1.02, 0, 255)
+        if selected_color == 'bl1':
+            hsv_ai[:, :, 2] = np.clip(hsv_ai[:, :, 2] * 1.03, 0, 255)
+            hsv_ai[:, :, 1] = np.clip(hsv_ai[:, :, 1] * 0.95, 0, 255)
+        elif selected_color == 'bl2':
+            hsv_ai[:, :, 2] = np.clip(hsv_ai[:, :, 2] * 1.00, 0, 255)
+            hsv_ai[:, :, 1] = np.clip(hsv_ai[:, :, 1] * 1.00, 0, 255)
         elif selected_color == 'bl3':
             hsv_ai[:, :, 2] = np.clip(hsv_ai[:, :, 2] * 0.97, 0, 255)
             hsv_ai[:, :, 1] = np.clip(hsv_ai[:, :, 1] * 1.05, 0, 255)
         elif selected_color == 'bl4':
             hsv_ai[:, :, 2] = np.clip(hsv_ai[:, :, 2] * 0.95, 0, 255)
-            hsv_ai[:, :, 1] = np.clip(hsv_ai[:, :, 1] * 1.08, 0, 255)
+            hsv_ai[:, :, 1] = np.clip(hsv_ai[:, :, 1] * 1.10, 0, 255)
 
-        ai_crop_restaurado = Image.fromarray(cv2.cvtColor(hsv_ai.astype(np.uint8), cv2.COLOR_HSV2RGB))
+        ai_colorido = Image.fromarray(cv2.cvtColor(hsv_ai.astype(np.uint8), cv2.COLOR_HSV2RGB))
 
+        # Fusão com Blur amplo para zerar o efeito de borda na pele
         crop_orig_pil = Image.fromarray(imagem_rgb)
         crop_mask_pil = Image.fromarray(mascara_sup_dilatada)
-        mask_soft = crop_mask_pil.filter(ImageFilter.GaussianBlur(radius=3))
+        mask_soft = crop_mask_pil.filter(ImageFilter.GaussianBlur(radius=8))
 
-        crop_final_pil = Image.composite(ai_crop_restaurado, crop_orig_pil, mask_soft)
+        crop_final_pil = Image.composite(ai_colorido, crop_orig_pil, mask_soft)
         imagem_final_rgb = np.array(crop_final_pil)
 
         final_bgr = cv2.cvtColor(imagem_final_rgb, cv2.COLOR_RGB2BGR)
@@ -401,7 +396,7 @@ def process_smile():
         conn.close()
 
         print("=" * 60)
-        print("📤 [PYTHON REST] Simulação concluída perfeitamente (Modo Clássico Revertido)!")
+        print("📤 [PYTHON REST] Simulação concluída com máscara elíptica sem bordas!")
         print("=" * 60)
 
         return jsonify({
