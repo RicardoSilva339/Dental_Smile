@@ -17,8 +17,9 @@ class _HomeScreenState extends State<HomeScreen> {
   static bool _jaInicializouSessao = false;
 
   int _creditos = 0;
-  bool _isLoadingCredits = false; // Começa falso para nunca piscar na abertura
+  bool _isLoadingCredits = false;
   Timer? _timerAvisoServidor;
+  DateTime? _momentoExibicaoCard;
 
   @override
   void initState() {
@@ -43,23 +44,25 @@ class _HomeScreenState extends State<HomeScreen> {
     return boxUser.get('email', defaultValue: '') as String;
   }
 
-  // 🚀 Inicializa e consulta os créditos na nuvem com detecção inteligente de servidor dormindo
+  // 🚀 Inicializa e consulta os créditos na nuvem com tolerância de 3 segundos
   Future<void> _inicializarECarregarCreditos({bool isInitial = false}) async {
     final apiKey = _obterApiKeyAtual();
     final boxUser = Hive.box('box_usuario');
 
-    // Só arma o aviso se for a abertura inicial e o servidor demorar mais de 800ms para responder
+    // Aguarda 3 segundos antes de exibir o card de conexão:
+    // - Servidor ativo: carrega silenciosamente sem piscar
+    // - Servidor dormindo: exibe o aviso transparente de conexão após 3s
     if (isInitial && apiKey.isNotEmpty) {
       _timerAvisoServidor?.cancel();
-      _timerAvisoServidor = Timer(const Duration(milliseconds: 800), () {
+      _timerAvisoServidor = Timer(const Duration(milliseconds: 3000), () {
         if (mounted) {
+          _momentoExibicaoCard = DateTime.now();
           setState(() => _isLoadingCredits = true);
         }
       });
     }
 
     if (apiKey.isEmpty) {
-      // 📱 Visitante sem conta: freemium permanece bloqueado até o cadastro e validação OTP
       await ApiService.checkOrRegisterDevice();
       _timerAvisoServidor?.cancel();
 
@@ -78,9 +81,16 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       }
     } else {
-      // 👤 Dentista Logado: Consulta os créditos vinculados à conta verificada na nuvem
       final resultado = await ApiService.checkCredits(apiKey);
-      _timerAvisoServidor?.cancel(); // Cancela o aviso imediatamente se respondeu rápido
+      _timerAvisoServidor?.cancel();
+
+      // Se o card chegou a aparecer porque o servidor estava dormindo, mantém por pelo menos 1.5s para leitura suave
+      if (_isLoadingCredits && _momentoExibicaoCard != null) {
+        final tempoVisivel = DateTime.now().difference(_momentoExibicaoCard!).inMilliseconds;
+        if (tempoVisivel < 1500) {
+          await Future.delayed(Duration(milliseconds: 1500 - tempoVisivel));
+        }
+      }
 
       if (mounted) {
         setState(() {
@@ -90,6 +100,7 @@ class _HomeScreenState extends State<HomeScreen> {
             _creditos = 0;
           }
           _isLoadingCredits = false;
+          _momentoExibicaoCard = null;
         });
       }
     }
@@ -194,7 +205,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 20),
 
-            // Opção 1: Criar Nova Conta (Destaque para liberar o Freemium)
+            // Opção 1: Criar Nova Conta
             ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.teal.shade600,
