@@ -38,7 +38,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _verificarEAvisoServidorInicioDia(context);
 
     if (apiKey.isEmpty) {
-      // 📱 Visitante sem conta: freemium permanece bloqueado (0 CR) até o cadastro e validação OTP
+      // 📱 Visitante sem conta: freemium permanece bloqueado até o cadastro e validação OTP
       await ApiService.checkOrRegisterDevice();
 
       stopwatch.stop();
@@ -234,7 +234,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               icon: const Icon(Icons.person_add_alt_1),
               label: const Text(
-                'Criar Conta (Ganhar 3 Simulações)',
+                'Criar Conta (Liberar 3 Simulações)',
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
               ),
               onPressed: () async {
@@ -332,7 +332,7 @@ class _HomeScreenState extends State<HomeScreen> {
         content: Text(
           estaLogado
               ? 'Você utilizou todas as suas simulações. Adquira um novo pacote na loja para continuar!'
-              : 'Para realizar simulações, crie sua conta gratuita e confirme o código de 6 dígitos enviado para o seu e-mail.\n\nAssim que confirmar, suas 3 simulações gratuitas serão liberadas na hora!',
+              : 'Suas 3 simulações gratuitas estão reservadas! Para desbloqueá-las, crie sua conta e confirme o código de 6 dígitos enviado para o seu e-mail.',
           style: const TextStyle(fontSize: 14, height: 1.4),
         ),
         actions: [
@@ -397,7 +397,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _aoClicarNovaSimulacao() {
-    if (_creditos <= 0) {
+    final bool estaLogado = _obterApiKeyAtual().isNotEmpty;
+
+    if (!estaLogado || _creditos <= 0) {
       _mostrarAlertaCreditosEsgotados();
       return;
     }
@@ -422,7 +424,7 @@ class _HomeScreenState extends State<HomeScreen> {
         child: SafeArea(
           child: Column(
             children: [
-              // Topo com Badge de Créditos
+              // Topo com Badge de Créditos (3 CR apagado com cadeado quando visitante; aceso com estrela quando ativo)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 12.0),
                 child: Row(
@@ -438,13 +440,17 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                     Container(
                       decoration: BoxDecoration(
-                        color: saldoZerado
+                        color: !estaLogado
+                            ? Colors.black.withOpacity(0.30)
+                            : (saldoZerado
                             ? Colors.red.shade900.withOpacity(0.8)
-                            : Colors.black.withOpacity(0.45),
+                            : Colors.black.withOpacity(0.55)),
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
-                          color: saldoZerado ? Colors.redAccent : Colors.white.withOpacity(0.5),
-                          width: saldoZerado ? 1.5 : 1.0,
+                          color: !estaLogado
+                              ? Colors.white.withOpacity(0.25)
+                              : (saldoZerado ? Colors.redAccent : Colors.amber.withOpacity(0.7)),
+                          width: 1.2,
                         ),
                       ),
                       child: Row(
@@ -458,8 +464,12 @@ class _HomeScreenState extends State<HomeScreen> {
                               child: Row(
                                 children: [
                                   Icon(
-                                    saldoZerado ? Icons.lock_outline : Icons.stars,
-                                    color: saldoZerado ? Colors.redAccent : Colors.amber,
+                                    !estaLogado
+                                        ? Icons.lock_outline
+                                        : (saldoZerado ? Icons.add_shopping_cart : Icons.stars),
+                                    color: !estaLogado
+                                        ? Colors.white54
+                                        : (saldoZerado ? Colors.redAccent : Colors.amber),
                                     size: 16,
                                   ),
                                   const SizedBox(width: 5),
@@ -469,13 +479,15 @@ class _HomeScreenState extends State<HomeScreen> {
                                     height: 12,
                                     child: CircularProgressIndicator(
                                       strokeWidth: 2,
-                                      color: Colors.white,
+                                      color: Colors.white54,
                                     ),
                                   )
                                       : Text(
-                                    '$_creditos CR',
+                                    !estaLogado ? '3 CR' : '$_creditos CR',
                                     style: TextStyle(
-                                      color: saldoZerado ? Colors.red.shade100 : Colors.white,
+                                      color: !estaLogado
+                                          ? Colors.white54
+                                          : (saldoZerado ? Colors.red.shade100 : Colors.white),
                                       fontWeight: FontWeight.bold,
                                       fontSize: 13,
                                     ),
@@ -484,7 +496,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                             ),
                           ),
-                          Container(height: 16, width: 1, color: Colors.white30),
+                          Container(height: 16, width: 1, color: Colors.white24),
                           InkWell(
                             borderRadius: const BorderRadius.horizontal(right: Radius.circular(20)),
                             onTap: _mostrarMenuAcessoOuLoja,
@@ -499,7 +511,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   ),
                                   const SizedBox(width: 4),
                                   Text(
-                                    estaLogado ? 'Conta' : 'Entrar',
+                                    estaLogado ? 'Conta' : 'Ativar',
                                     style: const TextStyle(
                                       color: Colors.white,
                                       fontWeight: FontWeight.bold,
