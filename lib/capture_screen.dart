@@ -83,7 +83,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
                 super.dispose();
         }
 
-        // 💡 Diálogo explicativo com o padrão ideal de foto (Estilo Lubrite Dental)
+        // 💡 Diálogo explicativo com o padrão ideal de foto
         void _exibirInstrucoesCaptura(BuildContext context, {VoidCallback? onContinuar}) {
                 showDialog(
                         context: context,
@@ -111,9 +111,9 @@ class _CaptureScreenState extends State<CaptureScreen> {
                                                         style: TextStyle(fontSize: 13, color: Colors.black87, height: 1.3),
                                                 ),
                                                 SizedBox(height: 12),
-                                                Text('• Sorriso natural (dentes visíveis / ocluídos)[cite: 2]', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                                                Text('• Sorriso natural (dentes visíveis / ocluídos)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
                                                 SizedBox(height: 4),
-                                                Text('• Boa iluminação e ângulo frontal[cite: 2]', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                                                Text('• Boa iluminação e ângulo frontal', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
                                                 SizedBox(height: 4),
                                                 Text('• Evite bocas entreabertas ou lábios cobrindo os dentes', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
                                         ],

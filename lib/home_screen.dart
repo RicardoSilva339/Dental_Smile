@@ -12,14 +12,23 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  // 🔒 Flag estática: garante que o aviso de carregamento pesado apareça APENAS na 1ª abertura da sessão
+  static bool _jaInicializouSessao = false;
+
   int _creditos = 0;
-  bool _isLoadingCredits = true;
+  late bool _isLoadingCredits;
 
   @override
   void initState() {
     super.initState();
-    // Apenas na primeira inicialização exibe o carregamento completo
-    _inicializarECarregarCreditos(isInitial: true);
+    if (!_jaInicializouSessao) {
+      _isLoadingCredits = true;
+      _jaInicializouSessao = true;
+      _inicializarECarregarCreditos(isInitial: true);
+    } else {
+      _isLoadingCredits = false;
+      _inicializarECarregarCreditos(isInitial: false);
+    }
   }
 
   // 🔍 Retorna a chave do utilizador logado no Hive (e-mail) ou string vazia se deslogado
@@ -30,7 +39,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // 🚀 Inicializa e consulta os créditos na nuvem (isInitial controla o carregamento visual)
   Future<void> _inicializarECarregarCreditos({bool isInitial = false}) async {
-    if (isInitial) {
+    if (isInitial && mounted) {
       setState(() => _isLoadingCredits = true);
     }
 
