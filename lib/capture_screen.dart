@@ -37,6 +37,11 @@ class _CaptureScreenState extends State<CaptureScreen> {
         void initState() {
                 super.initState();
                 _initializeCamera(_selectedCameraIndex);
+
+                // Exibe as instruções de captura automaticamente na primeira abertura da tela
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                        _exibirInstrucoesCaptura(context);
+                });
         }
 
         Future<void> _initializeCamera(int cameraIndex) async {
@@ -78,6 +83,59 @@ class _CaptureScreenState extends State<CaptureScreen> {
                 super.dispose();
         }
 
+        // 💡 Diálogo explicativo com o padrão ideal de foto (Estilo Lubrite Dental)
+        void _exibirInstrucoesCaptura(BuildContext context, {VoidCallback? onContinuar}) {
+                showDialog(
+                        context: context,
+                        barrierDismissible: false,
+                        builder: (ctx) => AlertDialog(
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                title: const Row(
+                                        children: [
+                                                Icon(Icons.info_outline, color: Color(0xFF5C6BC0), size: 28),
+                                                SizedBox(width: 10),
+                                                Expanded(
+                                                        child: Text(
+                                                                'Padrão Ideal para a Foto',
+                                                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+                                                        ),
+                                                ),
+                                        ],
+                                ),
+                                content: const Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                                Text(
+                                                        'Para garantir uma simulação perfeita com a Inteligência Artificial, siga estas orientações:',
+                                                        style: TextStyle(fontSize: 13, color: Colors.black87, height: 1.3),
+                                                ),
+                                                SizedBox(height: 12),
+                                                Text('• Sorriso natural (dentes visíveis / ocluídos)[cite: 2]', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                                                SizedBox(height: 4),
+                                                Text('• Boa iluminação e ângulo frontal[cite: 2]', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                                                SizedBox(height: 4),
+                                                Text('• Evite bocas entreabertas ou lábios cobrindo os dentes', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                                        ],
+                                ),
+                                actions: [
+                                        ElevatedButton(
+                                                style: ElevatedButton.styleFrom(
+                                                        backgroundColor: const Color(0xFF5C6BC0),
+                                                        foregroundColor: Colors.white,
+                                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                                ),
+                                                onPressed: () {
+                                                        Navigator.pop(ctx);
+                                                        if (onContinuar != null) onContinuar();
+                                                },
+                                                child: const Text('Entendido, Vamos lá', style: TextStyle(fontWeight: FontWeight.bold)),
+                                        ),
+                                ],
+                        ),
+                );
+        }
+
         Future<void> _captureAndCrop() async {
                 if (_controller == null || !_controller!.value.isInitialized || _isCapturing) return;
 
@@ -110,32 +168,35 @@ class _CaptureScreenState extends State<CaptureScreen> {
         }
 
         Future<void> _pickFromGallery() async {
-                final picker = ImagePicker();
-                final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+                // Antes de abrir a galeria, exibe as orientações para o médico selecionar uma foto adequada
+                _exibirInstrucoesCaptura(context, onContinuar: () async {
+                        final picker = ImagePicker();
+                        final pickedFile = await picker.pickImage(source: ImageSource.gallery);
 
-                if (pickedFile != null) {
-                        setState(() => _isCapturing = true);
-                        try {
-                                File originalFile = File(pickedFile.path);
-                                _ProcessResult? resultado = await _processarRecorteInteligente(originalFile);
+                        if (pickedFile != null) {
+                                setState(() => _isCapturing = true);
+                                try {
+                                        File originalFile = File(pickedFile.path);
+                                        _ProcessResult? resultado = await _processarRecorteInteligente(originalFile);
 
-                                if (resultado == null) {
+                                        if (resultado == null) {
+                                                if (!mounted) return;
+                                                ScaffoldMessenger.of(context).showSnackBar(
+                                                        const SnackBar(
+                                                                content: Text("Não foi possível identificar o rosto/sorriso na foto selecionada."),
+                                                                backgroundColor: Colors.redAccent,
+                                                        ),
+                                                );
+                                                return;
+                                        }
+
                                         if (!mounted) return;
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                                const SnackBar(
-                                                        content: Text("Não foi possível identificar o rosto/sorriso na foto selecionada."),
-                                                        backgroundColor: Colors.redAccent,
-                                                ),
-                                        );
-                                        return;
+                                        _avancarParaAnalise(resultado.file);
+                                } finally {
+                                        if (mounted) setState(() => _isCapturing = false);
                                 }
-
-                                if (!mounted) return;
-                                _avancarParaAnalise(resultado.file);
-                        } finally {
-                                if (mounted) setState(() => _isCapturing = false);
                         }
-                }
+                });
         }
 
         // 🧠 DETECÇÃO E RECORTE DINÂMICO VIA GOOGLE ML KIT
@@ -278,7 +339,12 @@ class _CaptureScreenState extends State<CaptureScreen> {
                                                                                                 'Simulação de Sorriso',
                                                                                                 style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
                                                                                         ),
-                                                                                        const SizedBox(width: 48),
+                                                                                        // Botão de ajuda para reabrir as instruções de captura a qualquer momento
+                                                                                        IconButton(
+                                                                                                icon: const Icon(Icons.help_outline, color: Colors.white),
+                                                                                                tooltip: 'Dicas de Captura',
+                                                                                                onPressed: () => _exibirInstrucoesCaptura(context),
+                                                                                        ),
                                                                                 ],
                                                                         ),
                                                                 ),

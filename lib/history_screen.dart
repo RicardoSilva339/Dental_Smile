@@ -13,6 +13,10 @@ class HistoryScreen extends StatefulWidget {
 class _HistoryScreenState extends State<HistoryScreen> {
   late Box _box;
 
+  // 🎛️ Variáveis de controle para o modo de seleção múltipla via Long Press / Checkbox
+  bool _modoSelecao = false;
+  final Set<dynamic> _chavesSelecionadas = {};
+
   @override
   void initState() {
     super.initState();
@@ -54,7 +58,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
             ListTile(
               leading: const Icon(Icons.delete_sweep, color: Colors.red),
               title: const Text('Limpar Meu Histórico'),
-              subtitle: const Text('Apaga as simulações salvas na conta ativa'),
+              subtitle: const Text('Apaga todas as simulações da conta ativa'),
               onTap: () {
                 Navigator.pop(ctx);
                 _confirmarLimpezaTotal();
@@ -62,6 +66,47 @@ class _HistoryScreenState extends State<HistoryScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  // 🗑️ Apaga os itens marcados manualmente pelo usuário no modo de seleção
+  Future<void> _apagarItensSelecionados() async {
+    if (_chavesSelecionadas.isEmpty) return;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Apagar Selecionados'),
+        content: Text('Deseja apagar as ${_chavesSelecionadas.length} simulações selecionadas?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () async {
+              await _box.deleteAll(_chavesSelecionadas);
+              Navigator.pop(ctx);
+              setState(() {
+                _modoSelecao = false;
+                _chavesSelecionadas.clear();
+              });
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Simulações selecionadas removidas com sucesso!')),
+                );
+              }
+            },
+            child: const Text('Apagar'),
+          ),
+        ],
       ),
     );
   }
@@ -78,7 +123,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
         final item = Map<String, dynamic>.from(rawItem);
         final emailDono = item['userEmail'] ?? item['email'] ?? '';
 
-        // Filtra pelo e-mail da sessão ativa
         if (emailDono == emailAtual) {
           final dateStr = item['date'] ?? '';
           if (dateStr.isNotEmpty) {
@@ -104,7 +148,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
     } else {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Nenhuma simulação antiga encontrada.')),
+          const SnackBar(content: Text('Nenhuma simulação com mais de 30 dias encontrada.')),
         );
       }
     }
@@ -169,15 +213,33 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Histórico de Simulações'),
+        title: Text(_modoSelecao ? '${_chavesSelecionadas.length} selecionadas' : 'Histórico de Simulações'),
         backgroundColor: const Color(0xFF5C6BC0),
         foregroundColor: Colors.white,
+        leading: _modoSelecao
+            ? IconButton(
+          icon: const Icon(Icons.close),
+          onPressed: () {
+            setState(() {
+              _modoSelecao = false;
+              _chavesSelecionadas.clear();
+            });
+          },
+        )
+            : null,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.delete_sweep),
-            tooltip: 'Gerir e Limpar Histórico',
-            onPressed: _mostrarOpcoesLimpeza,
-          ),
+          if (_modoSelecao)
+            IconButton(
+              icon: const Icon(Icons.delete, color: Colors.white),
+              tooltip: 'Apagar Selecionadas',
+              onPressed: _apagarItensSelecionados,
+            )
+          else
+            IconButton(
+              icon: const Icon(Icons.delete_sweep),
+              tooltip: 'Gerir e Limpar Histórico',
+              onPressed: _mostrarOpcoesLimpeza,
+            ),
         ],
       ),
       body: Background(
@@ -185,144 +247,180 @@ class _HistoryScreenState extends State<HistoryScreen> {
           valueListenable: _box.listenable(),
           builder: (context, Box box, _) {
             // 🔒 Filtra dinamicamente as simulações pertencentes ao e-mail logado
-            final simuFiltradas = <Map<String, dynamic>>[];
+            final simuFiltradas = [];
 
             for (var i = 0; i < box.length; i++) {
-              final rawItem = box.getAt(i);
-              if (rawItem is Map) {
-                final item = Map<String, dynamic>.from(rawItem);
-                final emailDono = item['userEmail'] ?? item['email'] ?? '';
-                final key = box.keyAt(i);
+            final rawItem = box.getAt(i);
+            if (rawItem is Map) {
+            final item = Map<String, dynamic>.from(rawItem);
+            final emailDono = item['userEmail'] ?? item['email'] ?? '';
+            final key = box.keyAt(i);
 
-                if (emailDono == emailAtual) {
-                  item['hiveKey'] = key; // Anexa a chave para exclusão
-                  simuFiltradas.add(item);
-                }
-              }
+            if (emailDono == emailAtual) {
+            item['hiveKey'] = key; // Anexa a chave para exclusão
+            simuFiltradas.add(item);
+            }
+            }
             }
 
             if (simuFiltradas.isEmpty) {
-              return Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(20.0),
-                  child: Text(
-                    emailAtual.isEmpty
-                        ? 'Nenhuma simulação no modo visitante.\nFaça login para acessar o seu histórico.'
-                        : 'Nenhuma simulação encontrada para a conta:\n$emailAtual',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 16, color: Colors.white70),
-                  ),
-                ),
-              );
+            return Center(
+            child: Padding(
+            padding: const EdgeInsets.all(20.0),
+            child: Text(
+            emailAtual.isEmpty
+            ? 'Nenhuma simulação no modo visitante.\nFaça login para acessar o seu histórico.'
+                : 'Nenhuma simulação encontrada para a conta:\n$emailAtual',
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 16, color: Colors.white70),
+            ),
+            ),
+            );
             }
 
             return ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: simuFiltradas.length,
-              itemBuilder: (context, index) {
-                // Inverte para exibir as simulações mais recentes no topo (Corrigido!)
-                final item = simuFiltradas[simuFiltradas.length - 1 - index];
+            padding: const EdgeInsets.all(16),
+            itemCount: simuFiltradas.length,
+            itemBuilder: (context, index) {
+            // Inverte para exibir as simulações mais recentes no topo
+            final item = simuFiltradas[simuFiltradas.length - 1 - index];
 
-                final simulationId = item['simulationId'] ?? 'DS-SemID';
-                final dateStr = item['date'] ?? '';
-                final processedPath = item['processedPath'];
-                final notes = item['notes'] ?? 'Sem observações';
-                final key = item['hiveKey'];
+            final simulationId = item['simulationId'] ?? 'DS-SemID';
+            final dateStr = item['date'] ?? '';
+            final processedPath = item['processedPath'];
+            final notes = item['notes'] ?? 'Sem observações';
+            final key = item['hiveKey'];
+            final estaSelecionado = _chavesSelecionadas.contains(key);
 
-                return Dismissible(
-                  key: Key(key.toString()),
-                  direction: DismissDirection.endToStart,
-                  background: Container(
-                    alignment: Alignment.centerRight,
-                    padding: const EdgeInsets.only(right: 20),
-                    margin: const EdgeInsets.only(bottom: 12),
-                    decoration: BoxDecoration(
-                      color: Colors.red.shade700,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Icon(Icons.delete, color: Colors.white, size: 28),
-                  ),
-                  confirmDismiss: (direction) async {
-                    return await showDialog(
-                      context: context,
-                      builder: (ctx) => AlertDialog(
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                        title: const Text('Excluir Simulação'),
-                        content: Text('Deseja apagar a simulação $simulationId do histórico?'),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(ctx, false),
-                            child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
-                          ),
-                          ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.red,
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                            ),
-                            onPressed: () => Navigator.pop(ctx, true),
-                            child: const Text('Excluir'),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                  onDismissed: (direction) {
-                    box.delete(key);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Simulação removida do histórico.')),
-                    );
-                  },
-                  child: Card(
-                    margin: const EdgeInsets.only(bottom: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: ListTile(
-                      contentPadding: const EdgeInsets.all(12),
-                      leading: processedPath != null && File(processedPath).existsSync()
-                          ? ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Image.file(
-                          File(processedPath),
-                          width: 50,
-                          height: 50,
-                          fit: BoxFit.cover,
-                        ),
-                      )
-                          : const Icon(Icons.image, size: 40, color: Colors.grey),
-                      title: Text(
-                        'ID: $simulationId',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      subtitle: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          if (dateStr.isNotEmpty)
-                            Text(
-                              'Data: ${dateStr.split('T')[0]}',
-                              style: const TextStyle(fontSize: 12, color: Colors.grey),
-                            ),
-                          Text(
-                            'Obs: $notes',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                        ],
-                      ),
-                      trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                      onTap: () {
-                        Navigator.pushNamed(
-                          context,
-                          '/compare',
-                          arguments: item,
-                        );
-                      },
-                    ),
-                  ),
-                );
-              },
+            return Dismissible(
+            key: Key(key.toString()),
+            direction: DismissDirection.endToStart,
+            background: Container(
+            alignment: Alignment.centerRight,
+            padding: const EdgeInsets.only(right: 20),
+            margin: const EdgeInsets.only(bottom: 12),
+            decoration: BoxDecoration(
+            color: Colors.red.shade700,
+            borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(Icons.delete, color: Colors.white, size: 28),
+            ),
+            confirmDismiss: (direction) async {
+            return await showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: const Text('Excluir Simulação'),
+            content: Text('Deseja apagar a simulação $simulationId do histórico?'),
+            actions: [
+            TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
+            ),
+            ElevatedButton(
+            style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.red,
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Excluir'),
+            ),
+            ],
+            ),
+            );
+            },
+            onDismissed: (direction) {
+            box.delete(key);
+            ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Simulação removida do histórico.')),
+            );
+            },
+            child: Card(
+            margin: const EdgeInsets.only(bottom: 12),
+            shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            ),
+            color: estaSelecionado ? Colors.indigo.shade50 : Colors.white,
+            child: ListTile(
+            contentPadding: const EdgeInsets.all(12),
+            leading: _modoSelecao
+            ? Checkbox(
+            activeColor: const Color(0xFF5C6BC0),
+            value: estaSelecionado,
+            onChanged: (bool? valor) {
+            setState(() {
+            if (valor == true) {
+            _chavesSelecionadas.add(key);
+            } else {
+            _chavesSelecionadas.remove(key);
+            }
+            });
+            },
+            )
+                : (processedPath != null && File(processedPath).existsSync()
+            ? ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Image.file(
+            File(processedPath),
+            width: 50,
+            height: 50,
+            fit: BoxFit.cover,
+            ),
+            )
+                : const Icon(Icons.image, size: 40, color: Colors.grey)),
+            title: Text(
+            'ID: $simulationId',
+            style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+            if (dateStr.isNotEmpty)
+            Text(
+            'Data: ${dateStr.split('T')[0]}',
+            style: const TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+            Text(
+            'Obs: $notes',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 12),
+            ),
+            ],
+            ),
+            trailing: _modoSelecao
+            ? null
+                : const Icon(Icons.arrow_forward_ios, size: 16),
+            onTap: () {
+            if (_modoSelecao) {
+            setState(() {
+            if (estaSelecionado) {
+            _chavesSelecionadas.remove(key);
+            } else {
+            _chavesSelecionadas.add(key);
+            }
+            });
+            } else {
+            Navigator.pushNamed(
+            context,
+            '/compare',
+            arguments: item,
+            );
+            }
+            },
+            onLongPress: () {
+            if (!_modoSelecao) {
+            setState(() {
+            _modoSelecao = true;
+            _chavesSelecionadas.add(key);
+            });
+            }
+            },
+            ),
+            ),
+            );
+            },
             );
           },
         ),

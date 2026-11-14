@@ -1,5 +1,6 @@
 import os
 import io
+import random
 import base64
 import time
 import urllib.request
@@ -18,6 +19,7 @@ def health_check():
     return "Dental Smile Backend OK", 200
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY") # Configurar nas variáveis de ambiente do Render
 
 def get_db_connection():
     return psycopg2.connect(DATABASE_URL, sslmode='require')
@@ -26,6 +28,8 @@ def init_db():
     try:
         conn = get_db_connection()
         cur = conn.cursor()
+
+        # Tabela principal de usuários
         cur.execute("""
             CREATE TABLE IF NOT EXISTS usuarios (
                 id SERIAL PRIMARY KEY,
@@ -36,104 +40,225 @@ def init_db():
                 creditos INTEGER DEFAULT 0,
                 senha VARCHAR(100),
                 tentativas_login INTEGER DEFAULT 0,
+                email_verificado BOOLEAN DEFAULT FALSE,
+                codigo_verificacao VARCHAR(6),
+                limite_dispositivos INTEGER DEFAULT 1,
                 criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         """)
+
+        # Garante que as novas colunas existam caso a tabela já tenha sido criada antes
+        cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS email_verificado BOOLEAN DEFAULT FALSE;")
+        cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS codigo_verificacao VARCHAR(6);")
+        cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS limite_dispositivos INTEGER DEFAULT 1;")
+
+        # Tabela de controle de aparelhos conectados simultaneamente
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS dispositivos_ativos (
+                id SERIAL PRIMARY KEY,
+                email_dentista VARCHAR(100) NOT NULL,
+                device_id VARCHAR(255) NOT NULL,
+                ultima_atividade TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (email_dentista, device_id)
+            );
+        """)
+
         conn.commit()
         cur.close()
         conn.close()
     except Exception as e:
         print(f"Erro ao inicializar o banco: {e}")
 
-def init_device_db():
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS dispositivos (
-                device_id VARCHAR(255) PRIMARY KEY,
-                creditos INTEGER DEFAULT 3,
-                criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-        """)
-        conn.commit()
-        cur.close()
-        conn.close()
-    except Exception as e:
-        print(f"Erro ao inicializar dispositivos: {e}")
-
 init_db()
-init_device_db()
 
-print("⚙️ Servidor iniciado com sucesso (Novo Mundo + Máscara Elíptica Sem Borda Retangular)")
+print("⚙️ Servidor iniciado com sucesso (Validação OTP + Controle de Dispositivos + Máscara Elíptica)")
 
-@app.route('/check-device', methods=['POST'])
-def check_device():
-    data = request.get_json(force=True, silent=True) or {}
-    device_id = data.get('device_id', '').strip()
-    if not device_id:
-        return jsonify({"success": False, "error": "Device ID obrigatório."}), 400
+# 📧 Função auxiliar para disparar o código de 6 dígitos por e-mail via Resend
+def enviar_email_codigo(destinatario, nome, codigo, assunto="Código de Verificação - Dental Smile"):
+    if not RESEND_API_KEY:
+        print(f"⚠️ [MODO TESTE SEM RESEND_API_KEY] Código para {destinatario}: {codigo}")
+        return True
+
+    saudacao = f"Olá, Dr(a). {nome}!" if nome else "Olá!"
+    html_content = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 500px; margin: auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px;">
+        <h2 style="color: #5C6BC0; text-align: center;">Dental Smile</h2>
+        <p>{saudacao}</p>
+        <p>Use o código de 6 dígitos abaixo para validar seu acesso:</p>
+        <div style="background-color: #f4f6f9; padding: 15px; text-align: center; border-radius: 8px; margin: 20px 0;">
+            <span style="font-size: 28px; font-weight: bold; letter-spacing: 6px; color: #333;">{codigo}</span>
+        </div>
+        <p style="font-size: 12px; color: #777;">Se você não solicitou este código, apenas ignore este e-mail.</p>
+    </div>
+    """
 
     try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT creditos FROM dispositivos WHERE device_id = %s;", (device_id,))
-        row = cur.fetchone()
-        if row:
-            creditos = row[0]
-            novo = False
-        else:
-            cur.execute("INSERT INTO dispositivos (device_id, creditos) VALUES (%s, 3) ON CONFLICT (device_id) DO NOTHING;", (device_id,))
-            conn.commit()
-            creditos = 3
-            novo = True
-        cur.close()
-        conn.close()
-        return jsonify({"success": True, "creditos": creditos, "novo": novo}), 200
+        resp = requests.post(
+            "https://api.resend.com/emails",
+            headers={
+                "Authorization": f"Bearer {RESEND_API_KEY}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "from": "Dental Smile <onboarding@resend.dev>", # Troque pelo seu domínio verificado quando tiver
+                "to": [destinatario],
+                "subject": assunto,
+                "html": html_content
+            },
+            timeout=15
+        )
+        return resp.status_code in [200, 201]
     except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+        print(f"Erro ao enviar e-mail: {e}")
+        return False
 
+# 🔒 Verifica se o aparelho tem permissão para usar a conta (Limite 1, 2 ou 3)
+def validar_limite_dispositivo(cur, email, device_id, limite):
+    if not device_id:
+        return True, "OK"
+
+    # Verifica se este aparelho já está registrado nesta conta
+    cur.execute("SELECT id FROM dispositivos_ativos WHERE email_dentista = %s AND device_id = %s;", (email, device_id))
+    if cur.fetchone():
+        cur.execute("UPDATE dispositivos_ativos SET ultima_atividade = CURRENT_TIMESTAMP WHERE email_dentista = %s AND device_id = %s;", (email, device_id))
+        return True, "OK"
+
+    # Conta quantos aparelhos distintos já estão ativos
+    cur.execute("SELECT COUNT(*) FROM dispositivos_ativos WHERE email_dentista = %s;", (email,))
+    qtd_ativos = cur.fetchone()[0]
+
+    if qtd_ativos >= limite:
+        return False, f"Limite de {limite} dispositivo(s) simultâneo(s) atingido para o seu plano."
+
+    # Registra o novo aparelho
+    cur.execute("INSERT INTO dispositivos_ativos (email_dentista, device_id) VALUES (%s, %s);", (email, device_id))
+    return True, "OK"
+
+# 1. CADASTRO (Gera código OTP de 6 dígitos e bloqueia freemium até validar)
 @app.route('/register', methods=['POST'])
 def register():
     data = request.get_json(force=True, silent=True) or {}
-    nome = data.get('nome', '')
+    nome = data.get('nome', '').strip()
     email = data.get('email', '').strip().lower()
-    cro = data.get('cro', '')
+    cro = data.get('cro', '').strip()
     senha = data.get('senha', '')
 
     if not email or not senha:
         return jsonify({"success": False, "error": "E-mail e senha são obrigatórios."}), 400
 
+    codigo_otp = f"{random.randint(100000, 999999)}"
+
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        cur.execute("SELECT id FROM usuarios WHERE email = %s;", (email,))
-        if cur.fetchone():
-            cur.close()
-            conn.close()
-            return jsonify({"success": False, "error": "Este e-mail já está cadastrado."}), 400
+        cur.execute("SELECT id, email_verificado FROM usuarios WHERE email = %s;", (email,))
+        existente = cur.fetchone()
 
-        cur.execute("""
-            INSERT INTO usuarios (api_key, nome, email, cro, senha, creditos, tentativas_login)
-            VALUES (%s, %s, %s, %s, %s, 0, 0);
-        """, (email, nome, email, cro, senha))
+        if existente:
+            if existente[1]: # Já está verificado
+                cur.close()
+                conn.close()
+                return jsonify({"success": False, "error": "Este e-mail já está cadastrado e ativo."}), 400
+            else:
+                # Usuário começou cadastro antes mas não validou o código: atualiza os dados e reenvia novo código
+                cur.execute("""
+                    UPDATE usuarios
+                    SET nome = %s, cro = %s, senha = %s, codigo_verificacao = %s
+                    WHERE email = %s;
+                """, (nome, cro, senha, codigo_otp, email))
+        else:
+            cur.execute("""
+                INSERT INTO usuarios (api_key, nome, email, cro, senha, creditos, email_verificado, codigo_verificacao, limite_dispositivos)
+                VALUES (%s, %s, %s, %s, %s, 0, FALSE, %s, 1);
+            """, (email, nome, email, cro, senha, codigo_otp))
+
         conn.commit()
         cur.close()
         conn.close()
-        return jsonify({"success": True, "message": "Conta criada com sucesso!"}), 200
+
+        enviar_email_codigo(email, nome, codigo_otp, "Ative sua conta - Código Dental Smile")
+
+        return jsonify({
+            "success": True,
+            "requer_verificacao": True,
+            "message": "Código de 6 dígitos enviado para o seu e-mail!"
+        }), 200
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
+# 2. VALIDAÇÃO DO CÓDIGO DE 6 DÍGITOS (Libera a conta + 3 créditos Freemium)
+@app.route('/verify-email', methods=['POST'])
+def verify_email():
+    data = request.get_json(force=True, silent=True) or {}
+    email = data.get('email', '').strip().lower()
+    codigo = data.get('codigo', '').strip()
+    device_id = data.get('device_id', '').strip()
+
+    if not email or not codigo:
+        return jsonify({"success": False, "error": "E-mail e código são obrigatórios."}), 400
+
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT id, codigo_verificacao, email_verificado, nome, limite_dispositivos FROM usuarios WHERE email = %s;", (email,))
+        user = cur.fetchone()
+
+        if not user:
+            cur.close()
+            conn.close()
+            return jsonify({"success": False, "error": "Usuário não encontrado."}), 404
+
+        user_id, codigo_salvo, ja_verificado, nome, limite_disp = user
+
+        if ja_verificado:
+            cur.close()
+            conn.close()
+            return jsonify({"success": True, "message": "Conta já verificada!"}), 200
+
+        if codigo != codigo_salvo:
+            cur.close()
+            conn.close()
+            return jsonify({"success": False, "error": "Código incorreto. Verifique seu e-mail e tente novamente."}), 400
+
+        # Libera a conta e deposita os 3 créditos gratuitos de boas-vindas
+        cur.execute("""
+            UPDATE usuarios
+            SET email_verificado = TRUE, codigo_verificacao = NULL, creditos = 3
+            WHERE id = %s;
+        """, (user_id,))
+
+        if device_id:
+            validar_limite_dispositivo(cur, email, device_id, limite_disp or 1)
+
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        return jsonify({
+            "success": True,
+            "api_key": email,
+            "nome": nome,
+            "creditos": 3,
+            "message": "E-mail confirmado! Seus 3 créditos gratuitos foram liberados."
+        }), 200
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+# 3. LOGIN (Valida senha, verifica se e-mail está ativo e checa limite de aparelhos)
 @app.route('/login', methods=['POST'])
 def login():
     data = request.get_json(force=True, silent=True) or {}
     email = data.get('email', '').strip().lower()
     senha = data.get('senha', '')
+    device_id = data.get('device_id', '').strip()
 
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        cur.execute("SELECT id, senha, tentativas_login, creditos, nome FROM usuarios WHERE email = %s;", (email,))
+        cur.execute("""
+            SELECT id, senha, tentativas_login, creditos, nome, email_verificado, limite_dispositivos
+            FROM usuarios WHERE email = %s;
+        """, (email,))
         user = cur.fetchone()
 
         if not user:
@@ -141,13 +266,14 @@ def login():
             conn.close()
             return jsonify({"success": False, "error": "E-mail não encontrado."}), 404
 
-        user_id, senha_corr, tentativas, creditos, nome = user
+        user_id, senha_corr, tentativas, creditos, nome, email_verificado, limite_disp = user
         tentativas = tentativas or 0
+        limite_disp = limite_disp or 1
 
         if tentativas >= 4:
             cur.close()
             conn.close()
-            return jsonify({"success": False, "bloqueado": True, "error": "Conta bloqueada por excesso de tentativas."}), 403
+            return jsonify({"success": False, "bloqueado": True, "error": "Conta bloqueada por excesso de tentativas. Use 'Esqueci minha senha'."}), 403
 
         if senha != senha_corr:
             novas_tentativas = tentativas + 1
@@ -157,11 +283,127 @@ def login():
             conn.close()
             return jsonify({"success": False, "error": "Senha incorreta."}), 401
 
+        # Se ainda não validou o e-mail, gera novo código e pede verificação
+        if not email_verificado:
+            novo_codigo = f"{random.randint(100000, 999999)}"
+            cur.execute("UPDATE usuarios SET codigo_verificacao = %s WHERE id = %s;", (novo_codigo, user_id))
+            conn.commit()
+            cur.close()
+            conn.close()
+            enviar_email_codigo(email, nome, novo_codigo, "Ative sua conta - Código Dental Smile")
+            return jsonify({
+                "success": False,
+                "requer_verificacao": True,
+                "error": "E-mail ainda não confirmado. Enviamos um novo código de 6 dígitos para você."
+            }), 403
+
+        # Valida limite de aparelhos simultâneos (1, 2 ou 3)
+        permitido, msg_disp = validar_limite_dispositivo(cur, email, device_id, limite_disp)
+        if not permitido:
+            cur.close()
+            conn.close()
+            return jsonify({"success": False, "limite_dispositivos": True, "error": msg_disp}), 403
+
         cur.execute("UPDATE usuarios SET tentativas_login = 0 WHERE id = %s;", (user_id,))
         conn.commit()
         cur.close()
         conn.close()
-        return jsonify({"success": True, "api_key": email, "creditos": creditos, "nome": nome}), 200
+        return jsonify({
+            "success": True,
+            "api_key": email,
+            "creditos": creditos,
+            "nome": nome,
+            "limite_dispositivos": limite_disp
+        }), 200
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+# 4. ESQUECI MINHA SENHA (Envia código de 6 dígitos para redefinição)
+@app.route('/forgot-password', methods=['POST'])
+def forgot_password():
+    data = request.get_json(force=True, silent=True) or {}
+    email = data.get('email', '').strip().lower()
+
+    if not email:
+        return jsonify({"success": False, "error": "Informe o e-mail cadastrado."}), 400
+
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT id, nome FROM usuarios WHERE email = %s;", (email,))
+        user = cur.fetchone()
+
+        if not user:
+            cur.close()
+            conn.close()
+            return jsonify({"success": False, "error": "E-mail não encontrado no sistema."}), 404
+
+        user_id, nome = user
+        codigo_recuperacao = f"{random.randint(100000, 999999)}"
+
+        cur.execute("UPDATE usuarios SET codigo_verificacao = %s WHERE id = %s;", (codigo_recuperacao, user_id))
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        enviar_email_codigo(email, nome, codigo_recuperacao, "Recuperação de Senha - Dental Smile")
+
+        return jsonify({"success": True, "message": "Código de recuperação enviado para o seu e-mail."}), 200
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+# 5. REDEFINIR SENHA (Valida código, salva nova senha e desbloqueia conta)
+@app.route('/reset-password', methods=['POST'])
+def reset_password():
+    data = request.get_json(force=True, silent=True) or {}
+    email = data.get('email', '').strip().lower()
+    codigo = data.get('codigo', '').strip()
+    nova_senha = data.get('nova_senha', '')
+
+    if not email or not codigo or not nova_senha:
+        return jsonify({"success": False, "error": "Preencha todos os campos."}), 400
+
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT id, codigo_verificacao FROM usuarios WHERE email = %s;", (email,))
+        user = cur.fetchone()
+
+        if not user or user[1] != codigo:
+            cur.close()
+            conn.close()
+            return jsonify({"success": False, "error": "Código inválido ou expirado."}), 400
+
+        cur.execute("""
+            UPDATE usuarios
+            SET senha = %s, codigo_verificacao = NULL, tentativas_login = 0, email_verificado = TRUE
+            WHERE id = %s;
+        """, (nova_senha, user[0]))
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        return jsonify({"success": True, "message": "Senha alterada com sucesso!"}), 200
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+# 6. DESCONECTAR OUTROS APARELHOS (Caso o dentista troque de celular e atinja o limite)
+@app.route('/reset-devices', methods=['POST'])
+def reset_devices():
+    data = request.get_json(force=True, silent=True) or {}
+    email = data.get('email', '').strip().lower()
+    device_id_atual = data.get('device_id', '').strip()
+
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM dispositivos_ativos WHERE email_dentista = %s;", (email,))
+        if device_id_atual:
+            cur.execute("INSERT INTO dispositivos_ativos (email_dentista, device_id) VALUES (%s, %s);", (email, device_id_atual))
+        conn.commit()
+        cur.close()
+        conn.close()
+        return jsonify({"success": True, "message": "Dispositivos antigos desconectados com sucesso."}), 200
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
@@ -169,39 +411,54 @@ def login():
 def check_credits():
     data = request.get_json(force=True, silent=True) or {}
     api_key = data.get('api_key', '').strip().lower()
+
+    if not api_key:
+        return jsonify({"success": True, "creditos": 0}), 200
+
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute("SELECT creditos FROM usuarios WHERE api_key = %s OR email = %s;", (api_key, api_key))
+    cur.execute("SELECT creditos, limite_dispositivos FROM usuarios WHERE api_key = %s OR email = %s;", (api_key, api_key))
     user = cur.fetchone()
     creditos = user[0] if user else 0
+    limite = user[1] if user else 1
     cur.close()
     conn.close()
-    return jsonify({"success": True, "creditos": creditos}), 200
+    return jsonify({"success": True, "creditos": creditos, "limite_dispositivos": limite}), 200
 
 @app.route('/add-credits', methods=['POST'])
 def add_credits():
     data = request.get_json(force=True, silent=True) or {}
     api_key = data.get('api_key', '').strip().lower()
-    device_id = data.get('device_id', '').strip()
     quantidade = int(data.get('quantidade', 10))
+
+    if not api_key:
+        return jsonify({"success": False, "error": "Usuário não identificado."}), 400
+
+    # Define o limite de aparelhos conforme o pacote comprado (mantendo sempre o maior limite já alcançado)
+    novo_limite = 1
+    if quantidade >= 100:
+        novo_limite = 3
+    elif quantidade >= 30:
+        novo_limite = 2
 
     conn = get_db_connection()
     cur = conn.cursor()
-    novo_saldo = quantidade
-
-    if api_key:
-        cur.execute("UPDATE usuarios SET creditos = creditos + %s WHERE api_key = %s OR email = %s RETURNING creditos;", (quantidade, api_key, api_key))
-        res = cur.fetchone()
-        if res: novo_saldo = res[0]
-    elif device_id:
-        cur.execute("UPDATE dispositivos SET creditos = creditos + %s WHERE device_id = %s RETURNING creditos;", (quantidade, device_id))
-        res = cur.fetchone()
-        if res: novo_saldo = res[0]
+    cur.execute("""
+        UPDATE usuarios
+        SET creditos = creditos + %s,
+            limite_dispositivos = GREATEST(COALESCE(limite_dispositivos, 1), %s)
+        WHERE api_key = %s OR email = %s
+        RETURNING creditos, limite_dispositivos;
+    """, (quantidade, novo_limite, api_key, api_key))
+    res = cur.fetchone()
 
     conn.commit()
     cur.close()
     conn.close()
-    return jsonify({"success": True, "novo_saldo": novo_saldo}), 200
+
+    if res:
+        return jsonify({"success": True, "novo_saldo": res[0], "limite_dispositivos": res[1]}), 200
+    return jsonify({"success": False, "error": "Conta não encontrada."}), 404
 
 @app.route('/process-smile', methods=['POST'])
 def process_smile():
@@ -209,24 +466,33 @@ def process_smile():
     api_key = data.get('api_key', '').strip().lower()
     device_id = data.get('device_id', '').strip()
 
+    if not api_key:
+        return jsonify({"success": False, "error": "Faça login e valide seu e-mail para simular."}), 401
+
     conn = get_db_connection()
     cur = conn.cursor()
-    creditos_atuais = 0
-    is_convidado = False
+    cur.execute("SELECT creditos, email_verificado, limite_dispositivos FROM usuarios WHERE api_key = %s OR email = %s;", (api_key, api_key))
+    user = cur.fetchone()
 
-    if api_key:
-        cur.execute("SELECT creditos FROM usuarios WHERE api_key = %s OR email = %s;", (api_key, api_key))
-        user = cur.fetchone()
-        creditos_atuais = user[0] if user else 0
-    elif device_id:
-        is_convidado = True
-        cur.execute("SELECT creditos FROM dispositivos WHERE device_id = %s;", (device_id,))
-        row = cur.fetchone()
-        creditos_atuais = row[0] if row else 0
-    else:
+    if not user:
         cur.close()
         conn.close()
-        return jsonify({"success": False, "error": "Identificação inválida."}), 400
+        return jsonify({"success": False, "error": "Conta não encontrada."}), 404
+
+    creditos_atuais, email_verificado, limite_disp = user
+    limite_disp = limite_disp or 1
+
+    if not email_verificado:
+        cur.close()
+        conn.close()
+        return jsonify({"success": False, "error": "Valide seu e-mail antes de realizar simulações."}), 403
+
+    # Garante que este aparelho está dentro do limite do plano (1, 2 ou 3)
+    permitido, msg_disp = validar_limite_dispositivo(cur, api_key, device_id, limite_disp)
+    if not permitido:
+        cur.close()
+        conn.close()
+        return jsonify({"success": False, "error": msg_disp}), 403
 
     if creditos_atuais <= 0:
         cur.close()
@@ -384,12 +650,8 @@ def process_smile():
         _, buffer = cv2.imencode('.jpg', final_bgr, [cv2.IMWRITE_JPEG_QUALITY, 95])
         processed_b64 = base64.b64encode(buffer).decode('utf-8')
 
-        if is_convidado:
-            cur.execute("UPDATE dispositivos SET creditos = creditos - 1 WHERE device_id = %s RETURNING creditos;", (device_id,))
-            novo_saldo = cur.fetchone()[0]
-        else:
-            cur.execute("UPDATE usuarios SET creditos = creditos - 1 WHERE api_key = %s OR email = %s RETURNING creditos;", (api_key, api_key))
-            novo_saldo = cur.fetchone()[0]
+        cur.execute("UPDATE usuarios SET creditos = creditos - 1 WHERE api_key = %s OR email = %s RETURNING creditos;", (api_key, api_key))
+        novo_saldo = cur.fetchone()[0]
 
         conn.commit()
         cur.close()

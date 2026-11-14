@@ -21,47 +21,50 @@ class _HomeScreenState extends State<HomeScreen> {
     _inicializarECarregarCreditos();
   }
 
-  // 🔍 Retorna a chave do utilizador logado no Hive (e-mail) ou string vazia se deslogado (convidado)
+  // 🔍 Retorna a chave do utilizador logado no Hive (e-mail) ou string vazia se deslogado
   String _obterApiKeyAtual() {
     final boxUser = Hive.box('box_usuario');
     return boxUser.get('email', defaultValue: '') as String;
   }
 
-  // 🚀 Inicializa o dispositivo no backend e exibe o modal de boas-vindas APENAS se o aparelho for estritamente novo
+  // 🚀 Inicializa e consulta os créditos na nuvem
   Future<void> _inicializarECarregarCreditos() async {
     setState(() => _isLoadingCredits = true);
 
     final apiKey = _obterApiKeyAtual();
     final boxUser = Hive.box('box_usuario');
 
+    final stopwatch = Stopwatch()..start();
+    _verificarEAvisoServidorInicioDia(context);
+
     if (apiKey.isEmpty) {
-      // 📱 Utilizador Convidado: Registra/Verifica o Device ID na nuvem
-      final dynamic resDevice = await ApiService.checkOrRegisterDevice();
+      // 📱 Visitante sem conta: freemium permanece bloqueado (0 CR) até o cadastro e validação OTP
+      await ApiService.checkOrRegisterDevice();
+
+      stopwatch.stop();
+      _verificarSeServidorDemorou(stopwatch.elapsedMilliseconds);
 
       if (mounted) {
         setState(() {
-          if (resDevice is Map<String, dynamic> && resDevice['success'] == true) {
-            _creditos = resDevice['creditos'] ?? 0;
-            final bool ehNovoServidor = resDevice['novo'] ?? false;
-
-            // 🎯 O Pop-up SÓ aparece se for a primeira vez do APARELHO no banco de dados
-            if (ehNovoServidor) {
-              boxUser.put('ja_exibiu_popup', true);
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                _exibirPopupBoasVindas();
-              });
-            }
-          } else if (resDevice is int) {
-            _creditos = resDevice;
-          } else {
-            _creditos = 0;
-          }
+          _creditos = 0;
           _isLoadingCredits = false;
         });
+
+        final bool jaExibiuPopup = boxUser.get('ja_exibiu_popup', defaultValue: false) as bool;
+        if (!jaExibiuPopup) {
+          boxUser.put('ja_exibiu_popup', true);
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _exibirPopupBoasVindas();
+          });
+        }
       }
     } else {
-      // 👤 Utilizador Logado: Consulta os créditos vinculados à conta dele na nuvem
+      // 👤 Dentista Logado: Consulta os créditos vinculados à conta verificada na nuvem
       final resultado = await ApiService.checkCredits(apiKey);
+
+      stopwatch.stop();
+      _verificarSeServidorDemorou(stopwatch.elapsedMilliseconds);
+
       if (mounted) {
         setState(() {
           if (resultado['success'] == true) {
@@ -75,7 +78,54 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // 🎁 Modal de Boas-Vindas Didático (Exibido estritamente para aparelhos virgens no banco)
+  void _verificarEAvisoServidorInicioDia(BuildContext context) {
+    final boxUser = Hive.box('box_usuario');
+    String hoje = DateTime.now().toIso8601String().substring(0, 10);
+    String? ultimaExibicao = boxUser.get('ultimo_aviso_servidor');
+
+    if (ultimaExibicao == hoje) return;
+    boxUser.put('ultimo_aviso_servidor', hoje);
+  }
+
+  void _verificarSeServidorDemorou(int tempoEmMilissegundos) {
+    if (tempoEmMilissegundos > 3000 && mounted) {
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+          title: const Row(
+            children: [
+              Icon(Icons.cloud_sync, color: Color(0xFF5C6BC0), size: 26),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Conectando ao Servidor',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+                ),
+              ),
+            ],
+          ),
+          content: const Text(
+            'Servidor ativado com sucesso! Estabelecendo conexão segura com a nuvem. Este aviso aparece apenas na primeira inicialização do dia.',
+            style: TextStyle(fontSize: 14, height: 1.4),
+          ),
+          actions: [
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF5C6BC0),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              onPressed: () => Navigator.pop(context),
+              child: const Text('OK', style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
+  // 🎁 Modal de Boas-Vindas convidando a ativar as 3 simulações gratuitas via cadastro
   void _exibirPopupBoasVindas() {
     showDialog(
       context: context,
@@ -99,26 +149,39 @@ class _HomeScreenState extends State<HomeScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Você ganhou 3 Simulações Gratuitas para testar o aplicativo agora mesmo em sua clínica!',
+              'Ganhe 3 Simulações Gratuitas para testar o aplicativo agora mesmo em sua clínica!',
               style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.black87),
             ),
             SizedBox(height: 12),
             Text(
-              '1. Como usar:\nClique em "Nova Simulação".\n2. Tire ou escolha a foto do paciente.\n3. Visualize o resultado incrível e encante o seu paciente!',
+              'Para liberar seus créditos de teste:\n1. Crie sua conta rápida de dentista.\n2. Confirme o código de 6 dígitos enviado ao seu e-mail.\n3. Faça suas 3 simulações gratuitamente!',
               style: TextStyle(fontSize: 13, color: Colors.black54, height: 1.4),
             ),
           ],
         ),
         actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Depois', style: TextStyle(color: Colors.grey)),
+          ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF5C6BC0),
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
             ),
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Começar a Usar', style: TextStyle(fontWeight: FontWeight.bold)),
+            onPressed: () async {
+              Navigator.pop(context);
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const PlansScreen(abrirCadastroDireto: true),
+                ),
+              );
+              _inicializarECarregarCreditos();
+            },
+            child: const Text('Criar Conta Grátis', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -155,13 +218,39 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 8),
             const Text(
-              'Como você deseja acessar o aplicativo?',
+              'Cadastre-se e confirme seu e-mail para liberar 3 simulações gratuitas!',
               style: TextStyle(fontSize: 13, color: Colors.black54),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 20),
 
-            // Opção 1: Fazer Login
+            // Opção 1: Criar Nova Conta (Destaque para liberar o Freemium)
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.teal.shade600,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              icon: const Icon(Icons.person_add_alt_1),
+              label: const Text(
+                'Criar Conta (Ganhar 3 Simulações)',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+              ),
+              onPressed: () async {
+                Navigator.pop(context);
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const PlansScreen(abrirCadastroDireto: true),
+                  ),
+                );
+                _inicializarECarregarCreditos();
+              },
+            ),
+            const SizedBox(height: 12),
+
+            // Opção 2: Fazer Login
             ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF5C6BC0),
@@ -187,32 +276,6 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 12),
 
-            // Opção 2: Criar Nova Conta
-            ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.teal.shade600,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              icon: const Icon(Icons.person_add_alt_1),
-              label: const Text(
-                'Criar Nova Conta de Dentista',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-              ),
-              onPressed: () async {
-                Navigator.pop(context);
-                await Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const PlansScreen(abrirCadastroDireto: true),
-                  ),
-                );
-                _inicializarECarregarCreditos();
-              },
-            ),
-            const SizedBox(height: 12),
-
             // Opção 3: Ver Pacotes
             OutlinedButton.icon(
               style: OutlinedButton.styleFrom(
@@ -223,7 +286,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               icon: const Icon(Icons.shopping_cart_outlined),
               label: const Text(
-                'Apenas Ver Pacotes de Créditos',
+                'Ver Pacotes de Créditos',
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
               ),
               onPressed: () async {
@@ -241,7 +304,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // 🚨 Modal quando o utilizador tenta simular e está com saldo zerado
+  // 🚨 Modal inteligente: diferencia visitante sem cadastro de dentista logado com saldo zerado
   void _mostrarAlertaCreditosEsgotados() {
     final bool estaLogado = _obterApiKeyAtual().isNotEmpty;
 
@@ -249,14 +312,18 @@ class _HomeScreenState extends State<HomeScreen> {
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Row(
+        title: Row(
           children: [
-            Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 28),
-            SizedBox(width: 8),
+            Icon(
+              estaLogado ? Icons.warning_amber_rounded : Icons.lock_person_outlined,
+              color: estaLogado ? Colors.redAccent : const Color(0xFF5C6BC0),
+              size: 28,
+            ),
+            const SizedBox(width: 8),
             Expanded(
               child: Text(
-                'Créditos Esgotados',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                estaLogado ? 'Créditos Esgotados' : 'Libere suas 3 Simulações',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
                 overflow: TextOverflow.ellipsis,
               ),
             ),
@@ -264,9 +331,9 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         content: Text(
           estaLogado
-              ? 'Você utilizou todas as suas simulações. Adquira um novo pacote para continuar!'
-              : 'Seus 3 créditos gratuitos acabaram.\n\nAcesse sua conta ou adquira um pacote de simulações.',
-          style: const TextStyle(fontSize: 15),
+              ? 'Você utilizou todas as suas simulações. Adquira um novo pacote na loja para continuar!'
+              : 'Para realizar simulações, crie sua conta gratuita e confirme o código de 6 dígitos enviado para o seu e-mail.\n\nAssim que confirmar, suas 3 simulações gratuitas serão liberadas na hora!',
+          style: const TextStyle(fontSize: 14, height: 1.4),
         ),
         actions: [
           TextButton(
@@ -279,12 +346,25 @@ class _HomeScreenState extends State<HomeScreen> {
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(context);
-              _mostrarMenuAcessoOuLoja();
+              if (!estaLogado) {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const PlansScreen(abrirCadastroDireto: true),
+                  ),
+                );
+                _inicializarECarregarCreditos();
+              } else {
+                _mostrarMenuAcessoOuLoja();
+              }
             },
-            icon: const Icon(Icons.account_circle, size: 18),
-            label: const Text('Acessar Conta / Loja', style: TextStyle(fontWeight: FontWeight.bold)),
+            icon: Icon(estaLogado ? Icons.shopping_cart : Icons.person_add_alt_1, size: 18),
+            label: Text(
+              estaLogado ? 'Adquirir Créditos' : 'Criar Conta Grátis',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
           ),
         ],
       ),
@@ -378,7 +458,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               child: Row(
                                 children: [
                                   Icon(
-                                    saldoZerado ? Icons.add_shopping_cart : Icons.stars,
+                                    saldoZerado ? Icons.lock_outline : Icons.stars,
                                     color: saldoZerado ? Colors.redAccent : Colors.amber,
                                     size: 16,
                                   ),
