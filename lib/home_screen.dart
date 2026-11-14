@@ -18,7 +18,8 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _inicializarECarregarCreditos();
+    // Apenas na primeira inicialização exibe o carregamento completo
+    _inicializarECarregarCreditos(isInitial: true);
   }
 
   // 🔍 Retorna a chave do utilizador logado no Hive (e-mail) ou string vazia se deslogado
@@ -27,9 +28,11 @@ class _HomeScreenState extends State<HomeScreen> {
     return boxUser.get('email', defaultValue: '') as String;
   }
 
-  // 🚀 Inicializa e consulta os créditos na nuvem
-  Future<void> _inicializarECarregarCreditos() async {
-    setState(() => _isLoadingCredits = true);
+  // 🚀 Inicializa e consulta os créditos na nuvem (isInitial controla o carregamento visual)
+  Future<void> _inicializarECarregarCreditos({bool isInitial = false}) async {
+    if (isInitial) {
+      setState(() => _isLoadingCredits = true);
+    }
 
     final apiKey = _obterApiKeyAtual();
     final boxUser = Hive.box('box_usuario');
@@ -47,7 +50,7 @@ class _HomeScreenState extends State<HomeScreen> {
         });
 
         final bool jaExibiuPopup = boxUser.get('ja_exibiu_popup', defaultValue: false) as bool;
-        if (!jaExibiuPopup) {
+        if (!jaExibiuPopup && isInitial) {
           boxUser.put('ja_exibiu_popup', true);
           WidgetsBinding.instance.addPostFrameCallback((_) {
             _exibirPopupBoasVindas();

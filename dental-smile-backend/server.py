@@ -119,20 +119,17 @@ def validar_limite_dispositivo(cur, email, device_id, limite):
     if not device_id:
         return True, "OK"
 
-    # Verifica se este aparelho já está registrado nesta conta
     cur.execute("SELECT id FROM dispositivos_ativos WHERE email_dentista = %s AND device_id = %s;", (email, device_id))
     if cur.fetchone():
         cur.execute("UPDATE dispositivos_ativos SET ultima_atividade = CURRENT_TIMESTAMP WHERE email_dentista = %s AND device_id = %s;", (email, device_id))
         return True, "OK"
 
-    # Conta quantos aparelhos distintos já estão ativos
     cur.execute("SELECT COUNT(*) FROM dispositivos_ativos WHERE email_dentista = %s;", (email,))
     qtd_ativos = cur.fetchone()[0]
 
     if qtd_ativos >= limite:
         return False, f"Limite de {limite} dispositivo(s) simultâneo(s) atingido para o seu plano."
 
-    # Registra o novo aparelho
     cur.execute("INSERT INTO dispositivos_ativos (email_dentista, device_id) VALUES (%s, %s);", (email, device_id))
     return True, "OK"
 
@@ -157,12 +154,11 @@ def register():
         existente = cur.fetchone()
 
         if existente:
-            if existente[1]: # Já está verificado
+            if existente[1]:
                 cur.close()
                 conn.close()
                 return jsonify({"success": False, "error": "Este e-mail já está cadastrado e ativo."}), 400
             else:
-                # Usuário começou cadastro antes mas não validou o código: atualiza os dados e reenvia novo código
                 cur.execute("""
                     UPDATE usuarios
                     SET nome = %s, cro = %s, senha = %s, codigo_verificacao = %s
@@ -222,7 +218,6 @@ def verify_email():
             conn.close()
             return jsonify({"success": False, "error": "Código incorreto. Verifique seu e-mail e tente novamente."}), 400
 
-        # Libera a conta e deposita os 3 créditos gratuitos de boas-vindas
         cur.execute("""
             UPDATE usuarios
             SET email_verificado = TRUE, codigo_verificacao = NULL, creditos = 3
@@ -285,7 +280,6 @@ def login():
             conn.close()
             return jsonify({"success": False, "error": "Senha incorreta."}), 401
 
-        # Se ainda não validou o e-mail, gera novo código e pede verificação
         if not email_verificado:
             novo_codigo = f"{random.randint(100000, 999999)}"
             cur.execute("UPDATE usuarios SET codigo_verificacao = %s WHERE id = %s;", (novo_codigo, user_id))
@@ -299,7 +293,6 @@ def login():
                 "error": "E-mail ainda não confirmado. Enviamos um novo código de 6 dígitos para você."
             }), 403
 
-        # Valida limite de aparelhos simultâneos (1, 2 ou 3)
         permitido, msg_disp = validar_limite_dispositivo(cur, email, device_id, limite_disp)
         if not permitido:
             cur.close()
@@ -389,7 +382,7 @@ def reset_password():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-# 6. DESCONECTAR OUTROS APARELHOS (Caso o dentista troque de celular e atinja o limite)
+# 6. DESCONECTAR OUTROS APARELHOS
 @app.route('/reset-devices', methods=['POST'])
 def reset_devices():
     data = request.get_json(force=True, silent=True) or {}
@@ -436,7 +429,6 @@ def add_credits():
     if not api_key:
         return jsonify({"success": False, "error": "Usuário não identificado."}), 400
 
-    # Define o limite de aparelhos conforme o pacote comprado (mantendo sempre o maior limite já alcançado)
     novo_limite = 1
     if quantidade >= 100:
         novo_limite = 3
@@ -489,7 +481,6 @@ def process_smile():
         conn.close()
         return jsonify({"success": False, "error": "Valide seu e-mail antes de realizar simulações."}), 403
 
-    # Garante que este aparelho está dentro do limite do plano (1, 2 ou 3)
     permitido, msg_disp = validar_limite_dispositivo(cur, api_key, device_id, limite_disp)
     if not permitido:
         cur.close()
@@ -621,7 +612,6 @@ def process_smile():
         ai_image_raw = Image.open(io.BytesIO(ai_image_bytes)).convert("RGB")
         ai_crop_restaurado = ai_image_raw.resize((512, 512), Image.Resampling.LANCZOS)
 
-        # 🎨 CALIBRAÇÃO DE CORES BL1-BL4 SUAVE E SEGURA
         ai_np = np.array(ai_crop_restaurado)
         hsv_ai = cv2.cvtColor(ai_np, cv2.COLOR_RGB2HSV).astype(np.float32)
 
@@ -640,7 +630,6 @@ def process_smile():
 
         ai_colorido = Image.fromarray(cv2.cvtColor(hsv_ai.astype(np.uint8), cv2.COLOR_HSV2RGB))
 
-        # Fusão com Blur amplo para zerar o efeito de borda na pele
         crop_orig_pil = Image.fromarray(imagem_rgb)
         crop_mask_pil = Image.fromarray(mascara_sup_dilatada)
         mask_soft = crop_mask_pil.filter(ImageFilter.GaussianBlur(radius=8))
