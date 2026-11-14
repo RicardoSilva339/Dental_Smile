@@ -99,7 +99,7 @@ class _PlansScreenState extends State<PlansScreen> {
     setState(() {});
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      ScaffoldMessenger.of(this.context).showSnackBar(
         const SnackBar(content: Text("Sessão encerrada com sucesso.")),
       );
     }
@@ -123,17 +123,17 @@ class _PlansScreenState extends State<PlansScreen> {
     await boxCompras.add(novaCompra);
   }
 
-  // 📧 MODAL DE VERIFICAÇÃO DO CÓDIGO OTP DE 6 DÍGITOS (Libera conta + 3 créditos)
+  // 📧 MODAL DE VERIFICAÇÃO DO CÓDIGO OTP DE 6 DÍGITOS
   Future<bool> _exibirDialogoVerificacaoOtp(String email) async {
     final TextEditingController codigoController = TextEditingController();
     bool verificadoComSucesso = false;
     bool carregando = false;
 
     await showDialog(
-      context: context,
+      context: this.context,
       barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(
-        builder: (context, setModalState) {
+        builder: (modalContext, setModalState) {
           return AlertDialog(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
             title: const Row(
@@ -189,7 +189,7 @@ class _PlansScreenState extends State<PlansScreen> {
                     : () async {
                   final codigo = codigoController.text.trim();
                   if (codigo.length != 6) {
-                    ScaffoldMessenger.of(context).showSnackBar(
+                    ScaffoldMessenger.of(this.context).showSnackBar(
                       const SnackBar(content: Text("Digite os 6 dígitos enviados ao seu e-mail.")),
                     );
                     return;
@@ -197,7 +197,6 @@ class _PlansScreenState extends State<PlansScreen> {
 
                   setModalState(() => carregando = true);
                   final res = await ApiService.verifyEmail(email: email, codigo: codigo);
-                  setModalState(() => carregando = false);
 
                   if (res['success'] == true) {
                     final boxUser = Hive.box('box_usuario');
@@ -206,10 +205,10 @@ class _PlansScreenState extends State<PlansScreen> {
                     await boxUser.put('is_registrado', true);
 
                     verificadoComSucesso = true;
-                    setState(() {});
                     if (ctx.mounted) Navigator.pop(ctx);
                     if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
+                      setState(() {});
+                      ScaffoldMessenger.of(this.context).showSnackBar(
                         const SnackBar(
                           content: Text("E-mail confirmado! Seus 3 créditos gratuitos foram liberados. 🎉"),
                           backgroundColor: Colors.green,
@@ -217,8 +216,11 @@ class _PlansScreenState extends State<PlansScreen> {
                       );
                     }
                   } else {
-                    if (ctx.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
+                    if (modalContext.mounted) {
+                      setModalState(() => carregando = false);
+                    }
+                    if (mounted) {
+                      ScaffoldMessenger.of(this.context).showSnackBar(
                         SnackBar(
                           content: Text(res['error'] ?? "Código incorreto."),
                           backgroundColor: Colors.red,
@@ -237,11 +239,10 @@ class _PlansScreenState extends State<PlansScreen> {
       ),
     );
 
-    codigoController.dispose();
     return verificadoComSucesso;
   }
 
-  // 🔑 MODAL DE RECUPERAÇÃO DE SENHA ("Esqueci minha senha")
+  // 🔑 MODAL DE RECUPERAÇÃO DE SENHA
   Future<void> _exibirDialogoRecuperarSenha() async {
     final TextEditingController emailRecController = TextEditingController(text: _emailController.text.trim());
     final TextEditingController codigoRecController = TextEditingController();
@@ -251,10 +252,10 @@ class _PlansScreenState extends State<PlansScreen> {
     bool carregando = false;
 
     await showDialog(
-      context: context,
+      context: this.context,
       barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(
-        builder: (context, setModalState) {
+        builder: (modalContext, setModalState) {
           return AlertDialog(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
             title: const Row(
@@ -333,7 +334,7 @@ class _PlansScreenState extends State<PlansScreen> {
                     : () async {
                   final email = emailRecController.text.trim();
                   if (!_emailEhValido(email)) {
-                    ScaffoldMessenger.of(context).showSnackBar(
+                    ScaffoldMessenger.of(this.context).showSnackBar(
                       const SnackBar(content: Text("Informe um e-mail válido.")),
                     );
                     return;
@@ -342,12 +343,16 @@ class _PlansScreenState extends State<PlansScreen> {
                   if (!codigoEnviado) {
                     setModalState(() => carregando = true);
                     final res = await ApiService.forgotPassword(email: email);
-                    setModalState(() => carregando = false);
+                    if (modalContext.mounted) {
+                      setModalState(() => carregando = false);
+                    }
 
                     if (res['success'] == true) {
-                      setModalState(() => codigoEnviado = true);
+                      if (modalContext.mounted) {
+                        setModalState(() => codigoEnviado = true);
+                      }
                       if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
+                        ScaffoldMessenger.of(this.context).showSnackBar(
                           const SnackBar(
                             content: Text("Código enviado para o seu e-mail!"),
                             backgroundColor: Colors.green,
@@ -355,8 +360,8 @@ class _PlansScreenState extends State<PlansScreen> {
                         );
                       }
                     } else {
-                      if (ctx.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
+                      if (mounted) {
+                        ScaffoldMessenger.of(this.context).showSnackBar(
                           SnackBar(
                             content: Text(res['error'] ?? "E-mail não encontrado."),
                             backgroundColor: Colors.red,
@@ -369,7 +374,7 @@ class _PlansScreenState extends State<PlansScreen> {
                     final novaSenha = novaSenhaController.text.trim();
 
                     if (codigo.length != 6 || novaSenha.isEmpty) {
-                      ScaffoldMessenger.of(context).showSnackBar(
+                      ScaffoldMessenger.of(this.context).showSnackBar(
                         const SnackBar(content: Text("Preencha o código de 6 dígitos e a nova senha.")),
                       );
                       return;
@@ -381,14 +386,13 @@ class _PlansScreenState extends State<PlansScreen> {
                       codigo: codigo,
                       novaSenha: novaSenha,
                     );
-                    setModalState(() => carregando = false);
 
                     if (res['success'] == true) {
                       _emailController.text = email;
                       _senhaController.text = novaSenha;
                       if (ctx.mounted) Navigator.pop(ctx);
                       if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
+                        ScaffoldMessenger.of(this.context).showSnackBar(
                           const SnackBar(
                             content: Text("Senha redefinida com sucesso! Já pode entrar."),
                             backgroundColor: Colors.green,
@@ -396,8 +400,11 @@ class _PlansScreenState extends State<PlansScreen> {
                         );
                       }
                     } else {
-                      if (ctx.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
+                      if (modalContext.mounted) {
+                        setModalState(() => carregando = false);
+                      }
+                      if (mounted) {
+                        ScaffoldMessenger.of(this.context).showSnackBar(
                           SnackBar(
                             content: Text(res['error'] ?? "Código inválido."),
                             backgroundColor: Colors.red,
@@ -416,10 +423,6 @@ class _PlansScreenState extends State<PlansScreen> {
         },
       ),
     );
-
-    emailRecController.dispose();
-    codigoRecController.dispose();
-    novaSenhaController.dispose();
   }
 
   // 📱 MODAL DE LIMITE DE DISPOSITIVOS ATINGIDO
@@ -427,7 +430,7 @@ class _PlansScreenState extends State<PlansScreen> {
     bool desconectou = false;
 
     await showDialog(
-      context: context,
+      context: this.context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Row(
@@ -478,10 +481,10 @@ class _PlansScreenState extends State<PlansScreen> {
     bool carregando = false;
 
     await showDialog(
-      context: context,
+      context: this.context,
       barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(
-        builder: (context, setModalState) {
+        builder: (modalContext, setModalState) {
           return AlertDialog(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
             title: Row(
@@ -629,14 +632,14 @@ class _PlansScreenState extends State<PlansScreen> {
                   final senha = _senhaController.text.trim();
 
                   if (email.isEmpty || senha.isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(
+                    ScaffoldMessenger.of(this.context).showSnackBar(
                       const SnackBar(content: Text("Por favor, preencha o E-mail e a Senha.")),
                     );
                     return;
                   }
 
                   if (!_emailEhValido(email)) {
-                    ScaffoldMessenger.of(context).showSnackBar(
+                    ScaffoldMessenger.of(this.context).showSnackBar(
                       const SnackBar(
                         content: Text("Por favor, insira um e-mail válido."),
                         backgroundColor: Colors.orange,
@@ -663,39 +666,38 @@ class _PlansScreenState extends State<PlansScreen> {
                       senha: senha,
                     );
 
-                    setModalState(() => carregando = false);
-
                     if (res['success'] == true) {
                       await boxUser.put('nome', _nomeController.text.trim());
                       await boxUser.put('cro', _croController.text.trim());
 
                       if (ctx.mounted) Navigator.pop(ctx);
-                      // Abre o modal de validação dos 6 dígitos antes de liberar o acesso
                       final validou = await _exibirDialogoVerificacaoOtp(email);
                       if (validou) {
                         autenticadoComSucesso = true;
                       }
                     } else {
-                      if (ctx.mounted) {
+                      if (modalContext.mounted) {
+                        setModalState(() => carregando = false);
+                      }
+                      if (mounted) {
                         String erroMsg = res['error'] ?? "Erro no cadastro.";
-                        ScaffoldMessenger.of(context).showSnackBar(
+                        ScaffoldMessenger.of(this.context).showSnackBar(
                           SnackBar(content: Text(erroMsg), backgroundColor: Colors.red),
                         );
                       }
                     }
                   } else {
                     final res = await ApiService.login(email: email, senha: senha);
-                    setModalState(() => carregando = false);
 
                     if (res['success'] == true) {
                       await boxUser.put('nome', res['nome'] ?? "Dentista");
                       await boxUser.put('email', email);
                       await boxUser.put('is_registrado', true);
                       autenticadoComSucesso = true;
-                      setState(() {});
                       if (ctx.mounted) Navigator.pop(ctx);
                       if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
+                        setState(() {});
+                        ScaffoldMessenger.of(this.context).showSnackBar(
                           const SnackBar(content: Text("Login efetuado com sucesso!"), backgroundColor: Colors.green),
                         );
                       }
@@ -706,29 +708,34 @@ class _PlansScreenState extends State<PlansScreen> {
                         autenticadoComSucesso = true;
                       }
                     } else if (res['limite_dispositivos'] == true) {
+                      if (modalContext.mounted) {
+                        setModalState(() => carregando = false);
+                      }
                       final msgErro = res['error'] ?? "Limite de dispositivos atingido.";
                       final desconectou = await _exibirDialogoLimiteDispositivos(email, msgErro);
                       if (desconectou) {
-                        // Tenta o login novamente após desconectar os aparelhos antigos
                         final retry = await ApiService.login(email: email, senha: senha);
                         if (retry['success'] == true) {
                           await boxUser.put('nome', retry['nome'] ?? "Dentista");
                           await boxUser.put('email', email);
                           await boxUser.put('is_registrado', true);
                           autenticadoComSucesso = true;
-                          setState(() {});
                           if (ctx.mounted) Navigator.pop(ctx);
                           if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
+                            setState(() {});
+                            ScaffoldMessenger.of(this.context).showSnackBar(
                               const SnackBar(content: Text("Aparelho conectado com sucesso!"), backgroundColor: Colors.green),
                             );
                           }
                         }
                       }
                     } else {
-                      if (ctx.mounted) {
+                      if (modalContext.mounted) {
+                        setModalState(() => carregando = false);
+                      }
+                      if (mounted) {
                         String erroMsg = res['error'] ?? "Erro ao efetuar login.";
-                        ScaffoldMessenger.of(context).showSnackBar(
+                        ScaffoldMessenger.of(this.context).showSnackBar(
                           SnackBar(content: Text(erroMsg), backgroundColor: Colors.red),
                         );
                       }
@@ -760,7 +767,7 @@ class _PlansScreenState extends State<PlansScreen> {
     if (!mounted) return;
 
     final confirmarCompra = await showDialog<bool>(
-      context: context,
+      context: this.context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Row(
@@ -839,7 +846,7 @@ class _PlansScreenState extends State<PlansScreen> {
     final apiKeyAtual = _obterApiKeyAtual();
 
     showDialog(
-      context: context,
+      context: this.context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -859,7 +866,7 @@ class _PlansScreenState extends State<PlansScreen> {
       final sucesso = await ApiService.adicionarCreditos(apiKeyAtual, creditos);
 
       if (!mounted) return;
-      Navigator.pop(context);
+      Navigator.pop(this.context);
 
       if (sucesso) {
         await _registrarHistoricoCompra(nomePlano, creditos, preco);
@@ -867,7 +874,7 @@ class _PlansScreenState extends State<PlansScreen> {
         if (!mounted) return;
 
         showDialog(
-          context: context,
+          context: this.context,
           builder: (context) => AlertDialog(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             title: const Text("Pagamento Aprovado! 🎉"),
@@ -880,7 +887,7 @@ class _PlansScreenState extends State<PlansScreen> {
                 ),
                 onPressed: () {
                   Navigator.pop(context);
-                  Navigator.pop(context, true);
+                  Navigator.pop(this.context, true);
                 },
                 child: const Text("OK"),
               ),
@@ -892,14 +899,14 @@ class _PlansScreenState extends State<PlansScreen> {
       }
     } catch (e) {
       if (!mounted) return;
-      Navigator.pop(context);
+      Navigator.pop(this.context);
       _mostrarErro("Erro ao processar a compra: $e");
     }
   }
 
   void _mostrarErro(String mensagem) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
+    ScaffoldMessenger.of(this.context).showSnackBar(
       SnackBar(content: Text(mensagem), backgroundColor: Colors.red),
     );
   }
@@ -909,7 +916,7 @@ class _PlansScreenState extends State<PlansScreen> {
     final emailAtual = _obterApiKeyAtual();
 
     if (emailAtual.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      ScaffoldMessenger.of(this.context).showSnackBar(
         const SnackBar(content: Text("Por favor, faça login para ver o seu histórico.")),
       );
       _exibirDialogoAutenticacaoApenas();
@@ -917,7 +924,7 @@ class _PlansScreenState extends State<PlansScreen> {
     }
 
     showModalBottomSheet(
-      context: context,
+      context: this.context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
