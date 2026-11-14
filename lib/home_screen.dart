@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:dental_smile/api_service.dart';
@@ -12,23 +13,28 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  // 🔒 Flag estática: garante que o aviso de carregamento pesado apareça APENAS na 1ª abertura da sessão
+  // 🔒 Flag estática: evita verificações pesadas repetidas na mesma sessão
   static bool _jaInicializouSessao = false;
 
   int _creditos = 0;
-  late bool _isLoadingCredits;
+  bool _isLoadingCredits = false; // Começa falso para nunca piscar na abertura
+  Timer? _timerAvisoServidor;
 
   @override
   void initState() {
     super.initState();
     if (!_jaInicializouSessao) {
-      _isLoadingCredits = true;
       _jaInicializouSessao = true;
       _inicializarECarregarCreditos(isInitial: true);
     } else {
-      _isLoadingCredits = false;
       _inicializarECarregarCreditos(isInitial: false);
     }
+  }
+
+  @override
+  void dispose() {
+    _timerAvisoServidor?.cancel();
+    super.dispose();
   }
 
   // 🔍 Retorna a chave do utilizador logado no Hive (e-mail) ou string vazia se deslogado
@@ -37,20 +43,25 @@ class _HomeScreenState extends State<HomeScreen> {
     return boxUser.get('email', defaultValue: '') as String;
   }
 
-  // 🚀 Inicializa e consulta os créditos na nuvem (isInitial controla o carregamento visual)
+  // 🚀 Inicializa e consulta os créditos na nuvem com detecção inteligente de servidor dormindo
   Future<void> _inicializarECarregarCreditos({bool isInitial = false}) async {
-    if (isInitial && mounted) {
-      setState(() => _isLoadingCredits = true);
-    }
-
     final apiKey = _obterApiKeyAtual();
     final boxUser = Hive.box('box_usuario');
 
-    _verificarEAvisoServidorInicioDia(context);
+    // Só arma o aviso se for a abertura inicial e o servidor demorar mais de 800ms para responder
+    if (isInitial && apiKey.isNotEmpty) {
+      _timerAvisoServidor?.cancel();
+      _timerAvisoServidor = Timer(const Duration(milliseconds: 800), () {
+        if (mounted) {
+          setState(() => _isLoadingCredits = true);
+        }
+      });
+    }
 
     if (apiKey.isEmpty) {
       // 📱 Visitante sem conta: freemium permanece bloqueado até o cadastro e validação OTP
       await ApiService.checkOrRegisterDevice();
+      _timerAvisoServidor?.cancel();
 
       if (mounted) {
         setState(() {
@@ -69,6 +80,7 @@ class _HomeScreenState extends State<HomeScreen> {
     } else {
       // 👤 Dentista Logado: Consulta os créditos vinculados à conta verificada na nuvem
       final resultado = await ApiService.checkCredits(apiKey);
+      _timerAvisoServidor?.cancel(); // Cancela o aviso imediatamente se respondeu rápido
 
       if (mounted) {
         setState(() {
@@ -81,15 +93,6 @@ class _HomeScreenState extends State<HomeScreen> {
         });
       }
     }
-  }
-
-  void _verificarEAvisoServidorInicioDia(BuildContext context) {
-    final boxUser = Hive.box('box_usuario');
-    String hoje = DateTime.now().toIso8601String().substring(0, 10);
-    String? ultimaExibicao = boxUser.get('ultimo_aviso_servidor');
-
-    if (ultimaExibicao == hoje) return;
-    boxUser.put('ultimo_aviso_servidor', hoje);
   }
 
   // 🎁 Modal de Boas-Vindas convidando a ativar as 3 simulações gratuitas via cadastro
@@ -416,7 +419,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   SizedBox(height: 8),
                   Text(
-                    'Isso pode levar alguns segundos na primeira inicialização do dia.',
+                    'Aguarde alguns segundos enquanto o servidor desperta.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: Colors.white70,
