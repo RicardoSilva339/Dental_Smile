@@ -309,7 +309,6 @@ class _CompareScreenState extends State<CompareScreen> {
                 ),
               const SizedBox(height: 12),
 
-              // 🖼️ ÁREA DE COMPARAÇÃO COM PROPORÇÃO 1:1 (QUADRADA 512x512) PARA PERFEITO ALINHAMENTO
               Center(
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxHeight: 400, maxWidth: 400),
@@ -351,7 +350,6 @@ class _CompareScreenState extends State<CompareScreen> {
                               child: Stack(
                                 fit: StackFit.expand,
                                 children: [
-                                  // 1️⃣ CAMADA DE BASE (DIREITA): Imagem Processada com IA
                                   if (processedFile != null && processedFile.existsSync())
                                     Image.file(
                                       processedFile,
@@ -361,7 +359,6 @@ class _CompareScreenState extends State<CompareScreen> {
                                   else
                                     const Center(child: Text('Erro ao carregar imagem processada', style: TextStyle(color: Colors.white))),
 
-                                  // 2️⃣ CAMADA SOBREPOSTA (ESQUERDA): Imagem Original Padronizada
                                   if (originalFile != null && originalFile.existsSync())
                                     Align(
                                       alignment: Alignment.centerLeft,
@@ -387,7 +384,6 @@ class _CompareScreenState extends State<CompareScreen> {
                                       ),
                                     ),
 
-                                  // 3️⃣ BARRA DO SLIDER
                                   Positioned(
                                     top: 0,
                                     bottom: 0,
@@ -423,7 +419,6 @@ class _CompareScreenState extends State<CompareScreen> {
                                     ),
                                   ),
 
-                                  // 🏷️ BADGE ORIGINAL
                                   Positioned(
                                     top: 12,
                                     left: 12,
@@ -440,7 +435,6 @@ class _CompareScreenState extends State<CompareScreen> {
                                     ),
                                   ),
 
-                                  // 🏷️ BADGE COM IA
                                   Positioned(
                                     top: 12,
                                     right: 12,

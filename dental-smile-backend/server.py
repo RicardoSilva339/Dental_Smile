@@ -89,6 +89,8 @@ def enviar_email_codigo(destinatario, nome, codigo, assunto="Código de Verifica
             <span style="font-size: 28px; font-weight: bold; letter-spacing: 6px; color: #333;">{codigo}</span>
         </div>
         <p style="font-size: 12px; color: #777;">Se você não solicitou este código, apenas ignore este e-mail.</p>
+        <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
+        <p style="font-size: 11px; color: #999; text-align: center;">Dental Smile &bull; <a href="https://dentalsmile.ia.br" style="color: #5C6BC0; text-decoration: none;">dentalsmile.ia.br</a></p>
     </div>
     """
 
@@ -100,7 +102,7 @@ def enviar_email_codigo(destinatario, nome, codigo, assunto="Código de Verifica
                 "Content-Type": "application/json"
             },
             json={
-                "from": "Dental Smile <onboarding@resend.dev>", # Troque pelo seu domínio verificado quando tiver
+                "from": "Dental Smile <contato@dentalsmile.ia.br>",
                 "to": [destinatario],
                 "subject": assunto,
                 "html": html_content

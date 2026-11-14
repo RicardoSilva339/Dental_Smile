@@ -5,6 +5,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:dental_smile/api_service.dart';
 import 'background.dart';
 import 'plans_screen.dart';
+import 'compare_screen.dart';
 
 class AdjustSmileScreen extends StatefulWidget {
   final File image;
@@ -151,13 +152,16 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
     String? originalPaddedPath;
 
     try {
+      final boxUser = Hive.box('box_usuario');
+      final deviceId = boxUser.get('device_id', defaultValue: 'device_${DateTime.now().millisecondsSinceEpoch}') as String;
+
       final resultado = await ApiService.processSmile(
         imageFile: widget.image,
         color: _selectedColor,
-        shape: 'natural',
-        size: 'medio',
+        shape: 'Oval',
+        size: 'Médio',
         apiKey: apiKey.isNotEmpty ? apiKey : '',
-        // 🧹 mouthBox removido daqui com sucesso!
+        deviceId: deviceId, // 👈 Adicionado o deviceId exigido pela API
       );
 
       _timerMensagens?.cancel();
@@ -171,7 +175,7 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
             if (resultado['creditos_restantes'] != null && resultado['creditos_restantes'] is int) {
               _creditos = resultado['creditos_restantes'];
             } else if (_creditos > 0) {
-              _creditos = _creditos - 1; // 👈 Subtração devidamente corrigida
+              _creditos = _creditos - 1;
             }
           });
         }

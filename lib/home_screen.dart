@@ -34,15 +34,11 @@ class _HomeScreenState extends State<HomeScreen> {
     final apiKey = _obterApiKeyAtual();
     final boxUser = Hive.box('box_usuario');
 
-    final stopwatch = Stopwatch()..start();
     _verificarEAvisoServidorInicioDia(context);
 
     if (apiKey.isEmpty) {
       // 📱 Visitante sem conta: freemium permanece bloqueado até o cadastro e validação OTP
       await ApiService.checkOrRegisterDevice();
-
-      stopwatch.stop();
-      _verificarSeServidorDemorou(stopwatch.elapsedMilliseconds);
 
       if (mounted) {
         setState(() {
@@ -61,9 +57,6 @@ class _HomeScreenState extends State<HomeScreen> {
     } else {
       // 👤 Dentista Logado: Consulta os créditos vinculados à conta verificada na nuvem
       final resultado = await ApiService.checkCredits(apiKey);
-
-      stopwatch.stop();
-      _verificarSeServidorDemorou(stopwatch.elapsedMilliseconds);
 
       if (mounted) {
         setState(() {
@@ -85,44 +78,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
     if (ultimaExibicao == hoje) return;
     boxUser.put('ultimo_aviso_servidor', hoje);
-  }
-
-  void _verificarSeServidorDemorou(int tempoEmMilissegundos) {
-    if (tempoEmMilissegundos > 3000 && mounted) {
-      showDialog(
-        context: context,
-        builder: (context) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-          title: const Row(
-            children: [
-              Icon(Icons.cloud_sync, color: Color(0xFF5C6BC0), size: 26),
-              SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  'Conectando ao Servidor',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
-                ),
-              ),
-            ],
-          ),
-          content: const Text(
-            'Servidor ativado com sucesso! Estabelecendo conexão segura com a nuvem. Este aviso aparece apenas na primeira inicialização do dia.',
-            style: TextStyle(fontSize: 14, height: 1.4),
-          ),
-          actions: [
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF5C6BC0),
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-              ),
-              onPressed: () => Navigator.pop(context),
-              child: const Text('OK', style: TextStyle(fontWeight: FontWeight.bold)),
-            ),
-          ],
-        ),
-      );
-    }
   }
 
   // 🎁 Modal de Boas-Vindas convidando a ativar as 3 simulações gratuitas via cadastro
@@ -154,7 +109,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             SizedBox(height: 12),
             Text(
-              'Para liberar seus créditos de teste:\n1. Crie sua conta rápida de dentista.\n2. Confirme o código de 6 dígitos enviado ao seu e-mail.\n3. Faça suas 3 simulações gratuitamente!',
+              '1. Crie sua conta rápida de dentista.\n2. Confirme o código de 6 dígitos enviado ao seu e-mail.\n3. Faça suas 3 simulações gratuitamente!',
               style: TextStyle(fontSize: 13, color: Colors.black54, height: 1.4),
             ),
           ],
@@ -422,9 +377,47 @@ class _HomeScreenState extends State<HomeScreen> {
         imagePath: 'assets/images/antes_depois.jpg',
         opacity: 0.9,
         child: SafeArea(
-          child: Column(
+          child: _isLoadingCredits
+              ? Center(
+            child: Container(
+              padding: const EdgeInsets.all(24),
+              margin: const EdgeInsets.symmetric(horizontal: 32),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.75),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.white24),
+              ),
+              child: const Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(color: Colors.amber),
+                  SizedBox(height: 20),
+                  Text(
+                    'Conectando ao servidor...\nPreparando o sistema.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      height: 1.4,
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    'Isso pode levar alguns segundos na primeira inicialização do dia.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          )
+              : Column(
             children: [
-              // Topo com Badge de Créditos (3 CR apagado com cadeado quando visitante; aceso com estrela quando ativo)
+              // Topo com Badge de Créditos
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 12.0),
                 child: Row(
@@ -473,16 +466,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                     size: 16,
                                   ),
                                   const SizedBox(width: 5),
-                                  _isLoadingCredits
-                                      ? const SizedBox(
-                                    width: 12,
-                                    height: 12,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.white54,
-                                    ),
-                                  )
-                                      : Text(
+                                  Text(
                                     !estaLogado ? '3 CR' : '$_creditos CR',
                                     style: TextStyle(
                                       color: !estaLogado

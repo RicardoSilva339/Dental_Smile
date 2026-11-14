@@ -6,7 +6,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 
 class ApiService {
-  static const String baseUrl = 'https://dental-smile-backend-iso3.onrender.com';
+  // 🌐 Domínio oficial próprio com SSL configurado
+  static const String baseUrl = 'https://dentalsmile.ia.br';
 
   static Future<String> _getDeviceId() async {
     final DeviceInfoPlugin deviceInfo = DeviceInfoPlugin();
@@ -213,11 +214,11 @@ class ApiService {
 
   static Future<dynamic> processSmile({
     required File imageFile,
-    required String color,
-    required String shape,
-    required String size,
+    String color = 'BL2',
+    String shape = 'Oval',
+    String size = 'Médio',
     required String apiKey,
-    List<double>? mouthBox,
+    List<double>? mouthBox, required String deviceId,
   }) async {
     try {
       final url = Uri.parse('$baseUrl/process-smile');

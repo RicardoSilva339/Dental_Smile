@@ -41,11 +41,11 @@ class _MyAppState extends State<MyApp> {
     _acordarServidorRender();
   }
 
-  // 🚀 Ping silencioso em background e verificação inteligente do primeiro acesso do dia
+  // 🚀 Ping silencioso em background para acordar o backend no Render
   Future<void> _acordarServidorRender() async {
     try {
-      // URL raiz do backend no Render
-      final url = Uri.parse('https://dental-smile-backend.onrender.com/');
+      // URL oficial do backend com domínio próprio e SSL
+      final url = Uri.parse('https://dentalsmile.ia.br/');
 
       // Dispara o ping de aquecimento
       final stopwatch = Stopwatch()..start();
@@ -53,7 +53,7 @@ class _MyAppState extends State<MyApp> {
       http.get(url).timeout(const Duration(seconds: 55)).then((response) {
         stopwatch.stop();
         if (response.statusCode == 200) {
-          print("🟢 Servidor Render acordado com sucesso em background!");
+          print("🟢 Servidor Dental Smile acordado com sucesso em background!");
         }
       }).catchError((error) {
         print("⚠️ Servidor demorou a responder no ping inicial: $error");
