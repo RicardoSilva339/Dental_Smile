@@ -71,7 +71,7 @@ def init_db():
 
 init_db()
 
-print("⚙️ Servidor iniciado com sucesso (Validação OTP + Controle de Dispositivos + Máscara Elíptica)")
+print("⚙️ Servidor iniciado com sucesso (Validação OTP + Controle de Dispositivos + Máscara Elíptica Superior)")
 
 # 📧 Função auxiliar para disparar o código de 6 dígitos por e-mail via Resend
 def enviar_email_codigo(destinatario, nome, codigo, assunto="Código de Verificação - Dental Smile"):
@@ -523,15 +523,15 @@ def process_smile():
 
         mascara_sup = np.zeros((512, 512), dtype=np.uint8)
 
-        # 🛠️ MÁSCARA ELÍPTICA ANATÓMICA (Remove o retângulo e o efeito "batom")
+        # 🛠️ MÁSCARA ELÍPTICA EXCLUSIVA PARA ARCADA SUPERIOR (Preserva dentes inferiores e lábios)
         centro_x = 256
-        centro_y = int(512 * 0.46)
-        raio_x = int(512 * 0.28)
-        raio_y = int(512 * 0.07)
+        centro_y = int(512 * 0.43)
+        raio_x = int(512 * 0.27)
+        raio_y = int(512 * 0.055)
         cv2.ellipse(mascara_sup, (centro_x, centro_y), (raio_x, raio_y), 0, 0, 360, 255, -1)
 
         kernel = np.ones((5, 5), np.uint8)
-        mascara_sup_dilatada = cv2.dilate(mascara_sup, kernel, iterations=2)
+        mascara_sup_dilatada = cv2.dilate(mascara_sup, kernel, iterations=1)
 
         mask_512 = Image.fromarray(mascara_sup_dilatada)
 
@@ -543,7 +543,7 @@ def process_smile():
         mask_512.save(buffered_mask_512, format="PNG")
         mask_uri = f"data:image/png;base64,{base64.b64encode(buffered_mask_512.getvalue()).decode('utf-8')}"
 
-        print("🚀 [REPLICATE REST] Disparando IA na arcada superior...")
+        print("🚀 [REPLICATE REST] Disparando IA exclusivamente na arcada superior...")
 
         replicate_token = os.environ.get("REPLICATE_API_TOKEN")
         headers = {
@@ -552,8 +552,9 @@ def process_smile():
         }
 
         prompt_text = (
-            f"photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1>(Beautiful natural teeth, aligned bite teeth), "
-            f"aligned white teeth, human like teeth, (no teeth gap), celebrity-like teeth, healthy teeth with a perfect smile, not big incisor, good proportion teeth, shade {selected_color.upper()}, good proportion smile,"
+            f"photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1>(Beautiful natural upper teeth only, aligned bite teeth), "
+            f"aligned white upper teeth, human like teeth, (no teeth gap), celebrity-like teeth, healthy upper teeth with a perfect smile, "
+            f"not big incisor, good proportion teeth, shade {selected_color.upper()}, natural lower teeth untouched, good proportion smile,"
         )
         negative_prompt_text = (
             "(deformed teeth, semi-realistic, cgi, 3d, render, sketch, cartoon, drawing, anime), "
@@ -562,7 +563,7 @@ def process_smile():
             "wrong anatomy, missing teeth, disconnected teeth, unnatural mouth, bunny teeth, big incisor teeth, disproportionate front teeth, "
             "bad smile, reflection, crooked teeth, distorted teeth, cropped, out of frame, worst quality, low quality, "
             "jpeg artifacts, ugly, morbid, disfigured, gross proportions, too many teeth, lipstick, lip gloss, "
-            "too less teeth, unnatural size teeth, poorly drawn mouth, poorly drawn teeth"
+            "too less teeth, unnatural size teeth, poorly drawn mouth, poorly drawn teeth, altered lower teeth"
         )
 
         payload = {
@@ -632,7 +633,7 @@ def process_smile():
 
         crop_orig_pil = Image.fromarray(imagem_rgb)
         crop_mask_pil = Image.fromarray(mascara_sup_dilatada)
-        mask_soft = crop_mask_pil.filter(ImageFilter.GaussianBlur(radius=8))
+        mask_soft = crop_mask_pil.filter(ImageFilter.GaussianBlur(radius=7))
 
         crop_final_pil = Image.composite(ai_colorido, crop_orig_pil, mask_soft)
         imagem_final_rgb = np.array(crop_final_pil)
@@ -649,7 +650,7 @@ def process_smile():
         conn.close()
 
         print("=" * 60)
-        print("📤 [PYTHON REST] Simulação concluída com máscara elíptica sem bordas!")
+        print("📤 [PYTHON REST] Simulação concluída com foco exclusivo na arcada superior!")
         print("=" * 60)
 
         return jsonify({
