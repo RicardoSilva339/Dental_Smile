@@ -71,7 +71,7 @@ def init_db():
 
 init_db()
 
-print("⚙️ Servidor iniciado com sucesso (Validação OTP + Controle de Dispositivos + Máscara Elíptica Calibrada centro_y 0.56 + Seed Fixo)")
+print("⚙️ Servidor iniciado com sucesso (Validação OTP + Controle de Dispositivos + Máscara Elíptica Calibrada)")
 
 # 📧 Função auxiliar para disparar o código de 6 dígitos por e-mail via Resend
 def enviar_email_codigo(destinatario, nome, codigo, assunto="Código de Verificação - Dental Smile"):
@@ -133,6 +133,7 @@ def validar_limite_dispositivo(cur, email, device_id, limite):
     cur.execute("INSERT INTO dispositivos_ativos (email_dentista, device_id) VALUES (%s, %s);", (email, device_id))
     return True, "OK"
 
+# 1. CADASTRO (Gera código OTP de 6 dígitos e bloqueia freemium até validar)
 @app.route('/register', methods=['POST'])
 def register():
     data = request.get_json(force=True, silent=True) or {}
@@ -183,6 +184,7 @@ def register():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
+# 2. VALIDAÇÃO DO CÓDIGO DE 6 DÍGITOS (Libera a conta + 3 créditos Freemium)
 @app.route('/verify-email', methods=['POST'])
 def verify_email():
     data = request.get_json(force=True, silent=True) or {}
@@ -239,6 +241,7 @@ def verify_email():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
+# 3. LOGIN (Valida senha, verifica se e-mail está ativo e checa limite de aparelhos)
 @app.route('/login', methods=['POST'])
 def login():
     data = request.get_json(force=True, silent=True) or {}
@@ -310,6 +313,7 @@ def login():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
+# 4. ESQUECI MINHA SENHA (Envia código de 6 dígitos para redefinição)
 @app.route('/forgot-password', methods=['POST'])
 def forgot_password():
     data = request.get_json(force=True, silent=True) or {}
@@ -343,6 +347,7 @@ def forgot_password():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
+# 5. REDEFINIR SENHA (Valida código, salva nova senha e desbloqueia conta)
 @app.route('/reset-password', methods=['POST'])
 def reset_password():
     data = request.get_json(force=True, silent=True) or {}
@@ -377,6 +382,7 @@ def reset_password():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
+# 6. DESCONECTAR OUTROS APARELHOS
 @app.route('/reset-devices', methods=['POST'])
 def reset_devices():
     data = request.get_json(force=True, silent=True) or {}
@@ -517,9 +523,9 @@ def process_smile():
 
         mascara_sup = np.zeros((512, 512), dtype=np.uint8)
 
-        # 🛠️ MÁSCARA ELÍPTICA CALIBRADA (centro_y ajustado para 0.56 para alinhar exatamente na boca e gengiva)
+        # 🛠️ MÁSCARA ELÍPTICA CALIBRADA (Preserva abertura labial e foca na arcada superior)
         centro_x = 256
-        centro_y = int(512 * 0.56)
+        centro_y = int(512 * 0.46)
         raio_x = int(512 * 0.27)
         raio_y = int(512 * 0.065)
         cv2.ellipse(mascara_sup, (centro_x, centro_y), (raio_x, raio_y), 0, 0, 360, 255, -1)
@@ -537,7 +543,7 @@ def process_smile():
         mask_512.save(buffered_mask_512, format="PNG")
         mask_uri = f"data:image/png;base64,{base64.b64encode(buffered_mask_512.getvalue()).decode('utf-8')}"
 
-        print("🚀 [REPLICATE REST] Disparando IA com elipse calibrada centro_y=0.56 e seed=100...")
+        print("🚀 [REPLICATE REST] Disparando IA com preservação labial e arcada superior...")
 
         replicate_token = os.environ.get("REPLICATE_API_TOKEN")
         headers = {
@@ -567,7 +573,6 @@ def process_smile():
                 "mask": mask_uri,
                 "prompt": prompt_text,
                 "negative_prompt": negative_prompt_text,
-                "seed": 100,
                 "num_outputs": 1,
                 "num_inference_steps": 25,
                 "guidance_scale": 6.0
@@ -612,16 +617,16 @@ def process_smile():
         hsv_ai = cv2.cvtColor(ai_np, cv2.COLOR_RGB2HSV).astype(np.float32)
 
         if selected_color == 'bl1':
-            hsv_ai[:, :, 2] = np.clip(hsv_ai[:, :, 2] * 1.04, 0, 255)
-            hsv_ai[:, :, 1] = np.clip(hsv_ai[:, :, 1] * 0.92, 0, 255)
+            hsv_ai[:, :, 2] = np.clip(hsv_ai[:, :, 2] * 1.03, 0, 255)
+            hsv_ai[:, :, 1] = np.clip(hsv_ai[:, :, 1] * 0.95, 0, 255)
         elif selected_color == 'bl2':
-            hsv_ai[:, :, 2] = np.clip(hsv_ai[:, :, 2] * 1.01, 0, 255)
-            hsv_ai[:, :, 1] = np.clip(hsv_ai[:, :, 1] * 0.98, 0, 255)
+            hsv_ai[:, :, 2] = np.clip(hsv_ai[:, :, 2] * 1.00, 0, 255)
+            hsv_ai[:, :, 1] = np.clip(hsv_ai[:, :, 1] * 1.00, 0, 255)
         elif selected_color == 'bl3':
             hsv_ai[:, :, 2] = np.clip(hsv_ai[:, :, 2] * 0.97, 0, 255)
-            hsv_ai[:, :, 1] = np.clip(hsv_ai[:, :, 1] * 1.04, 0, 255)
+            hsv_ai[:, :, 1] = np.clip(hsv_ai[:, :, 1] * 1.05, 0, 255)
         elif selected_color == 'bl4':
-            hsv_ai[:, :, 2] = np.clip(hsv_ai[:, :, 2] * 0.94, 0, 255)
+            hsv_ai[:, :, 2] = np.clip(hsv_ai[:, :, 2] * 0.95, 0, 255)
             hsv_ai[:, :, 1] = np.clip(hsv_ai[:, :, 1] * 1.10, 0, 255)
 
         ai_colorido = Image.fromarray(cv2.cvtColor(hsv_ai.astype(np.uint8), cv2.COLOR_HSV2RGB))
@@ -645,7 +650,7 @@ def process_smile():
         conn.close()
 
         print("=" * 60)
-        print("📤 [PYTHON REST] Simulação concluída com elipse centro_y=0.56 + seed=100!")
+        print("📤 [PYTHON REST] Simulação concluída com preservação labial e arcada superior!")
         print("=" * 60)
 
         return jsonify({
