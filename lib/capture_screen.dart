@@ -8,7 +8,8 @@ import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 
 class _ProcessResult {
         final File file;
-        _ProcessResult({required this.file});
+        final String? erro;
+        _ProcessResult({required this.file, this.erro});
 }
 
 class CaptureScreen extends StatefulWidget {
@@ -83,21 +84,25 @@ class _CaptureScreenState extends State<CaptureScreen> {
                 super.dispose();
         }
 
-        // 💡 Diálogo explicativo com o padrão ideal de foto
+        // 💡 Pop-up compacto com as regras de ouro para a captura
         void _exibirInstrucoesCaptura(BuildContext context, {VoidCallback? onContinuar}) {
                 showDialog(
                         context: context,
                         barrierDismissible: false,
                         builder: (ctx) => AlertDialog(
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                                insetPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+                                titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
+                                contentPadding: const EdgeInsets.fromLTRB(20, 4, 20, 14),
+                                actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
                                 title: const Row(
                                         children: [
-                                                Icon(Icons.info_outline, color: Color(0xFF5C6BC0), size: 28),
-                                                SizedBox(width: 10),
+                                                Icon(Icons.camera_enhance_rounded, color: Color(0xFF5C6BC0), size: 22),
+                                                SizedBox(width: 8),
                                                 Expanded(
                                                         child: Text(
-                                                                'Padrão Ideal para a Foto',
-                                                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+                                                                'Padrão Ideal da Foto',
+                                                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                                                         ),
                                                 ),
                                         ],
@@ -106,30 +111,43 @@ class _CaptureScreenState extends State<CaptureScreen> {
                                         mainAxisSize: MainAxisSize.min,
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
-                                                Text(
-                                                        'Para garantir uma simulação perfeita com a Inteligência Artificial, siga estas orientações:',
-                                                        style: TextStyle(fontSize: 13, color: Colors.black87, height: 1.3),
+                                                _ItemDicaCompacta(
+                                                        icone: Icons.straighten,
+                                                        texto: 'Distância de 40 a 60 cm (rosto inteiro)',
                                                 ),
-                                                SizedBox(height: 12),
-                                                Text('• Sorriso natural (dentes visíveis / ocluídos)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                                                SizedBox(height: 4),
-                                                Text('• Boa iluminação e ângulo frontal', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                                                SizedBox(height: 4),
-                                                Text('• Evite bocas entreabertas ou lábios cobrindo os dentes', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                                                SizedBox(height: 8),
+                                                _ItemDicaCompacta(
+                                                        icone: Icons.person_outline,
+                                                        texto: 'Apenas o paciente na foto (sem terceiros)',
+                                                ),
+                                                SizedBox(height: 8),
+                                                _ItemDicaCompacta(
+                                                        icone: Icons.sentiment_satisfied_alt,
+                                                        texto: 'Sorriso natural frontal e boa iluminação',
+                                                ),
+                                                SizedBox(height: 8),
+                                                _ItemDicaCompacta(
+                                                        icone: Icons.visibility_outlined,
+                                                        texto: 'Olhos, nariz e boca totalmente visíveis',
+                                                ),
                                         ],
                                 ),
                                 actions: [
-                                        ElevatedButton(
-                                                style: ElevatedButton.styleFrom(
-                                                        backgroundColor: const Color(0xFF5C6BC0),
-                                                        foregroundColor: Colors.white,
-                                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                        SizedBox(
+                                                width: double.infinity,
+                                                child: ElevatedButton(
+                                                        style: ElevatedButton.styleFrom(
+                                                                backgroundColor: const Color(0xFF5C6BC0),
+                                                                foregroundColor: Colors.white,
+                                                                padding: const EdgeInsets.symmetric(vertical: 10),
+                                                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                                        ),
+                                                        onPressed: () {
+                                                                Navigator.pop(ctx);
+                                                                if (onContinuar != null) onContinuar();
+                                                        },
+                                                        child: const Text('Entendido', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                                                 ),
-                                                onPressed: () {
-                                                        Navigator.pop(ctx);
-                                                        if (onContinuar != null) onContinuar();
-                                                },
-                                                child: const Text('Entendido, Vamos lá', style: TextStyle(fontWeight: FontWeight.bold)),
                                         ),
                                 ],
                         ),
@@ -145,13 +163,13 @@ class _CaptureScreenState extends State<CaptureScreen> {
                         final XFile picture = await _controller!.takePicture();
                         File originalFile = File(picture.path);
 
-                        _ProcessResult? resultado = await _processarRecorteInteligente(originalFile);
+                        _ProcessResult resultado = await _processarRecorteInteligente(originalFile);
 
-                        if (resultado == null) {
+                        if (resultado.erro != null) {
                                 if (!mounted) return;
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(
-                                                content: Text("Rosto ou sorriso não detectado. Centralize o rosto e tente novamente."),
+                                        SnackBar(
+                                                content: Text(resultado.erro!),
                                                 backgroundColor: Colors.redAccent,
                                         ),
                                 );
@@ -168,7 +186,6 @@ class _CaptureScreenState extends State<CaptureScreen> {
         }
 
         Future<void> _pickFromGallery() async {
-                // Antes de abrir a galeria, exibe as orientações para o médico selecionar uma foto adequada
                 _exibirInstrucoesCaptura(context, onContinuar: () async {
                         final picker = ImagePicker();
                         final pickedFile = await picker.pickImage(source: ImageSource.gallery);
@@ -177,13 +194,13 @@ class _CaptureScreenState extends State<CaptureScreen> {
                                 setState(() => _isCapturing = true);
                                 try {
                                         File originalFile = File(pickedFile.path);
-                                        _ProcessResult? resultado = await _processarRecorteInteligente(originalFile);
+                                        _ProcessResult resultado = await _processarRecorteInteligente(originalFile);
 
-                                        if (resultado == null) {
+                                        if (resultado.erro != null) {
                                                 if (!mounted) return;
                                                 ScaffoldMessenger.of(context).showSnackBar(
-                                                        const SnackBar(
-                                                                content: Text("Não foi possível identificar o rosto/sorriso na foto selecionada."),
+                                                        SnackBar(
+                                                                content: Text(resultado.erro!),
                                                                 backgroundColor: Colors.redAccent,
                                                         ),
                                                 );
@@ -199,45 +216,43 @@ class _CaptureScreenState extends State<CaptureScreen> {
                 });
         }
 
-        // 🧠 DETECÇÃO E RECORTE DINÂMICO VIA GOOGLE ML KIT
-        Future<_ProcessResult?> _processarRecorteInteligente(File imagemOriginal) async {
+        // 🧠 DETECÇÃO E RECORTE DINÂMICO VIA GOOGLE ML KIT (Preservando rosto inteiro para o Replicate)
+        Future<_ProcessResult> _processarRecorteInteligente(File imagemOriginal) async {
                 try {
                         final inputImage = InputImage.fromFile(imagemOriginal);
                         final List<Face> faces = await _faceDetector.processImage(inputImage);
 
                         if (faces.isEmpty) {
-                                debugPrint("ML Kit: Nenhum rosto encontrado.");
-                                return null;
+                                return _ProcessResult(
+                                        file: imagemOriginal,
+                                        erro: "Rosto não detectado. Mantenha 40 a 60 cm de distância enquadrando o rosto inteiro.",
+                                );
+                        }
+
+                        if (faces.length > 1) {
+                                return _ProcessResult(
+                                        file: imagemOriginal,
+                                        erro: "Mais de um rosto detectado. Fotografe apenas o paciente sozinho no enquadramento.",
+                                );
                         }
 
                         final Face face = faces.first;
                         final bytes = await imagemOriginal.readAsBytes();
                         final img.Image? imagemDecodificada = img.decodeImage(bytes);
-                        if (imagemDecodificada == null) return null;
+                        if (imagemDecodificada == null) {
+                                return _ProcessResult(file: imagemOriginal, erro: "Falha ao ler a imagem.");
+                        }
 
                         int larguraImg = imagemDecodificada.width;
                         int alturaImg = imagemDecodificada.height;
 
-                        final bottomMouth = face.landmarks[FaceLandmarkType.bottomMouth]?.position;
-                        final leftMouth = face.landmarks[FaceLandmarkType.leftMouth]?.position;
-                        final rightMouth = face.landmarks[FaceLandmarkType.rightMouth]?.position;
+                        // Centraliza no rosto inteiro (preservando olhos, nariz e boca para o detector do Replicate)
+                        final boundingBox = face.boundingBox;
+                        int centroX = boundingBox.center.dx.toInt();
+                        int centroY = (boundingBox.top + (boundingBox.height * 0.54)).toInt();
 
-                        int centroX;
-                        int centroY;
-
-                        if (leftMouth != null && rightMouth != null && bottomMouth != null) {
-                                // Ponto central exato da boca
-                                centroX = ((leftMouth.x + rightMouth.x) / 2).toInt();
-                                centroY = ((leftMouth.y + bottomMouth.y) / 2).toInt();
-                        } else {
-                                // Fallback: Centro estimado pela bounding box do rosto
-                                final boundingBox = face.boundingBox;
-                                centroX = boundingBox.center.dx.toInt();
-                                centroY = (boundingBox.top + (boundingBox.height * 0.70)).toInt();
-                        }
-
-                        // Define o tamanho do quadrado delimitador proporcional ao rosto
-                        int tamanhoQuadrado = (face.boundingBox.height * 0.85).toInt();
+                        // Fator 1.30 garante que olhos, nariz e queixo caibam confortavelmente no quadrado 512x512
+                        int tamanhoQuadrado = (boundingBox.height * 1.30).toInt();
 
                         if (tamanhoQuadrado > larguraImg) tamanhoQuadrado = larguraImg;
                         if (tamanhoQuadrado > alturaImg) tamanhoQuadrado = alturaImg;
@@ -251,7 +266,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
                         if (offsetX + tamanhoQuadrado > larguraImg) offsetX = larguraImg - tamanhoQuadrado;
                         if (offsetY + tamanhoQuadrado > alturaImg) offsetY = alturaImg - tamanhoQuadrado;
 
-                        // 1. Corte 1:1 quadrado focado dinamicamente na boca
+                        // 1. Corte 1:1 quadrado preservando a face completa
                         img.Image imagemCropped = img.copyCrop(
                                 imagemDecodificada,
                                 x: offsetX,
@@ -275,7 +290,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
                         return _ProcessResult(file: arquivoFinal);
                 } catch (e) {
                         debugPrint("Erro no processamento do ML Kit: $e");
-                        return null;
+                        return _ProcessResult(file: imagemOriginal, erro: "Erro ao processar o enquadramento da foto.");
                 }
         }
 
@@ -339,7 +354,6 @@ class _CaptureScreenState extends State<CaptureScreen> {
                                                                                                 'Simulação de Sorriso',
                                                                                                 style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
                                                                                         ),
-                                                                                        // Botão de ajuda para reabrir as instruções de captura a qualquer momento
                                                                                         IconButton(
                                                                                                 icon: const Icon(Icons.help_outline, color: Colors.white),
                                                                                                 tooltip: 'Dicas de Captura',
@@ -350,7 +364,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
                                                                 ),
                                                                 const SizedBox(height: 12),
                                                                 Container(
-                                                                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                                                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
                                                                         decoration: BoxDecoration(
                                                                                 color: Colors.black.withOpacity(0.65),
                                                                                 borderRadius: BorderRadius.circular(20),
@@ -358,13 +372,13 @@ class _CaptureScreenState extends State<CaptureScreen> {
                                                                         child: const Row(
                                                                                 mainAxisSize: MainAxisSize.min,
                                                                                 children: [
-                                                                                        Icon(Icons.face_retouching_natural, color: Colors.amberAccent, size: 18),
-                                                                                        SizedBox(width: 8),
+                                                                                        Icon(Icons.face_retouching_natural, color: Colors.amberAccent, size: 17),
+                                                                                        SizedBox(width: 7),
                                                                                         Text(
-                                                                                                'Enquadre o rosto e tire a foto',
+                                                                                                '40–60 cm • Enquadre o rosto inteiro',
                                                                                                 style: TextStyle(
                                                                                                         color: Colors.white,
-                                                                                                        fontSize: 13,
+                                                                                                        fontSize: 12.5,
                                                                                                         fontWeight: FontWeight.bold,
                                                                                                 ),
                                                                                         ),
@@ -424,6 +438,29 @@ class _CaptureScreenState extends State<CaptureScreen> {
                                         ),
                                 ],
                         ),
+                );
+        }
+}
+
+class _ItemDicaCompacta extends StatelessWidget {
+        final IconData icone;
+        final String texto;
+
+        const _ItemDicaCompacta({required this.icone, required this.texto});
+
+        @override
+        Widget build(BuildContext context) {
+                return Row(
+                        children: [
+                                Icon(icone, size: 18, color: const Color(0xFF5C6BC0)),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                        child: Text(
+                                                texto,
+                                                style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Colors.black87),
+                                        ),
+                                ),
+                        ],
                 );
         }
 }
