@@ -11,73 +11,8 @@ import numpy as np
 from flask import Flask, request, jsonify
 from PIL import Image, ImageOps, ImageFilter
 import cv2
-import mediapipe as mp
 
 app = Flask(__name__)
-
-# Inicializa o MediaPipe Face Mesh uma única vez na subida do servidor
-mp_face_mesh = mp.solutions.face_mesh
-face_mesh_detector = mp_face_mesh.FaceMesh(
-    static_image_mode=True,
-    max_num_faces=1,
-    refine_landmarks=True,
-    min_detection_confidence=0.5
-)
-
-# Pontos anatômicos da borda interna dos lábios (sentido horário)
-INNER_LIPS_IDX = [
-    78, 191, 80, 81, 82, 13, 312, 311, 310, 415, 308,
-    324, 318, 402, 317, 14, 87, 178, 88, 95
-]
-
-def gerar_mascara_arcada_superior(imagem_rgb):
-    """
-    Detecta o contorno interno dos lábios via MediaPipe Face Mesh e recorta
-    exatamente os 50% superiores (arcada superior até a linha de oclusão),
-    preservando 100% dos dentes inferiores originais e dos lábios.
-    """
-    h, w, _ = imagem_rgb.shape
-    mascara = np.zeros((h, w), dtype=np.uint8)
-
-    try:
-        results = face_mesh_detector.process(imagem_rgb)
-        if results.multi_face_landmarks:
-            landmarks = results.multi_face_landmarks[0].landmark
-
-            # Polígono completo da abertura interna dos lábios
-            pts_boca = np.array(
-                [[int(landmarks[idx].x * w), int(landmarks[idx].y * h)] for idx in INNER_LIPS_IDX],
-                dtype=np.int32
-            )
-            cv2.fillPoly(mascara, [pts_boca], 255)
-
-            # 13 = borda interna do lábio superior | 14 = borda interna do lábio inferior
-            y_topo = int(landmarks[13].y * h)
-            y_base = int(landmarks[14].y * h)
-
-            # Corte oclusal exato em 50% (metade superior para cima, metade inferior intocada)
-            y_oclusao = int(y_topo + (y_base - y_topo) * 0.50)
-
-            # Zera tudo abaixo da linha média de oclusão para não alterar os dentes inferiores
-            if 0 < y_oclusao < h:
-                mascara[y_oclusao:, :] = 0
-
-            if np.count_nonzero(mascara) > 150:
-                print(f"🎯 [MEDIAPIPE] Máscara anatômica superior 50% gerada (corte oclusal y={y_oclusao})")
-                kernel = np.ones((3, 3), np.uint8)
-                return cv2.dilate(mascara, kernel, iterations=1)
-    except Exception as e:
-        print(f"⚠️ [MEDIAPIPE FALLBACK] Erro na detecção facial, usando elipse calibrada: {e}")
-
-    # Fallback seguro: Elipse calibrada (caso foto seja close extremo sem rosto inteiro)
-    print("🔄 [FALLBACK] Usando máscara elíptica superior calibrada")
-    centro_x = int(w * 0.50)
-    centro_y = int(h * 0.46)
-    raio_x = int(w * 0.27)
-    raio_y = int(h * 0.065)
-    cv2.ellipse(mascara, (centro_x, centro_y), (raio_x, raio_y), 0, 0, 360, 255, -1)
-    kernel = np.ones((5, 5), np.uint8)
-    return cv2.dilate(mascara, kernel, iterations=1)
 
 @app.route('/', methods=['GET', 'HEAD'])
 def health_check():
@@ -136,7 +71,7 @@ def init_db():
 
 init_db()
 
-print("⚙️ Servidor iniciado com sucesso (Validação OTP + Controle de Dispositivos + Máscara Anatômica 50% + Seed Fixo)")
+print("⚙️ Servidor iniciado com sucesso (Validação OTP + Controle de Dispositivos + Máscara Elíptica Calibrada + Seed Fixo)")
 
 # 📧 Função auxiliar para disparar o código de 6 dígitos por e-mail via Resend
 def enviar_email_codigo(destinatario, nome, codigo, assunto="Código de Verificação - Dental Smile"):
@@ -586,8 +521,18 @@ def process_smile():
         img_512.save(buffered_orig, format="JPEG", quality=90)
         original_processed_b64 = base64.b64encode(buffered_orig.getvalue()).decode('utf-8')
 
-        # 🎯 MÁSCARA ANATÔMICA EXCLUSIVA DA ARCADA SUPERIOR (Corte 50% + Fallback)
-        mascara_sup_dilatada = gerar_mascara_arcada_superior(imagem_rgb)
+        mascara_sup = np.zeros((512, 512), dtype=np.uint8)
+
+        # 🛠️ MÁSCARA ELÍPTICA CALIBRADA (Base estável v2.5: preserva abertura labial e foca na arcada superior)
+        centro_x = 256
+        centro_y = int(512 * 0.46)
+        raio_x = int(512 * 0.27)
+        raio_y = int(512 * 0.065)
+        cv2.ellipse(mascara_sup, (centro_x, centro_y), (raio_x, raio_y), 0, 0, 360, 255, -1)
+
+        kernel = np.ones((5, 5), np.uint8)
+        mascara_sup_dilatada = cv2.dilate(mascara_sup, kernel, iterations=1)
+
         mask_512 = Image.fromarray(mascara_sup_dilatada)
 
         buffered_img_512 = io.BytesIO()
@@ -598,7 +543,7 @@ def process_smile():
         mask_512.save(buffered_mask_512, format="PNG")
         mask_uri = f"data:image/png;base64,{base64.b64encode(buffered_mask_512.getvalue()).decode('utf-8')}"
 
-        print("🚀 [REPLICATE REST] Disparando IA com seed=42 e corte oclusal 50%...")
+        print("🚀 [REPLICATE REST] Disparando IA com base estável v2.5 e seed=100...")
 
         replicate_token = os.environ.get("REPLICATE_API_TOKEN")
         headers = {
@@ -607,14 +552,14 @@ def process_smile():
         }
 
         prompt_text = (
-            f"photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1>(Beautiful natural upper teeth only, aligned bite teeth, preserve exact upper lip position and natural occlusion), "
+            f"photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1>(Beautiful natural upper teeth only, aligned bite teeth, preserve exact upper lip position and wide open smile), "
             f"aligned white upper teeth, human like teeth, (no teeth gap), celebrity-like teeth, healthy upper teeth with a perfect smile, "
             f"not big incisor, good proportion teeth, shade {selected_color.upper()}, natural lower teeth untouched, good proportion smile,"
         )
         negative_prompt_text = (
             "(deformed teeth, semi-realistic, cgi, 3d, render, sketch, cartoon, drawing, anime), "
             "(deformed, distorted, abnormal teeth:1.3, disfigured:1.3, large teeth:2), (oversized teeth:1.5), (long incisors:1.5), (large front teeth:1.5), "
-            "closed mouth, lowered upper lip, open mouth gap, changing occlusion, dark gap between teeth, unnatural tooth length, poorly drawn, Fixer, bad anatomy, rabbit teeth, "
+            "closed mouth, lowered upper lip, open mouth gap, changing occlusion, unnatural tooth length, poorly drawn, Fixer, bad anatomy, rabbit teeth, "
             "wrong anatomy, missing teeth, disconnected teeth, unnatural mouth, bunny teeth, big incisor teeth, disproportionate front teeth, "
             "bad smile, reflection, crooked teeth, distorted teeth, cropped, out of frame, worst quality, low quality, "
             "jpeg artifacts, ugly, morbid, disfigured, gross proportions, too many teeth, lipstick, lip gloss, "
@@ -628,10 +573,10 @@ def process_smile():
                 "mask": mask_uri,
                 "prompt": prompt_text,
                 "negative_prompt": negative_prompt_text,
-                "seed": 42,
+                "seed": 100,
                 "num_outputs": 1,
                 "num_inference_steps": 25,
-                "guidance_scale": 5.5
+                "guidance_scale": 6.0
             }
         }
 
@@ -689,7 +634,7 @@ def process_smile():
 
         crop_orig_pil = Image.fromarray(imagem_rgb)
         crop_mask_pil = Image.fromarray(mascara_sup_dilatada)
-        mask_soft = crop_mask_pil.filter(ImageFilter.GaussianBlur(radius=3))
+        mask_soft = crop_mask_pil.filter(ImageFilter.GaussianBlur(radius=4))
 
         crop_final_pil = Image.composite(ai_colorido, crop_orig_pil, mask_soft)
         imagem_final_rgb = np.array(crop_final_pil)
@@ -706,7 +651,7 @@ def process_smile():
         conn.close()
 
         print("=" * 60)
-        print("📤 [PYTHON REST] Simulação concluída com corte oclusal 50% e seed=42!")
+        print("📤 [PYTHON REST] Simulação concluída com base estável v2.5 + seed=100!")
         print("=" * 60)
 
         return jsonify({
