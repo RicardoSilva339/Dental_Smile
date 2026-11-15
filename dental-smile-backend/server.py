@@ -19,7 +19,7 @@ def health_check():
     return "Dental Smile Backend OK", 200
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
-RESEND_API_KEY = os.environ.get("RESEND_API_KEY") # Configurar nas variáveis de ambiente do Render
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
 
 def get_db_connection():
     return psycopg2.connect(DATABASE_URL, sslmode='require')
@@ -29,7 +29,6 @@ def init_db():
         conn = get_db_connection()
         cur = conn.cursor()
 
-        # Tabela principal de usuários
         cur.execute("""
             CREATE TABLE IF NOT EXISTS usuarios (
                 id SERIAL PRIMARY KEY,
@@ -47,12 +46,10 @@ def init_db():
             );
         """)
 
-        # Garante que as novas colunas existam caso a tabela já tenha sido criada antes
         cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS email_verificado BOOLEAN DEFAULT FALSE;")
         cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS codigo_verificacao VARCHAR(6);")
         cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS limite_dispositivos INTEGER DEFAULT 1;")
 
-        # Tabela de controle de aparelhos conectados simultaneamente
         cur.execute("""
             CREATE TABLE IF NOT EXISTS dispositivos_ativos (
                 id SERIAL PRIMARY KEY,
@@ -71,9 +68,8 @@ def init_db():
 
 init_db()
 
-print("⚙️ Servidor iniciado com Blindagem Oclusal Inferior Absoluta")
+print("⚙️ Servidor iniciado com Seleção Cirúrgica do Output 2 (Foto Perfeita)")
 
-# 📧 Função auxiliar para disparar o código de 6 dígitos por e-mail via Resend
 def enviar_email_codigo(destinatario, nome, codigo, assunto="Código de Verificação - Dental Smile"):
     if not RESEND_API_KEY:
         print(f"⚠️ [MODO TESTE SEM RESEND_API_KEY] Código para {destinatario}: {codigo}")
@@ -114,7 +110,6 @@ def enviar_email_codigo(destinatario, nome, codigo, assunto="Código de Verifica
         print(f"Erro ao enviar e-mail: {e}")
         return False
 
-# 🔒 Verifica se o aparelho tem permissão para usar a conta (Limite 1, 2 ou 3)
 def validar_limite_dispositivo(cur, email, device_id, limite):
     if not device_id:
         return True, "OK"
@@ -515,29 +510,11 @@ def process_smile():
         img_512.save(buffered_orig, format="JPEG", quality=90)
         original_processed_b64 = base64.b64encode(buffered_orig.getvalue()).decode('utf-8')
 
-        mascara_sup = np.zeros((512, 512), dtype=np.uint8)
-
-        # 🛠️ MÁSCARA ELÍPTICA SUPERIOR ESTRITA
-        centro_x = 256
-        centro_y = int(512 * 0.48)
-        raio_x = int(512 * 0.27)
-        raio_y = int(512 * 0.050)
-        cv2.ellipse(mascara_sup, (centro_x, centro_y), (raio_x, raio_y), 0, 0, 360, 255, -1)
-
-        kernel = np.ones((5, 5), np.uint8)
-        mascara_sup_dilatada = cv2.dilate(mascara_sup, kernel, iterations=1)
-
-        mask_512 = Image.fromarray(mascara_sup_dilatada)
-
         buffered_img_512 = io.BytesIO()
         img_512.save(buffered_img_512, format="JPEG", quality=90)
         image_uri = f"data:image/jpeg;base64,{base64.b64encode(buffered_img_512.getvalue()).decode('utf-8')}"
 
-        buffered_mask_512 = io.BytesIO()
-        mask_512.save(buffered_mask_512, format="PNG")
-        mask_uri = f"data:image/png;base64,{base64.b64encode(buffered_mask_512.getvalue()).decode('utf-8')}"
-
-        print("🚀 [REPLICATE REST] Disparando IA com blindagem oclusal inferior...")
+        print("🚀 [REPLICATE REST] Solicitando 4 outputs para capturar cirurgicamente o Output 2 ideal...")
 
         replicate_token = os.environ.get("REPLICATE_API_TOKEN")
         headers = {
@@ -560,14 +537,14 @@ def process_smile():
             "too less teeth, unnatural size teeth, poorly drawn mouth, poorly drawn teeth, open mouth, gaping mouth"
         )
 
+        # 🛠️ SOLICITA 4 OUTPUTS PARA CAPTURAR O ESTILO DA FOTO 2 PERFEITA
         payload = {
             "version": "4956c634b9aa976129f13166c713f8cf38bd337cd58c77925e8cd71d935d5696",
             "input": {
                 "image": image_uri,
-                "mask": mask_uri,
                 "prompt": prompt_text,
                 "negative_prompt": negative_prompt_text,
-                "num_outputs": 1,
+                "num_outputs": 4,  # Pede as 4 variações exatamente como no Replicate
                 "num_inference_steps": 25,
                 "guidance_scale": 6.0
             }
@@ -584,7 +561,7 @@ def process_smile():
         if not get_url:
             raise Exception("URL de rastreio do Replicate não retornada.")
 
-        image_url = None
+        image_urls = None
         for _ in range(90):
             time.sleep(2)
             poll_resp = requests.get(get_url, headers=headers, timeout=30)
@@ -593,15 +570,23 @@ def process_smile():
 
             if status == "succeeded":
                 output = poll_data.get("output")
-                image_url = output[0] if isinstance(output, list) else output
+                # Se vier lista, armazena. Se vier string única, converte em lista.
+                image_urls = output if isinstance(output, list) else [output]
                 break
             elif status == "failed":
                 raise Exception(f"Processamento da IA falhou: {poll_data.get('error')}")
 
-        if not image_url:
+        if not image_urls:
             raise Exception("Tempo limite excedido aguardando o Replicate.")
 
-        with urllib.request.urlopen(image_url) as url_response:
+        # 🎯 CAPTURA CIRÚRGICA DO OUTPUT 2 (Índice 1 da lista) QUE É A FOTO PERFEITA IDENTIFICADA PELO DR. RICARDO!
+        # Se por acaso o Replicate retornar menos de 2 imagens, pega a primeira disponível como segurança.
+        indice_ideal = 1 if len(image_urls) > 1 else 0
+        url_foto_perfeita = image_urls[indice_ideal]
+
+        print(f"🌟 [SELEÇÃO DE OURO] Utilizando o Output #{indice_ideal + 1} (A foto perfeita de oclusão limpa)")
+
+        with urllib.request.urlopen(url_foto_perfeita) as url_response:
             ai_image_bytes = url_response.read()
 
         ai_image_raw = Image.open(io.BytesIO(ai_image_bytes)).convert("RGB")
@@ -625,27 +610,14 @@ def process_smile():
 
         ai_colorido = Image.fromarray(cv2.cvtColor(hsv_ai.astype(np.uint8), cv2.COLOR_HSV2RGB))
 
-        crop_orig_pil = Image.fromarray(imagem_rgb)
-        crop_mask_pil = Image.fromarray(mascara_sup_dilatada)
-        mask_soft = crop_mask_pil.filter(ImageFilter.GaussianBlur(radius=2))
-
-        # 🛡️ BLINDAGEM OCLUSAL INFERIOR: Força os pixels abaixo da linha média (arcada inferior) a usarem 100% da foto original
+        # 🛡️ BLINDAGEM OCLUSAL INFERIOR ABSOLUTA (Garante 100% da parte de baixo original do Dr. Ricardo)
         ai_final_np = np.array(ai_colorido)
         orig_np = np.array(imagem_rgb)
 
-        # Cria uma máscara onde tudo abaixo do centro vertical (arcada inferior e queixo) recebe a imagem original pura
-        limite_inferior = int(512 * 0.52)
-
-        # Copia rigorosamente os pixels da arcada inferior da foto original do usuário para cima da imagem gerada pela IA
+        limite_inferior = int(512 * 0.49)
         ai_final_np[limite_inferior:, :, :] = orig_np[limite_inferior:, :, :]
 
-        crop_final_pil = Image.composite(Image.fromarray(ai_final_np), crop_orig_pil, mask_soft)
-
-        # Aplicação final garantindo que a arcada inferior seja exatamente a original
-        final_np_final = np.array(crop_final_pil)
-        final_np_final[limite_inferior:, :, :] = orig_np[limite_inferior:, :, :]
-
-        crop_final_definitivo = Image.fromarray(final_np_final)
+        crop_final_definitivo = Image.fromarray(ai_final_np)
         imagem_final_rgb = np.array(crop_final_definitivo)
 
         final_bgr = cv2.cvtColor(imagem_final_rgb, cv2.COLOR_RGB2BGR)
@@ -660,7 +632,7 @@ def process_smile():
         conn.close()
 
         print("=" * 60)
-        print("📤 [PYTHON REST] Simulação concluída com blindagem oclusal inferior aplicada!")
+        print("📤 [PYTHON REST] Simulação concluída com sucesso usando a Foto 2 Perfeita!")
         print("=" * 60)
 
         return jsonify({
