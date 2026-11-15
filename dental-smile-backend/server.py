@@ -71,7 +71,7 @@ def init_db():
 
 init_db()
 
-print("⚙️ Servidor iniciado na versao de ouro (Base 12:17 + Mascara Cirurgica Superior)")
+print("⚙️ Servidor iniciado com sucesso (Base 12:17 + Mascara Cirurgica Superior + Prompt Exemplo Replicate)")
 
 # 📧 Função auxiliar para disparar o código de 6 dígitos por e-mail via Resend
 def enviar_email_codigo(destinatario, nome, codigo, assunto="Código de Verificação - Dental Smile"):
@@ -517,11 +517,11 @@ def process_smile():
 
         mascara_sup = np.zeros((512, 512), dtype=np.uint8)
 
-        # 🛠️ MÁSCARA ELÍPTICA CIRÚRGICA (Base 12:17 ajustada para focar na arcada superior e evitar espelho inferior)
+        # 🛠️ MÁSCARA ELÍPTICA CIRÚRGICA (Base 12:17 com centro_y 0.49 e altura 0.055 para isolar arcada superior)
         centro_x = 256
-        centro_y = int(512 * 0.49)  # Ajuste fino ideal para isolar os dentes de cima
+        centro_y = int(512 * 0.49)
         raio_x = int(512 * 0.27)
-        raio_y = int(512 * 0.055)  # Altura reduzida para não vazar na arcada inferior
+        raio_y = int(512 * 0.055)
         cv2.ellipse(mascara_sup, (centro_x, centro_y), (raio_x, raio_y), 0, 0, 360, 255, -1)
 
         kernel = np.ones((5, 5), np.uint8)
@@ -537,7 +537,7 @@ def process_smile():
         mask_512.save(buffered_mask_512, format="PNG")
         mask_uri = f"data:image/png;base64,{base64.b64encode(buffered_mask_512.getvalue()).decode('utf-8')}"
 
-        print("🚀 [REPLICATE REST] Disparando IA com base 12:17 + arcada superior isolada...")
+        print("🚀 [REPLICATE REST] Disparando IA com prompt oficial do exemplo do Replicate...")
 
         replicate_token = os.environ.get("REPLICATE_API_TOKEN")
         headers = {
@@ -545,19 +545,20 @@ def process_smile():
             "Content-Type": "application/json"
         }
 
+        # Prompt oficial extraído do exemplo de sucesso do Replicate (respeita o fechamento natural dos lábios)
         prompt_text = (
-            f"photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1>(Beautiful natural upper teeth only, aligned bite teeth, preserve exact upper lip position and wide open smile), "
-            f"aligned white upper teeth, human like teeth, (no teeth gap), celebrity-like teeth, healthy upper teeth with a perfect smile, "
-            f"not big incisor, good proportion teeth, shade {selected_color.upper()}, natural lower teeth untouched, good proportion smile,"
+            f"photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1>(Beautiful natural teeth, "
+            f"aligned bite teeth), aligned white teeth, human like teeth, (no teeth gap), "
+            f"celebrity-like teeth, healthy teeth with a perfect smile, not big incisor, good proportion teeth, "
+            f"good proportion smile, shade {selected_color.upper()}, natural lower teeth untouched,"
         )
         negative_prompt_text = (
             "(deformed teeth, semi-realistic, cgi, 3d, render, sketch, cartoon, drawing, anime), "
-            "(deformed, distorted, abnormal teeth:1.3, disfigured:1.3, large teeth:2), (oversized teeth:1.5), (long incisors:1.5), (large front teeth:1.5), "
-            "closed mouth, lowered upper lip, open mouth gap, changing occlusion, unnatural tooth length, poorly drawn, Fixer, bad anatomy, rabbit teeth, "
+            "(deformed, distorted, abnormal teeth:1.3, disfigured:1.3, large teeth:2), poorly drawn, Fixer, bad anatomy, rabbit teeth, "
             "wrong anatomy, missing teeth, disconnected teeth, unnatural mouth, bunny teeth, big incisor teeth, disproportionate front teeth, "
             "bad smile, reflection, crooked teeth, distorted teeth, cropped, out of frame, worst quality, low quality, "
             "jpeg artifacts, ugly, morbid, disfigured, gross proportions, too many teeth, lipstick, lip gloss, "
-            "too less teeth, unnatural size teeth, poorly drawn mouth, poorly drawn teeth, altered lower teeth"
+            "too less teeth, unnatural size teeth, poorly drawn mouth, poorly drawn teeth, open mouth, gaping mouth"
         )
 
         payload = {
@@ -644,7 +645,7 @@ def process_smile():
         conn.close()
 
         print("=" * 60)
-        print("📤 [PYTHON REST] Simulação concluída com base 12:17 e arcada superior isolada!")
+        print("📤 [PYTHON REST] Simulação concluída com sucesso!")
         print("=" * 60)
 
         return jsonify({
