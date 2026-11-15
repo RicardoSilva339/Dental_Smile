@@ -71,7 +71,7 @@ def init_db():
 
 init_db()
 
-print("⚙️ Servidor iniciado com sucesso (Base 12:17 + Mascara Cirurgica Superior + Prompt Exemplo Replicate)")
+print("⚙️ Servidor iniciado com Blindagem Oclusal Inferior Absoluta")
 
 # 📧 Função auxiliar para disparar o código de 6 dígitos por e-mail via Resend
 def enviar_email_codigo(destinatario, nome, codigo, assunto="Código de Verificação - Dental Smile"):
@@ -517,11 +517,11 @@ def process_smile():
 
         mascara_sup = np.zeros((512, 512), dtype=np.uint8)
 
-        # 🛠️ MÁSCARA ELÍPTICA CIRÚRGICA (Base 12:17 com centro_y 0.49 e altura 0.055 para isolar arcada superior)
+        # 🛠️ MÁSCARA ELÍPTICA SUPERIOR ESTRITA
         centro_x = 256
-        centro_y = int(512 * 0.49)
+        centro_y = int(512 * 0.48)
         raio_x = int(512 * 0.27)
-        raio_y = int(512 * 0.055)
+        raio_y = int(512 * 0.050)
         cv2.ellipse(mascara_sup, (centro_x, centro_y), (raio_x, raio_y), 0, 0, 360, 255, -1)
 
         kernel = np.ones((5, 5), np.uint8)
@@ -537,7 +537,7 @@ def process_smile():
         mask_512.save(buffered_mask_512, format="PNG")
         mask_uri = f"data:image/png;base64,{base64.b64encode(buffered_mask_512.getvalue()).decode('utf-8')}"
 
-        print("🚀 [REPLICATE REST] Disparando IA com prompt oficial do exemplo do Replicate...")
+        print("🚀 [REPLICATE REST] Disparando IA com blindagem oclusal inferior...")
 
         replicate_token = os.environ.get("REPLICATE_API_TOKEN")
         headers = {
@@ -545,7 +545,6 @@ def process_smile():
             "Content-Type": "application/json"
         }
 
-        # Prompt oficial extraído do exemplo de sucesso do Replicate (respeita o fechamento natural dos lábios)
         prompt_text = (
             f"photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1>(Beautiful natural teeth, "
             f"aligned bite teeth), aligned white teeth, human like teeth, (no teeth gap), "
@@ -628,10 +627,26 @@ def process_smile():
 
         crop_orig_pil = Image.fromarray(imagem_rgb)
         crop_mask_pil = Image.fromarray(mascara_sup_dilatada)
-        mask_soft = crop_mask_pil.filter(ImageFilter.GaussianBlur(radius=4))
+        mask_soft = crop_mask_pil.filter(ImageFilter.GaussianBlur(radius=2))
 
-        crop_final_pil = Image.composite(ai_colorido, crop_orig_pil, mask_soft)
-        imagem_final_rgb = np.array(crop_final_pil)
+        # 🛡️ BLINDAGEM OCLUSAL INFERIOR: Força os pixels abaixo da linha média (arcada inferior) a usarem 100% da foto original
+        ai_final_np = np.array(ai_colorido)
+        orig_np = np.array(imagem_rgb)
+
+        # Cria uma máscara onde tudo abaixo do centro vertical (arcada inferior e queixo) recebe a imagem original pura
+        limite_inferior = int(512 * 0.52)
+
+        # Copia rigorosamente os pixels da arcada inferior da foto original do usuário para cima da imagem gerada pela IA
+        ai_final_np[limite_inferior:, :, :] = orig_np[limite_inferior:, :, :]
+
+        crop_final_pil = Image.composite(Image.fromarray(ai_final_np), crop_orig_pil, mask_soft)
+
+        # Aplicação final garantindo que a arcada inferior seja exatamente a original
+        final_np_final = np.array(crop_final_pil)
+        final_np_final[limite_inferior:, :, :] = orig_np[limite_inferior:, :, :]
+
+        crop_final_definitivo = Image.fromarray(final_np_final)
+        imagem_final_rgb = np.array(crop_final_definitivo)
 
         final_bgr = cv2.cvtColor(imagem_final_rgb, cv2.COLOR_RGB2BGR)
         _, buffer = cv2.imencode('.jpg', final_bgr, [cv2.IMWRITE_JPEG_QUALITY, 95])
@@ -645,7 +660,7 @@ def process_smile():
         conn.close()
 
         print("=" * 60)
-        print("📤 [PYTHON REST] Simulação concluída com sucesso!")
+        print("📤 [PYTHON REST] Simulação concluída com blindagem oclusal inferior aplicada!")
         print("=" * 60)
 
         return jsonify({
@@ -657,7 +672,7 @@ def process_smile():
 
     except Exception as e:
         if 'cur' in locals() and cur: cur.close()
-        if 'conn' in locals() and conn: cur.close()
+        if 'conn' in locals() and conn: conn.close()
         print(f"❌ Erro crítico no backend: {str(e)}")
         traceback.print_exc()
         return jsonify({"success": False, "error": str(e)}), 500
