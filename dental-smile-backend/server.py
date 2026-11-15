@@ -15,7 +15,7 @@ import mediapipe as mp
 
 app = Flask(__name__)
 
-# Inicializa o MediaPipe Face Mesh uma única vez na subida do servidor (leve e rápido)
+# Inicializa o MediaPipe Face Mesh uma única vez na subida do servidor
 mp_face_mesh = mp.solutions.face_mesh
 face_mesh_detector = mp_face_mesh.FaceMesh(
     static_image_mode=True,
@@ -33,7 +33,7 @@ INNER_LIPS_IDX = [
 def gerar_mascara_arcada_superior(imagem_rgb):
     """
     Detecta o contorno interno dos lábios via MediaPipe Face Mesh e recorta
-    estritamente a metade superior (arcada superior até a linha de oclusão),
+    exatamente os 50% superiores (arcada superior até a linha de oclusão),
     preservando 100% dos dentes inferiores originais e dos lábios.
     """
     h, w, _ = imagem_rgb.shape
@@ -51,23 +51,19 @@ def gerar_mascara_arcada_superior(imagem_rgb):
             )
             cv2.fillPoly(mascara, [pts_boca], 255)
 
-            # Pontos de referência para delimitar exatamente a arcada superior:
-            # 13 = centro interno do lábio superior | 14 = centro interno do lábio inferior
-            # 78 = canto esquerdo da boca | 308 = canto direito da boca
+            # 13 = borda interna do lábio superior | 14 = borda interna do lábio inferior
             y_topo = int(landmarks[13].y * h)
             y_base = int(landmarks[14].y * h)
-            y_cantos = int(((landmarks[78].y + landmarks[308].y) / 2.0) * h)
 
-            # Linha de corte na oclusão (56% da abertura vertical da boca, acompanhando os cantos)
-            y_oclusao = int(max(y_cantos + 2, y_topo + (y_base - y_topo) * 0.56))
+            # Corte oclusal exato em 50% (metade superior para cima, metade inferior intocada)
+            y_oclusao = int(y_topo + (y_base - y_topo) * 0.50)
 
-            # Zera tudo abaixo da linha de oclusão para não tocar nos dentes inferiores
+            # Zera tudo abaixo da linha média de oclusão para não alterar os dentes inferiores
             if 0 < y_oclusao < h:
                 mascara[y_oclusao:, :] = 0
 
-            # Garante que a máscara realmente encontrou pixels válidos da arcada superior
             if np.count_nonzero(mascara) > 150:
-                print(f"🎯 [MEDIAPIPE] Máscara anatômica superior gerada (corte oclusal y={y_oclusao})")
+                print(f"🎯 [MEDIAPIPE] Máscara anatômica superior 50% gerada (corte oclusal y={y_oclusao})")
                 kernel = np.ones((3, 3), np.uint8)
                 return cv2.dilate(mascara, kernel, iterations=1)
     except Exception as e:
@@ -140,7 +136,7 @@ def init_db():
 
 init_db()
 
-print("⚙️ Servidor iniciado com sucesso (Validação OTP + Controle de Dispositivos + Máscara Anatômica MediaPipe)")
+print("⚙️ Servidor iniciado com sucesso (Validação OTP + Controle de Dispositivos + Máscara Anatômica 50% + Seed Fixo)")
 
 # 📧 Função auxiliar para disparar o código de 6 dígitos por e-mail via Resend
 def enviar_email_codigo(destinatario, nome, codigo, assunto="Código de Verificação - Dental Smile"):
@@ -590,7 +586,7 @@ def process_smile():
         img_512.save(buffered_orig, format="JPEG", quality=90)
         original_processed_b64 = base64.b64encode(buffered_orig.getvalue()).decode('utf-8')
 
-        # 🎯 MÁSCARA ANATÔMICA EXCLUSIVA DA ARCADA SUPERIOR (MediaPipe Face Mesh + Fallback)
+        # 🎯 MÁSCARA ANATÔMICA EXCLUSIVA DA ARCADA SUPERIOR (Corte 50% + Fallback)
         mascara_sup_dilatada = gerar_mascara_arcada_superior(imagem_rgb)
         mask_512 = Image.fromarray(mascara_sup_dilatada)
 
@@ -602,7 +598,7 @@ def process_smile():
         mask_512.save(buffered_mask_512, format="PNG")
         mask_uri = f"data:image/png;base64,{base64.b64encode(buffered_mask_512.getvalue()).decode('utf-8')}"
 
-        print("🚀 [REPLICATE REST] Disparando IA exclusivamente na arcada superior até a linha de oclusão...")
+        print("🚀 [REPLICATE REST] Disparando IA com seed=42 e corte oclusal 50%...")
 
         replicate_token = os.environ.get("REPLICATE_API_TOKEN")
         headers = {
@@ -632,9 +628,10 @@ def process_smile():
                 "mask": mask_uri,
                 "prompt": prompt_text,
                 "negative_prompt": negative_prompt_text,
+                "seed": 42,
                 "num_outputs": 1,
                 "num_inference_steps": 25,
-                "guidance_scale": 6.0
+                "guidance_scale": 5.5
             }
         }
 
@@ -709,7 +706,7 @@ def process_smile():
         conn.close()
 
         print("=" * 60)
-        print("📤 [PYTHON REST] Simulação concluída com oclusão preservada e arcada superior!")
+        print("📤 [PYTHON REST] Simulação concluída com corte oclusal 50% e seed=42!")
         print("=" * 60)
 
         return jsonify({
