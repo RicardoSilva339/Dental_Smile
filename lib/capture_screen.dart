@@ -216,7 +216,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
                 });
         }
 
-        // 🧠 DETECÇÃO E RECORTE DINÂMICO VIA GOOGLE ML KIT (Preservando rosto inteiro para o Replicate)
+        // 🧠 DETECÇÃO E RECORTE DINÂMICO VIA GOOGLE ML KIT (Foco ajustado na boca com rosto completo)
         Future<_ProcessResult> _processarRecorteInteligente(File imagemOriginal) async {
                 try {
                         final inputImage = InputImage.fromFile(imagemOriginal);
@@ -246,13 +246,13 @@ class _CaptureScreenState extends State<CaptureScreen> {
                         int larguraImg = imagemDecodificada.width;
                         int alturaImg = imagemDecodificada.height;
 
-                        // Centraliza no rosto inteiro (preservando olhos, nariz e boca para o detector do Replicate)
+                        // Centraliza estrategicamente na altura da boca mantendo o rosto completo
                         final boundingBox = face.boundingBox;
                         int centroX = boundingBox.center.dx.toInt();
-                        int centroY = (boundingBox.top + (boundingBox.height * 0.54)).toInt();
+                        int centroY = (boundingBox.top + (boundingBox.height * 0.65)).toInt();
 
-                        // Fator 1.30 garante que olhos, nariz e queixo caibam confortavelmente no quadrado 512x512
-                        int tamanhoQuadrado = (boundingBox.height * 1.30).toInt();
+                        // Fator 1.15 garante o rosto inteiro preenchendo o quadrado sem subir demais no nariz/olhos
+                        int tamanhoQuadrado = (boundingBox.height * 1.15).toInt();
 
                         if (tamanhoQuadrado > larguraImg) tamanhoQuadrado = larguraImg;
                         if (tamanhoQuadrado > alturaImg) tamanhoQuadrado = alturaImg;
