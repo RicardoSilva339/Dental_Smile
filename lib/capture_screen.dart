@@ -216,7 +216,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
                 });
         }
 
-        // 🧠 DETECÇÃO E RECORTE DINÂMICO VIA GOOGLE ML KIT (Foco ajustado na boca com rosto completo)
+        // 🧠 DETECÇÃO E RECORTE DINÂMICO VIA GOOGLE ML KIT (Versão Estável e Confiável)
         Future<_ProcessResult> _processarRecorteInteligente(File imagemOriginal) async {
                 try {
                         final inputImage = InputImage.fromFile(imagemOriginal);
@@ -246,13 +246,12 @@ class _CaptureScreenState extends State<CaptureScreen> {
                         int larguraImg = imagemDecodificada.width;
                         int alturaImg = imagemDecodificada.height;
 
-                        // Centraliza estrategicamente na altura da boca mantendo o rosto completo
+                        // Parâmetros estáveis originais que garantem alinhamento correto com o Replicate
                         final boundingBox = face.boundingBox;
                         int centroX = boundingBox.center.dx.toInt();
-                        int centroY = (boundingBox.top + (boundingBox.height * 0.65)).toInt();
+                        int centroY = (boundingBox.top + (boundingBox.height * 0.54)).toInt();
 
-                        // Fator 1.15 garante o rosto inteiro preenchendo o quadrado sem subir demais no nariz/olhos
-                        int tamanhoQuadrado = (boundingBox.height * 1.15).toInt();
+                        int tamanhoQuadrado = (boundingBox.height * 1.30).toInt();
 
                         if (tamanhoQuadrado > larguraImg) tamanhoQuadrado = larguraImg;
                         if (tamanhoQuadrado > alturaImg) tamanhoQuadrado = alturaImg;
@@ -260,13 +259,11 @@ class _CaptureScreenState extends State<CaptureScreen> {
                         int offsetX = centroX - (tamanhoQuadrado ~/ 2);
                         int offsetY = centroY - (tamanhoQuadrado ~/ 2);
 
-                        // Trava os limites para evitar estouro fora da imagem
                         if (offsetX < 0) offsetX = 0;
                         if (offsetY < 0) offsetY = 0;
                         if (offsetX + tamanhoQuadrado > larguraImg) offsetX = larguraImg - tamanhoQuadrado;
                         if (offsetY + tamanhoQuadrado > alturaImg) offsetY = alturaImg - tamanhoQuadrado;
 
-                        // 1. Corte 1:1 quadrado preservando a face completa
                         img.Image imagemCropped = img.copyCrop(
                                 imagemDecodificada,
                                 x: offsetX,
@@ -275,7 +272,6 @@ class _CaptureScreenState extends State<CaptureScreen> {
                                 height: tamanhoQuadrado,
                         );
 
-                        // 2. Padronização 512x512
                         img.Image imagemFinal = img.copyResize(
                                 imagemCropped,
                                 width: 512,

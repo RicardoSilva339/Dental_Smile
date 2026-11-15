@@ -19,7 +19,7 @@ def health_check():
     return "Dental Smile Backend OK", 200
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
-RESEND_API_KEY = os.environ.get("RESEND_API_KEY") # Configurar nas variáveis de ambiente do Render
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
 
 def get_db_connection():
     return psycopg2.connect(DATABASE_URL, sslmode='require')
@@ -29,7 +29,6 @@ def init_db():
         conn = get_db_connection()
         cur = conn.cursor()
 
-        # Tabela principal de usuários
         cur.execute("""
             CREATE TABLE IF NOT EXISTS usuarios (
                 id SERIAL PRIMARY KEY,
@@ -47,12 +46,10 @@ def init_db():
             );
         """)
 
-        # Garante que as novas colunas existam caso a tabela já tenha sido criada antes
         cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS email_verificado BOOLEAN DEFAULT FALSE;")
         cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS codigo_verificacao VARCHAR(6);")
         cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS limite_dispositivos INTEGER DEFAULT 1;")
 
-        # Tabela de controle de aparelhos conectados simultaneamente
         cur.execute("""
             CREATE TABLE IF NOT EXISTS dispositivos_ativos (
                 id SERIAL PRIMARY KEY,
@@ -71,9 +68,8 @@ def init_db():
 
 init_db()
 
-print("⚙️ Servidor iniciado com sucesso (Validação OTP + Controle de Dispositivos + Mordida Fechada + Seed 100)")
+print("⚙️ Servidor iniciado na versão original estável")
 
-# 📧 Função auxiliar para disparar o código de 6 dígitos por e-mail via Resend
 def enviar_email_codigo(destinatario, nome, codigo, assunto="Código de Verificação - Dental Smile"):
     if not RESEND_API_KEY:
         print(f"⚠️ [MODO TESTE SEM RESEND_API_KEY] Código para {destinatario}: {codigo}")
@@ -114,7 +110,6 @@ def enviar_email_codigo(destinatario, nome, codigo, assunto="Código de Verifica
         print(f"Erro ao enviar e-mail: {e}")
         return False
 
-# 🔒 Verifica se o aparelho tem permissão para usar a conta (Limite 1, 2 ou 3)
 def validar_limite_dispositivo(cur, email, device_id, limite):
     if not device_id:
         return True, "OK"
@@ -133,7 +128,6 @@ def validar_limite_dispositivo(cur, email, device_id, limite):
     cur.execute("INSERT INTO dispositivos_ativos (email_dentista, device_id) VALUES (%s, %s);", (email, device_id))
     return True, "OK"
 
-# 1. CADASTRO (Gera código OTP de 6 dígitos e bloqueia freemium até validar)
 @app.route('/register', methods=['POST'])
 def register():
     data = request.get_json(force=True, silent=True) or {}
@@ -184,7 +178,6 @@ def register():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-# 2. VALIDAÇÃO DO CÓDIGO DE 6 DÍGITOS (Libera a conta + 3 créditos Freemium)
 @app.route('/verify-email', methods=['POST'])
 def verify_email():
     data = request.get_json(force=True, silent=True) or {}
@@ -241,7 +234,6 @@ def verify_email():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-# 3. LOGIN (Valida senha, verifica se e-mail está ativo e checa limite de aparelhos)
 @app.route('/login', methods=['POST'])
 def login():
     data = request.get_json(force=True, silent=True) or {}
@@ -313,7 +305,6 @@ def login():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-# 4. ESQUECI MINHA SENHA (Envia código de 6 dígitos para redefinição)
 @app.route('/forgot-password', methods=['POST'])
 def forgot_password():
     data = request.get_json(force=True, silent=True) or {}
@@ -347,7 +338,6 @@ def forgot_password():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-# 5. REDEFINIR SENHA (Valida código, salva nova senha e desbloqueia conta)
 @app.route('/reset-password', methods=['POST'])
 def reset_password():
     data = request.get_json(force=True, silent=True) or {}
@@ -382,7 +372,6 @@ def reset_password():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-# 6. DESCONECTAR OUTROS APARELHOS
 @app.route('/reset-devices', methods=['POST'])
 def reset_devices():
     data = request.get_json(force=True, silent=True) or {}
@@ -523,11 +512,11 @@ def process_smile():
 
         mascara_sup = np.zeros((512, 512), dtype=np.uint8)
 
-        # 🛠️ MÁSCARA ELÍPTICA CALIBRADA (Foco estrito na arcada superior sem invadir os dentes inferiores)
+        # 🛠️ Máscara elíptica original estável v2.5
         centro_x = 256
-        centro_y = int(512 * 0.45)
+        centro_y = int(512 * 0.46)
         raio_x = int(512 * 0.27)
-        raio_y = int(512 * 0.058)
+        raio_y = int(512 * 0.065)
         cv2.ellipse(mascara_sup, (centro_x, centro_y), (raio_x, raio_y), 0, 0, 360, 255, -1)
 
         kernel = np.ones((5, 5), np.uint8)
@@ -543,7 +532,7 @@ def process_smile():
         mask_512.save(buffered_mask_512, format="PNG")
         mask_uri = f"data:image/png;base64,{base64.b64encode(buffered_mask_512.getvalue()).decode('utf-8')}"
 
-        print("🚀 [REPLICATE REST] Disparando IA com mordida fechada natural e seed=100...")
+        print("🚀 [REPLICATE REST] Disparando IA com base original estável e seed=100...")
 
         replicate_token = os.environ.get("REPLICATE_API_TOKEN")
         headers = {
@@ -552,14 +541,14 @@ def process_smile():
         }
 
         prompt_text = (
-            f"photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1>(Beautiful natural upper teeth only, closed bite natural smile, upper teeth resting gently on lower lip, preserve exact upper lip position), "
+            f"photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1>(Beautiful natural upper teeth only, aligned bite teeth, preserve exact upper lip position and wide open smile), "
             f"aligned white upper teeth, human like teeth, (no teeth gap), celebrity-like teeth, healthy upper teeth with a perfect smile, "
             f"not big incisor, good proportion teeth, shade {selected_color.upper()}, natural lower teeth untouched, good proportion smile,"
         )
         negative_prompt_text = (
             "(deformed teeth, semi-realistic, cgi, 3d, render, sketch, cartoon, drawing, anime), "
             "(deformed, distorted, abnormal teeth:1.3, disfigured:1.3, large teeth:2), (oversized teeth:1.5), (long incisors:1.5), (large front teeth:1.5), "
-            "open mouth gap, dark gap between teeth, changing occlusion, unnatural tooth length, poorly drawn, Fixer, bad anatomy, rabbit teeth, "
+            "closed mouth, lowered upper lip, open mouth gap, changing occlusion, unnatural tooth length, poorly drawn, Fixer, bad anatomy, rabbit teeth, "
             "wrong anatomy, missing teeth, disconnected teeth, unnatural mouth, bunny teeth, big incisor teeth, disproportionate front teeth, "
             "bad smile, reflection, crooked teeth, distorted teeth, cropped, out of frame, worst quality, low quality, "
             "jpeg artifacts, ugly, morbid, disfigured, gross proportions, too many teeth, lipstick, lip gloss, "
@@ -651,7 +640,7 @@ def process_smile():
         conn.close()
 
         print("=" * 60)
-        print("📤 [PYTHON REST] Simulação concluída com mordida fechada natural e seed=100!")
+        print("📤 [PYTHON REST] Simulação concluída com sucesso na versão estável!")
         print("=" * 60)
 
         return jsonify({
@@ -671,7 +660,7 @@ def process_smile():
         if "No face detected" in erro_str or "face" in erro_str.lower():
             return jsonify({
                 "success": False,
-                "error": "Enquadramento inválido: certifique-se de que há APENAS O PACIENTE na foto (sem outras pessoas ao fundo) e mantenha o aparelho entre 40 e 60 cm mostrando o rosto inteiro (olhos, nariz e boca)."
+                "error": "Rosto não detectado. Mantenha o aparelho entre 40 e 60 cm de distância enquadrando o rosto inteiro."
             }), 400
 
         return jsonify({"success": False, "error": erro_str}), 500
