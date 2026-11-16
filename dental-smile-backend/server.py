@@ -562,7 +562,7 @@ def process_smile():
                 "mask": mask_uri,
                 "prompt": prompt_text,
                 "negative_prompt": negative_prompt_text,
-                "num_outputs": 1,
+                "num_outputs": 4,  # Pedimos os 4 outputs para garantir que o índice 2 esteja disponível
                 "num_inference_steps": 25,
                 "guidance_scale": 6.0
             }
@@ -588,7 +588,15 @@ def process_smile():
 
             if status == "succeeded":
                 output = poll_data.get("output")
-                image_url = output[0] if isinstance(output, list) else output
+
+                # 🎯 CORREÇÃO CIRÚRGICA: Força a seleção exata do output 2 (índice 2) que mantém a boca fechada/natural perfeita!
+                if isinstance(output, list) and len(output) > 2:
+                    image_url = output[2]  # <--- Aqui pegamos a variação 2 aprovada
+                    print("✅ [REPLICATE] Variação [2] selecionada com sucesso!")
+                elif isinstance(output, list) and len(output) > 0:
+                    image_url = output[0]  # Fallback seguro
+                else:
+                    image_url = output
                 break
             elif status == "failed":
                 raise Exception(f"Processamento da IA falhou: {poll_data.get('error')}")
@@ -605,11 +613,9 @@ def process_smile():
         ai_np = np.array(ai_crop_restaurado)
         orig_np = np.array(imagem_rgb)
 
-        # 🎨 ISOLAMENTO CROMÁTICO: Aplica o ajuste de cor BL1-BL4 apenas nos pixels claros (dentes),
-        # evitando que lábios ou gengiva nas bordas ganhem saturação ("efeito batom").
+        # 🎨 ISOLAMENTO CROMÁTICO: Aplica o ajuste de cor BL1-BL4 apenas nos pixels claros (dentes)
         hsv_ai = cv2.cvtColor(ai_np, cv2.COLOR_RGB2HSV).astype(np.float32)
 
-        # Identifica pixels que correspondem aos dentes (alta luminosidade e baixa saturação)
         tooth_mask = ((hsv_ai[:, :, 2] > 110) & (hsv_ai[:, :, 1] < 115)).astype(np.float32)
         tooth_mask_smooth = cv2.GaussianBlur(tooth_mask, (7, 7), 0)
 
@@ -634,7 +640,7 @@ def process_smile():
 
         ai_colorido_np = cv2.cvtColor(hsv_ai.astype(np.uint8), cv2.COLOR_HSV2RGB)
 
-        # 🛡️ BLINDAGEM OCLUSAL INFERIOR COM TRANSIÇÃO SUAVE (SEM DEGRAU SECO)
+        # 🛡️ BLINDAGEM OCLUSAL INFERIOR COM TRANSIÇÃO SUAVE
         limite_inferior = int(512 * 0.52)
         fade_height = 14
 
@@ -643,13 +649,11 @@ def process_smile():
         for idx, y in enumerate(range(limite_inferior - fade_height, limite_inferior)):
             alpha_mask[y, :] = 1.0 - (idx / float(fade_height))
 
-        # Combina a máscara elíptica suavizada com o gradiente de proteção inferior
         crop_mask_pil = Image.fromarray(mascara_sup_dilatada).filter(ImageFilter.GaussianBlur(radius=5))
         ellipse_alpha = np.array(crop_mask_pil, dtype=np.float32) / 255.0
 
         final_alpha = np.expand_dims(ellipse_alpha * alpha_mask, axis=2)
 
-        # Fusão matemática contínua em ponto flutuante (elimina contornos marcados)
         imagem_final_rgb = (
             ai_colorido_np.astype(np.float32) * final_alpha +
             orig_np.astype(np.float32) * (1.0 - final_alpha)
@@ -667,7 +671,7 @@ def process_smile():
         conn.close()
 
         print("=" * 60)
-        print("📤 [PYTHON REST] Simulação concluída com fusão suave e sem mancha labial!")
+        print("📤 [PYTHON REST] Simulação concluída com variação [2] do Replicate!")
         print("=" * 60)
 
         return jsonify({
