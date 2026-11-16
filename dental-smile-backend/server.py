@@ -19,7 +19,7 @@ def health_check():
     return "Dental Smile Backend OK", 200
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
-RESEND_API_KEY = os.environ.get("RESEND_API_KEY") # Configurar nas variáveis de ambiente do Render
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
 
 def get_db_connection():
     return psycopg2.connect(DATABASE_URL, sslmode='require')
@@ -29,7 +29,6 @@ def init_db():
         conn = get_db_connection()
         cur = conn.cursor()
 
-        # Tabela principal de usuários
         cur.execute("""
             CREATE TABLE IF NOT EXISTS usuarios (
                 id SERIAL PRIMARY KEY,
@@ -47,12 +46,10 @@ def init_db():
             );
         """)
 
-        # Garante que as novas colunas existam caso a tabela já tenha sido criada antes
         cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS email_verificado BOOLEAN DEFAULT FALSE;")
         cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS codigo_verificacao VARCHAR(6);")
         cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS limite_dispositivos INTEGER DEFAULT 1;")
 
-        # Tabela de controle de aparelhos conectados simultaneamente
         cur.execute("""
             CREATE TABLE IF NOT EXISTS dispositivos_ativos (
                 id SERIAL PRIMARY KEY,
@@ -71,9 +68,8 @@ def init_db():
 
 init_db()
 
-print("⚙️ Servidor iniciado com Blindagem Oclusal Inferior Absoluta")
+print("⚙️ Servidor iniciado com Fusão Suave e Isolamento Cromático Dental")
 
-# 📧 Função auxiliar para disparar o código de 6 dígitos por e-mail via Resend
 def enviar_email_codigo(destinatario, nome, codigo, assunto="Código de Verificação - Dental Smile"):
     if not RESEND_API_KEY:
         print(f"⚠️ [MODO TESTE SEM RESEND_API_KEY] Código para {destinatario}: {codigo}")
@@ -114,7 +110,6 @@ def enviar_email_codigo(destinatario, nome, codigo, assunto="Código de Verifica
         print(f"Erro ao enviar e-mail: {e}")
         return False
 
-# 🔒 Verifica se o aparelho tem permissão para usar a conta (Limite 1, 2 ou 3)
 def validar_limite_dispositivo(cur, email, device_id, limite):
     if not device_id:
         return True, "OK"
@@ -520,8 +515,8 @@ def process_smile():
         # 🛠️ MÁSCARA ELÍPTICA SUPERIOR ESTRITA
         centro_x = 256
         centro_y = int(512 * 0.48)
-        raio_x = int(512 * 0.27)
-        raio_y = int(512 * 0.050)
+        raio_x = int(512 * 0.26)
+        raio_y = int(512 * 0.048)
         cv2.ellipse(mascara_sup, (centro_x, centro_y), (raio_x, raio_y), 0, 0, 360, 255, -1)
 
         kernel = np.ones((5, 5), np.uint8)
@@ -537,7 +532,7 @@ def process_smile():
         mask_512.save(buffered_mask_512, format="PNG")
         mask_uri = f"data:image/png;base64,{base64.b64encode(buffered_mask_512.getvalue()).decode('utf-8')}"
 
-        print("🚀 [REPLICATE REST] Disparando IA com blindagem oclusal inferior...")
+        print("🚀 [REPLICATE REST] Disparando IA com isolamento cromático e fusão suave...")
 
         replicate_token = os.environ.get("REPLICATE_API_TOKEN")
         headers = {
@@ -549,14 +544,14 @@ def process_smile():
             f"photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1>(Beautiful natural teeth, "
             f"aligned bite teeth), aligned white teeth, human like teeth, (no teeth gap), "
             f"celebrity-like teeth, healthy teeth with a perfect smile, not big incisor, good proportion teeth, "
-            f"good proportion smile, shade {selected_color.upper()}, natural lower teeth untouched,"
+            f"good proportion smile, shade {selected_color.upper()}, natural lower teeth untouched, natural skin and lips,"
         )
         negative_prompt_text = (
             "(deformed teeth, semi-realistic, cgi, 3d, render, sketch, cartoon, drawing, anime), "
             "(deformed, distorted, abnormal teeth:1.3, disfigured:1.3, large teeth:2), poorly drawn, Fixer, bad anatomy, rabbit teeth, "
             "wrong anatomy, missing teeth, disconnected teeth, unnatural mouth, bunny teeth, big incisor teeth, disproportionate front teeth, "
             "bad smile, reflection, crooked teeth, distorted teeth, cropped, out of frame, worst quality, low quality, "
-            "jpeg artifacts, ugly, morbid, disfigured, gross proportions, too many teeth, lipstick, lip gloss, "
+            "jpeg artifacts, ugly, morbid, disfigured, gross proportions, too many teeth, lipstick, lip gloss, makeup, red lips, "
             "too less teeth, unnatural size teeth, poorly drawn mouth, poorly drawn teeth, open mouth, gaping mouth"
         )
 
@@ -608,45 +603,57 @@ def process_smile():
         ai_crop_restaurado = ai_image_raw.resize((512, 512), Image.Resampling.LANCZOS)
 
         ai_np = np.array(ai_crop_restaurado)
-        hsv_ai = cv2.cvtColor(ai_np, cv2.COLOR_RGB2HSV).astype(np.float32)
-
-        if selected_color == 'bl1':
-            hsv_ai[:, :, 2] = np.clip(hsv_ai[:, :, 2] * 1.03, 0, 255)
-            hsv_ai[:, :, 1] = np.clip(hsv_ai[:, :, 1] * 0.95, 0, 255)
-        elif selected_color == 'bl2':
-            hsv_ai[:, :, 2] = np.clip(hsv_ai[:, :, 2] * 1.00, 0, 255)
-            hsv_ai[:, :, 1] = np.clip(hsv_ai[:, :, 1] * 1.00, 0, 255)
-        elif selected_color == 'bl3':
-            hsv_ai[:, :, 2] = np.clip(hsv_ai[:, :, 2] * 0.97, 0, 255)
-            hsv_ai[:, :, 1] = np.clip(hsv_ai[:, :, 1] * 1.05, 0, 255)
-        elif selected_color == 'bl4':
-            hsv_ai[:, :, 2] = np.clip(hsv_ai[:, :, 2] * 0.95, 0, 255)
-            hsv_ai[:, :, 1] = np.clip(hsv_ai[:, :, 1] * 1.10, 0, 255)
-
-        ai_colorido = Image.fromarray(cv2.cvtColor(hsv_ai.astype(np.uint8), cv2.COLOR_HSV2RGB))
-
-        crop_orig_pil = Image.fromarray(imagem_rgb)
-        crop_mask_pil = Image.fromarray(mascara_sup_dilatada)
-        mask_soft = crop_mask_pil.filter(ImageFilter.GaussianBlur(radius=2))
-
-        # 🛡️ BLINDAGEM OCLUSAL INFERIOR: Força os pixels abaixo da linha média (arcada inferior) a usarem 100% da foto original
-        ai_final_np = np.array(ai_colorido)
         orig_np = np.array(imagem_rgb)
 
-        # Cria uma máscara onde tudo abaixo do centro vertical (arcada inferior e queixo) recebe a imagem original pura
+        # 🎨 ISOLAMENTO CROMÁTICO: Aplica o ajuste de cor BL1-BL4 apenas nos pixels claros (dentes),
+        # evitando que lábios ou gengiva nas bordas ganhem saturação ("efeito batom").
+        hsv_ai = cv2.cvtColor(ai_np, cv2.COLOR_RGB2HSV).astype(np.float32)
+
+        # Identifica pixels que correspondem aos dentes (alta luminosidade e baixa saturação)
+        tooth_mask = ((hsv_ai[:, :, 2] > 110) & (hsv_ai[:, :, 1] < 115)).astype(np.float32)
+        tooth_mask_smooth = cv2.GaussianBlur(tooth_mask, (7, 7), 0)
+
+        val_mult = 1.00
+        sat_mult = 1.00
+
+        if selected_color == 'bl1':
+            val_mult = 1.04
+            sat_mult = 0.92
+        elif selected_color == 'bl2':
+            val_mult = 1.01
+            sat_mult = 0.98
+        elif selected_color == 'bl3':
+            val_mult = 0.98
+            sat_mult = 1.03
+        elif selected_color == 'bl4':
+            val_mult = 0.96
+            sat_mult = 1.06
+
+        hsv_ai[:, :, 2] = np.clip(hsv_ai[:, :, 2] * (1.0 + (val_mult - 1.0) * tooth_mask_smooth), 0, 255)
+        hsv_ai[:, :, 1] = np.clip(hsv_ai[:, :, 1] * (1.0 + (sat_mult - 1.0) * tooth_mask_smooth), 0, 255)
+
+        ai_colorido_np = cv2.cvtColor(hsv_ai.astype(np.uint8), cv2.COLOR_HSV2RGB)
+
+        # 🛡️ BLINDAGEM OCLUSAL INFERIOR COM TRANSIÇÃO SUAVE (SEM DEGRAU SECO)
         limite_inferior = int(512 * 0.52)
+        fade_height = 14
 
-        # Copia rigorosamente os pixels da arcada inferior da foto original do usuário para cima da imagem gerada pela IA
-        ai_final_np[limite_inferior:, :, :] = orig_np[limite_inferior:, :, :]
+        alpha_mask = np.zeros((512, 512), dtype=np.float32)
+        alpha_mask[:limite_inferior - fade_height, :] = 1.0
+        for idx, y in enumerate(range(limite_inferior - fade_height, limite_inferior)):
+            alpha_mask[y, :] = 1.0 - (idx / float(fade_height))
 
-        crop_final_pil = Image.composite(Image.fromarray(ai_final_np), crop_orig_pil, mask_soft)
+        # Combina a máscara elíptica suavizada com o gradiente de proteção inferior
+        crop_mask_pil = Image.fromarray(mascara_sup_dilatada).filter(ImageFilter.GaussianBlur(radius=5))
+        ellipse_alpha = np.array(crop_mask_pil, dtype=np.float32) / 255.0
 
-        # Aplicação final garantindo que a arcada inferior seja exatamente a original
-        final_np_final = np.array(crop_final_pil)
-        final_np_final[limite_inferior:, :, :] = orig_np[limite_inferior:, :, :]
+        final_alpha = np.expand_dims(ellipse_alpha * alpha_mask, axis=2)
 
-        crop_final_definitivo = Image.fromarray(final_np_final)
-        imagem_final_rgb = np.array(crop_final_definitivo)
+        # Fusão matemática contínua em ponto flutuante (elimina contornos marcados)
+        imagem_final_rgb = (
+            ai_colorido_np.astype(np.float32) * final_alpha +
+            orig_np.astype(np.float32) * (1.0 - final_alpha)
+        ).astype(np.uint8)
 
         final_bgr = cv2.cvtColor(imagem_final_rgb, cv2.COLOR_RGB2BGR)
         _, buffer = cv2.imencode('.jpg', final_bgr, [cv2.IMWRITE_JPEG_QUALITY, 95])
@@ -660,7 +667,7 @@ def process_smile():
         conn.close()
 
         print("=" * 60)
-        print("📤 [PYTHON REST] Simulação concluída com blindagem oclusal inferior aplicada!")
+        print("📤 [PYTHON REST] Simulação concluída com fusão suave e sem mancha labial!")
         print("=" * 60)
 
         return jsonify({

@@ -24,6 +24,11 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+
+    // 🛡️ Recupera imediatamente o último saldo salvo em cache local para evitar piscar zero
+    final boxUser = Hive.box('box_usuario');
+    _creditos = boxUser.get('cached_creditos', defaultValue: 0) as int;
+
     if (!_jaInicializouSessao) {
       _jaInicializouSessao = true;
       _inicializarECarregarCreditos(isInitial: true);
@@ -96,8 +101,11 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() {
           if (resultado['success'] == true) {
             _creditos = resultado['creditos'] ?? 0;
+            // Salva em cache local para garantir robustez contra falhas futuras de rede
+            boxUser.put('cached_creditos', _creditos);
           } else {
-            _creditos = 0;
+            // 🛡️ Mantém o crédito atual em cache se houver falha de rede temporária
+            _creditos = boxUser.get('cached_creditos', defaultValue: _creditos) as int;
           }
           _isLoadingCredits = false;
           _momentoExibicaoCard = null;

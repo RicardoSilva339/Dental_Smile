@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:printing/printing.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -22,7 +23,6 @@ class _CompareScreenState extends State<CompareScreen> {
   String? _processedPath;
   String? _selectedColor;
   String? _selectedShape;
-  String? _selectedSize;
   String? _simulationId;
   String? _userEmail;
 
@@ -37,9 +37,8 @@ class _CompareScreenState extends State<CompareScreen> {
         _originalPath = args['originalPath'] ?? args['original'];
         _processedPath = args['processedPath'] ?? args['processed'] ?? args['image'] ?? args['resultPath'];
 
-        _selectedColor = args['color'] ?? 'Natural';
-        _selectedShape = args['shape'] ?? 'Oval';
-        _selectedSize = args['size'] ?? 'Médio';
+        _selectedColor = args['color'] ?? 'BL3';
+        _selectedShape = args['shape'] ?? 'Natural';
         _simulationId = args['simulationId'] ?? 'DS-${DateTime.now().millisecondsSinceEpoch.toString().substring(5)}';
 
         _userEmail = args['userEmail'];
@@ -65,6 +64,17 @@ class _CompareScreenState extends State<CompareScreen> {
     super.dispose();
   }
 
+  // 🏷️ Converte o código Bleach no nome profissional correspondente
+  String _obterNomeEscalaBleach(String? corCodigo) {
+    if (corCodigo == null) return 'Natural';
+    final codigo = corCodigo.toUpperCase().trim();
+    if (codigo.contains('BL1') || codigo.contains('ULTRA')) return 'BL1 - Ultra';
+    if (codigo.contains('BL2') || codigo.contains('INTENSO')) return 'BL2 - Intenso';
+    if (codigo.contains('BL3') || codigo.contains('NATURAL')) return 'BL3 - Natural';
+    if (codigo.contains('BL4') || codigo.contains('SUAVE')) return 'BL4 - Suave';
+    return corCodigo; // Retorna o original se não coincidir
+  }
+
   Future<pw.MemoryImage?> _carregarImagemSegura(String? path) async {
     if (path == null || path.isEmpty) return null;
     try {
@@ -79,12 +89,45 @@ class _CompareScreenState extends State<CompareScreen> {
     return null;
   }
 
+  // 📂 Copia a imagem para o diretório permanente do app para evitar que o cache apague
+  Future<String?> _salvarImagemPermanente(String? caminhoTemporario, String prefixoId) async {
+    if (caminhoTemporario == null || caminhoTemporario.isEmpty) return null;
+    try {
+      final arquivoTemp = File(caminhoTemporario);
+      if (!arquivoTemp.existsSync()) return caminhoTemporario;
+
+      final diretorioApp = await getApplicationDocumentsDirectory();
+      final caminhoAppPath = diretorioApp.path;
+      final pastaDestino = Directory('$caminhoAppPath/DentalSmileHistorico');
+
+      if (!await pastaDestino.exists()) {
+        await pastaDestino.create(recursive: true);
+      }
+
+      final extensao = pathExtensao(caminhoTemporario);
+      final caminhoFinal = '${pastaDestino.path}/${prefixoId}_${DateTime.now().millisecondsSinceEpoch}.$extensao';
+
+      await arquivoTemp.copy(caminhoFinal);
+      return caminhoFinal;
+    } catch (e) {
+      debugPrint('Erro ao tornar imagem permanente: $e');
+      return caminhoTemporario;
+    }
+  }
+
+  String pathExtensao(String path) {
+    try {
+      return path.split('.').last;
+    } catch (_) {
+      return 'jpg';
+    }
+  }
+
   Future<pw.Document> _gerarDocumentoPdf({
     required String? originalPath,
     required String? adjustedPath,
     String? color,
     String? shape,
-    String? size,
     String? note,
     String? simulationId,
   }) async {
@@ -92,6 +135,8 @@ class _CompareScreenState extends State<CompareScreen> {
 
     final beforeImage = await _carregarImagemSegura(originalPath);
     final afterImage = await _carregarImagemSegura(adjustedPath);
+
+    final corFormatada = _obterNomeEscalaBleach(color);
 
     final now = DateTime.now();
     final dataHoraFormatada = "${now.day.toString().padLeft(2, '0')}/${now.month.toString().padLeft(2, '0')}/${now.year} às ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}";
@@ -133,9 +178,8 @@ class _CompareScreenState extends State<CompareScreen> {
               style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold),
             ),
             pw.SizedBox(height: 4),
-            pw.Text('- Cor: ${color ?? '-'}', style: const pw.TextStyle(fontSize: 10)),
-            pw.Text('- Formato: ${shape ?? '-'}', style: const pw.TextStyle(fontSize: 10)),
-            pw.Text('- Tamanho: ${size ?? '-'}', style: const pw.TextStyle(fontSize: 10)),
+            pw.Text('- Cor / Escala: $corFormatada', style: const pw.TextStyle(fontSize: 10)),
+            pw.Text('- Formato: ${shape ?? 'Natural'}', style: const pw.TextStyle(fontSize: 10)),
             pw.Text('- Observações do Dentista: ${note ?? 'Sem observações'}', style: const pw.TextStyle(fontSize: 10)),
             pw.SizedBox(height: 12),
             pw.Row(
@@ -213,14 +257,19 @@ class _CompareScreenState extends State<CompareScreen> {
         ? _userEmail!
         : Hive.box('box_usuario').get('email', defaultValue: '') as String;
 
+    final idSimulacao = _simulationId ?? 'DS-${DateTime.now().millisecondsSinceEpoch.toString().substring(5)}';
+
+    // 🔒 Salva as imagens permanentemente na pasta interna do app
+    final caminhoOriginalPerm = await _salvarImagemPermanente(_originalPath, '${idSimulacao}_orig');
+    final caminhoProcessadoPerm = await _salvarImagemPermanente(_processedPath, '${idSimulacao}_proc');
+
     final simulationData = {
-      'simulationId': _simulationId ?? 'DS-${DateTime.now().millisecondsSinceEpoch.toString().substring(5)}',
+      'simulationId': idSimulacao,
       'date': DateTime.now().toIso8601String(),
-      'originalPath': _originalPath,
-      'processedPath': _processedPath,
+      'originalPath': caminhoOriginalPerm,
+      'processedPath': caminhoProcessadoPerm,
       'color': _selectedColor,
       'shape': _selectedShape,
-      'size': _selectedSize,
       'notes': noteText,
       'userEmail': emailDono,
     };
@@ -252,7 +301,6 @@ class _CompareScreenState extends State<CompareScreen> {
                 adjustedPath: _processedPath,
                 color: _selectedColor,
                 shape: _selectedShape,
-                size: _selectedSize,
                 note: noteText,
                 simulationId: _simulationId,
               );
@@ -309,153 +357,158 @@ class _CompareScreenState extends State<CompareScreen> {
                 ),
               const SizedBox(height: 12),
 
+              // 🔍 Adicionado InteractiveViewer para permitir Zoom com Pinça (Zoom In/Out)
               Center(
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxHeight: 400, maxWidth: 400),
                   child: AspectRatio(
                     aspectRatio: 1 / 1,
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        final containerWidth = constraints.maxWidth;
-                        final containerHeight = constraints.maxHeight;
+                    child: InteractiveViewer(
+                      minScale: 1.0,
+                      maxScale: 4.0,
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          final containerWidth = constraints.maxWidth;
+                          final containerHeight = constraints.maxHeight;
 
-                        return GestureDetector(
-                          onPanUpdate: (details) {
-                            setState(() {
-                              _sliderValue += details.delta.dx / containerWidth;
-                              if (_sliderValue < 0.0) _sliderValue = 0.0;
-                              if (_sliderValue > 1.0) _sliderValue = 1.0;
-                            });
-                          },
-                          onTapDown: (details) {
-                            final localX = details.localPosition.dx;
-                            setState(() {
-                              _sliderValue = (localX / containerWidth).clamp(0.0, 1.0);
-                            });
-                          },
-                          child: Container(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(16),
-                              color: Colors.black,
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withOpacity(0.15),
-                                  blurRadius: 10,
-                                  offset: const Offset(0, 4),
-                                ),
-                              ],
-                            ),
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(16),
-                              child: Stack(
-                                fit: StackFit.expand,
-                                children: [
-                                  if (processedFile != null && processedFile.existsSync())
-                                    Image.file(
-                                      processedFile,
-                                      fit: BoxFit.cover,
-                                      alignment: Alignment.center,
-                                    )
-                                  else
-                                    const Center(child: Text('Erro ao carregar imagem processada', style: TextStyle(color: Colors.white))),
+                          return GestureDetector(
+                            onPanUpdate: (details) {
+                              setState(() {
+                                _sliderValue += details.delta.dx / containerWidth;
+                                if (_sliderValue < 0.0) _sliderValue = 0.0;
+                                if (_sliderValue > 1.0) _sliderValue = 1.0;
+                              });
+                            },
+                            onTapDown: (details) {
+                              final localX = details.localPosition.dx;
+                              setState(() {
+                                _sliderValue = (localX / containerWidth).clamp(0.0, 1.0);
+                              });
+                            },
+                            child: Container(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(16),
+                                color: Colors.black,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.15),
+                                    blurRadius: 10,
+                                    offset: const Offset(0, 4),
+                                  ),
+                                ],
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(16),
+                                child: Stack(
+                                  fit: StackFit.expand,
+                                  children: [
+                                    if (processedFile != null && processedFile.existsSync())
+                                      Image.file(
+                                        processedFile,
+                                        fit: BoxFit.cover,
+                                        alignment: Alignment.center,
+                                      )
+                                    else
+                                      const Center(child: Text('Erro ao carregar imagem processada', style: TextStyle(color: Colors.white))),
 
-                                  if (originalFile != null && originalFile.existsSync())
-                                    Align(
-                                      alignment: Alignment.centerLeft,
-                                      child: FractionallySizedBox(
-                                        widthFactor: _sliderValue,
-                                        alignment: Alignment.topLeft,
-                                        child: ClipRect(
-                                          child: OverflowBox(
-                                            alignment: Alignment.topLeft,
-                                            minWidth: containerWidth,
-                                            maxWidth: containerWidth,
-                                            minHeight: containerHeight,
-                                            maxHeight: containerHeight,
-                                            child: Image.file(
-                                              originalFile,
-                                              width: containerWidth,
-                                              height: containerHeight,
-                                              fit: BoxFit.cover,
-                                              alignment: Alignment.center,
+                                    if (originalFile != null && originalFile.existsSync())
+                                      Align(
+                                        alignment: Alignment.centerLeft,
+                                        child: FractionallySizedBox(
+                                          widthFactor: _sliderValue,
+                                          alignment: Alignment.topLeft,
+                                          child: ClipRect(
+                                            child: OverflowBox(
+                                              alignment: Alignment.topLeft,
+                                              minWidth: containerWidth,
+                                              maxWidth: containerWidth,
+                                              minHeight: containerHeight,
+                                              maxHeight: containerHeight,
+                                              child: Image.file(
+                                                originalFile,
+                                                width: containerWidth,
+                                                height: containerHeight,
+                                                fit: BoxFit.cover,
+                                                alignment: Alignment.center,
+                                              ),
                                             ),
                                           ),
                                         ),
                                       ),
-                                    ),
 
-                                  Positioned(
-                                    top: 0,
-                                    bottom: 0,
-                                    left: (containerWidth * _sliderValue) - 1.5,
-                                    child: Container(
-                                      width: 3,
-                                      color: Colors.white,
-                                      child: Stack(
-                                        alignment: Alignment.center,
-                                        clipBehavior: Clip.none,
-                                        children: [
-                                          Container(
-                                            height: 38,
-                                            width: 38,
-                                            decoration: BoxDecoration(
-                                              color: Colors.white,
-                                              shape: BoxShape.circle,
-                                              boxShadow: [
-                                                BoxShadow(
-                                                  color: Colors.black.withOpacity(0.3),
-                                                  blurRadius: 6,
-                                                )
-                                              ],
+                                    Positioned(
+                                      top: 0,
+                                      bottom: 0,
+                                      left: (containerWidth * _sliderValue) - 1.5,
+                                      child: Container(
+                                        width: 3,
+                                        color: Colors.white,
+                                        child: Stack(
+                                          alignment: Alignment.center,
+                                          clipBehavior: Clip.none,
+                                          children: [
+                                            Container(
+                                              height: 38,
+                                              width: 38,
+                                              decoration: BoxDecoration(
+                                                color: Colors.white,
+                                                shape: BoxShape.circle,
+                                                boxShadow: [
+                                                  BoxShadow(
+                                                    color: Colors.black.withOpacity(0.3),
+                                                    blurRadius: 6,
+                                                  )
+                                                ],
+                                              ),
+                                              child: const Icon(
+                                                Icons.compare_arrows,
+                                                size: 22,
+                                                color: Colors.indigo,
+                                              ),
                                             ),
-                                            child: const Icon(
-                                              Icons.compare_arrows,
-                                              size: 22,
-                                              color: Colors.indigo,
-                                            ),
-                                          ),
-                                        ],
+                                          ],
+                                        ),
                                       ),
                                     ),
-                                  ),
 
-                                  Positioned(
-                                    top: 12,
-                                    left: 12,
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                      decoration: BoxDecoration(
-                                        color: Colors.black.withOpacity(0.65),
-                                        borderRadius: BorderRadius.circular(6),
-                                      ),
-                                      child: const Text(
-                                        'Original',
-                                        style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                                    Positioned(
+                                      top: 12,
+                                      left: 12,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: Colors.black.withOpacity(0.65),
+                                          borderRadius: BorderRadius.circular(6),
+                                        ),
+                                        child: const Text(
+                                          'Original',
+                                          style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                                        ),
                                       ),
                                     ),
-                                  ),
 
-                                  Positioned(
-                                    top: 12,
-                                    right: 12,
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                      decoration: BoxDecoration(
-                                        color: Colors.indigo.withOpacity(0.85),
-                                        borderRadius: BorderRadius.circular(6),
-                                      ),
-                                      child: const Text(
-                                        'Com IA',
-                                        style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                                    Positioned(
+                                      top: 12,
+                                      right: 12,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: Colors.indigo.withOpacity(0.85),
+                                          borderRadius: BorderRadius.circular(6),
+                                        ),
+                                        child: const Text(
+                                          'Com IA',
+                                          style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
                             ),
-                          ),
-                        );
-                      },
+                          );
+                        },
+                      ),
                     ),
                   ),
                 ),
