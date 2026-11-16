@@ -179,7 +179,7 @@ class _CompareScreenState extends State<CompareScreen> {
             ),
             pw.SizedBox(height: 4),
             pw.Text('- Cor / Escala: $corFormatada', style: const pw.TextStyle(fontSize: 10)),
-            pw.Text('- Formato: ${shape ?? 'Natural'}', style: const pw.TextStyle(fontSize: 10)),
+            // Linha de formato redundante removida conforme solicitado
             pw.Text('- Observações do Dentista: ${note ?? 'Sem observações'}', style: const pw.TextStyle(fontSize: 10)),
             pw.SizedBox(height: 12),
             pw.Row(
@@ -259,7 +259,6 @@ class _CompareScreenState extends State<CompareScreen> {
 
     final idSimulacao = _simulationId ?? 'DS-${DateTime.now().millisecondsSinceEpoch.toString().substring(5)}';
 
-    // 🔒 Salva as imagens permanentemente na pasta interna do app
     final caminhoOriginalPerm = await _salvarImagemPermanente(_originalPath, '${idSimulacao}_orig');
     final caminhoProcessadoPerm = await _salvarImagemPermanente(_processedPath, '${idSimulacao}_proc');
 
@@ -357,7 +356,6 @@ class _CompareScreenState extends State<CompareScreen> {
                 ),
               const SizedBox(height: 12),
 
-              // 🔍 Adicionado InteractiveViewer para permitir Zoom com Pinça (Zoom In/Out)
               Center(
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxHeight: 400, maxWidth: 400),
