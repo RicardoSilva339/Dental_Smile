@@ -637,8 +637,8 @@ def process_smile():
         hsv_orig[:, :, 2] = np.clip(hsv_orig[:, :, 2] * (1.0 + (val_boost - 1.0) * lower_tooth_smooth), 0, 255)
         orig_harmonizado_np = cv2.cvtColor(hsv_orig.astype(np.uint8), cv2.COLOR_HSV2RGB).astype(np.float32)
 
-        # 🛡️ 3. BLINDAGEM OCLUSAL INFERIOR MAIS ALTA (Ajustada para 0.47 para subir o lábio e cobrir dentes de baixo)
-        limite_inferior = int(512 * 0.47)
+        # 🛡️ 3. BLINDAGEM OCLUSAL INFERIOR CORRIGIDA (Ajustada para 0.53 para cobrir os dentes de baixo)
+        limite_inferior = int(512 * 0.53)
         fade_height = 10
 
         alpha_mask = np.zeros((512, 512), dtype=np.float32)
@@ -668,7 +668,7 @@ def process_smile():
         conn.close()
 
         print("=" * 60)
-        print("📤 [PYTHON REST] Simulação concluída com elipse em 0.43 e limite inferior em 0.47!")
+        print("📤 [PYTHON REST] Simulação concluída com elipse em 0.43 e limite inferior corrigido em 0.53!")
         print("=" * 60)
 
         return jsonify({
