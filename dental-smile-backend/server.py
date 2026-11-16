@@ -511,12 +511,12 @@ def process_smile():
         original_processed_b64 = b64_clean
         image_uri = f"data:image/jpeg;base64,{b64_clean}"
 
-        # 🛠️ MÁSCARA SUPERIOR PRECISA (Mantém o lábio superior original intacto)
+        # 🛠️ MÁSCARA SUPERIOR COM ESPAÇO AMPLIADO (centro_y em 0.43 para os dentes superiores trabalharem)
         mascara_sup = np.zeros((512, 512), dtype=np.uint8)
         centro_x = 256
-        centro_y = int(512 * 0.46)
-        raio_x = int(512 * 0.25)
-        raio_y = int(512 * 0.042)
+        centro_y = int(512 * 0.43)
+        raio_x = int(512 * 0.26)
+        raio_y = int(512 * 0.052)
         cv2.ellipse(mascara_sup, (centro_x, centro_y), (raio_x, raio_y), 0, 0, 360, 255, -1)
 
         kernel = np.ones((5, 5), np.uint8)
@@ -637,8 +637,8 @@ def process_smile():
         hsv_orig[:, :, 2] = np.clip(hsv_orig[:, :, 2] * (1.0 + (val_boost - 1.0) * lower_tooth_smooth), 0, 255)
         orig_harmonizado_np = cv2.cvtColor(hsv_orig.astype(np.uint8), cv2.COLOR_HSV2RGB).astype(np.float32)
 
-        # 🛡️ 3. BLINDAGEM OCLUSAL INFERIOR MAIS ALTA (Oculta completamente os dentes inferiores)
-        limite_inferior = int(512 * 0.49)  # Subido de 0.52 para 0.49 para cobrir os dentes de baixo
+        # 🛡️ 3. BLINDAGEM OCLUSAL INFERIOR EQUILIBRADA (Ajustada para 0.51)
+        limite_inferior = int(512 * 0.51)
         fade_height = 10
 
         alpha_mask = np.zeros((512, 512), dtype=np.float32)
@@ -668,7 +668,7 @@ def process_smile():
         conn.close()
 
         print("=" * 60)
-        print("📤 [PYTHON REST] Simulação concluída: Lábio superior original + dentes inferiores ocultos!")
+        print("📤 [PYTHON REST] Simulação concluída com espaço ideal em 0.43 e oclusão em 0.51!")
         print("=" * 60)
 
         return jsonify({
