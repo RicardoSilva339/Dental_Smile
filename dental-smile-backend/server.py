@@ -532,7 +532,7 @@ def process_smile():
         mask_512.save(buffered_mask_512, format="PNG")
         mask_uri = f"data:image/png;base64,{base64.b64encode(buffered_mask_512.getvalue()).decode('utf-8')}"
 
-        print("🚀 [REPLICATE REST] Disparando IA com isolamento cromático e fusão suave...")
+        print("🚀 [REPLICATE REST] Disparando IA com prompt calibrado (<77 tokens) e trava oclusal...")
 
         replicate_token = os.environ.get("REPLICATE_API_TOKEN")
         headers = {
@@ -540,19 +540,17 @@ def process_smile():
             "Content-Type": "application/json"
         }
 
+        # 🎯 PROMPTS CALIBRADOS ABAIXO DE 77 TOKENS (Prioridade máxima no CLIP)
         prompt_text = (
-            f"photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1>(Beautiful natural teeth, "
-            f"aligned bite teeth), aligned white teeth, human like teeth, (no teeth gap), "
-            f"celebrity-like teeth, healthy teeth with a perfect smile, not big incisor, good proportion teeth, "
-            f"good proportion smile, shade {selected_color.upper()}, natural lower teeth untouched, natural skin and lips,"
+            "photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1>, "
+            "(closed bite, aligned white teeth:1.3), beautiful natural teeth, human like teeth, "
+            "(no teeth gap), good proportion teeth, realistic texture"
         )
         negative_prompt_text = (
-            "(deformed teeth, semi-realistic, cgi, 3d, render, sketch, cartoon, drawing, anime), "
-            "(deformed, distorted, abnormal teeth:1.3, disfigured:1.3, large teeth:2), poorly drawn, Fixer, bad anatomy, rabbit teeth, "
-            "wrong anatomy, missing teeth, disconnected teeth, unnatural mouth, bunny teeth, big incisor teeth, disproportionate front teeth, "
-            "bad smile, reflection, crooked teeth, distorted teeth, cropped, out of frame, worst quality, low quality, "
-            "jpeg artifacts, ugly, morbid, disfigured, gross proportions, too many teeth, lipstick, lip gloss, makeup, red lips, "
-            "too less teeth, unnatural size teeth, poorly drawn mouth, poorly drawn teeth, open mouth, gaping mouth"
+            "(open mouth, gaping, jaw opening, protruding lower teeth, double row of teeth:1.5), "
+            "(deformed, distorted, abnormal teeth:1.3, large teeth:1.8), bad anatomy, rabbit teeth, "
+            "missing teeth, disconnected teeth, unnatural mouth, crooked teeth, cgi, 3d, cartoon, "
+            "worst quality, low quality"
         )
 
         payload = {
@@ -562,9 +560,9 @@ def process_smile():
                 "mask": mask_uri,
                 "prompt": prompt_text,
                 "negative_prompt": negative_prompt_text,
-                "num_outputs": 4,  # Pedimos os 4 outputs para garantir que o índice 2 esteja disponível
-                "num_inference_steps": 25,
-                "guidance_scale": 6.0
+                "num_outputs": 4,
+                "num_inference_steps": 50,
+                "guidance_scale": 7.5
             }
         }
 
@@ -589,12 +587,12 @@ def process_smile():
             if status == "succeeded":
                 output = poll_data.get("output")
 
-                # 🎯 CORREÇÃO CIRÚRGICA: Força a seleção exata do output 2 (índice 2) que mantém a boca fechada/natural perfeita!
+                # 🎯 CORREÇÃO CIRÚRGICA: Seleciona a variação [2] (ou fallback seguro)
                 if isinstance(output, list) and len(output) > 2:
-                    image_url = output[2]  # <--- Aqui pegamos a variação 2 aprovada
+                    image_url = output[2]
                     print("✅ [REPLICATE] Variação [2] selecionada com sucesso!")
                 elif isinstance(output, list) and len(output) > 0:
-                    image_url = output[0]  # Fallback seguro
+                    image_url = output[0]
                 else:
                     image_url = output
                 break
@@ -671,7 +669,7 @@ def process_smile():
         conn.close()
 
         print("=" * 60)
-        print("📤 [PYTHON REST] Simulação concluída com variação [2] do Replicate!")
+        print("📤 [PYTHON REST] Simulação concluída com variação [2] e trava oclusal!")
         print("=" * 60)
 
         return jsonify({
