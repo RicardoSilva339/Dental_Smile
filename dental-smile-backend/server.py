@@ -9,7 +9,7 @@ import traceback
 import requests
 import numpy as np
 from flask import Flask, request, jsonify
-from PIL import Image, ImageOps, ImageFilter
+from PIL import Image, ImageOps
 import cv2
 
 app = Flask(__name__)
@@ -68,7 +68,7 @@ def init_db():
 
 init_db()
 
-print("⚙️ Servidor iniciado com Fusão Suave e Isolamento Cromático Dental")
+print("⚙️ Servidor iniciado com Pipeline Direto Replicate e Isolamento Cromático Dental")
 
 def enviar_email_codigo(destinatario, nome, codigo, assunto="Código de Verificação - Dental Smile"):
     if not RESEND_API_KEY:
@@ -498,41 +498,19 @@ def process_smile():
         orig_image = ImageOps.exif_transpose(orig_image) or orig_image
 
         rgb_image = orig_image.convert("RGB")
-
         img_512 = rgb_image.resize((512, 512), Image.Resampling.LANCZOS)
-        imagem_rgb = np.array(img_512)
 
         print("=" * 60)
         print(f"📥 [PYTHON REST] Imagem 512x512 recebida | Cor selecionada: {selected_color.upper()}")
         print("=" * 60)
 
         buffered_orig = io.BytesIO()
-        img_512.save(buffered_orig, format="JPEG", quality=90)
-        original_processed_b64 = base64.b64encode(buffered_orig.getvalue()).decode('utf-8')
+        img_512.save(buffered_orig, format="JPEG", quality=92)
+        b64_clean = base64.b64encode(buffered_orig.getvalue()).decode('utf-8')
+        original_processed_b64 = b64_clean
+        image_uri = f"data:image/jpeg;base64,{b64_clean}"
 
-        mascara_sup = np.zeros((512, 512), dtype=np.uint8)
-
-        # 🛠️ MÁSCARA ELÍPTICA SUPERIOR ESTRITA
-        centro_x = 256
-        centro_y = int(512 * 0.48)
-        raio_x = int(512 * 0.26)
-        raio_y = int(512 * 0.048)
-        cv2.ellipse(mascara_sup, (centro_x, centro_y), (raio_x, raio_y), 0, 0, 360, 255, -1)
-
-        kernel = np.ones((5, 5), np.uint8)
-        mascara_sup_dilatada = cv2.dilate(mascara_sup, kernel, iterations=1)
-
-        mask_512 = Image.fromarray(mascara_sup_dilatada)
-
-        buffered_img_512 = io.BytesIO()
-        img_512.save(buffered_img_512, format="JPEG", quality=90)
-        image_uri = f"data:image/jpeg;base64,{base64.b64encode(buffered_img_512.getvalue()).decode('utf-8')}"
-
-        buffered_mask_512 = io.BytesIO()
-        mask_512.save(buffered_mask_512, format="PNG")
-        mask_uri = f"data:image/png;base64,{base64.b64encode(buffered_mask_512.getvalue()).decode('utf-8')}"
-
-        print("🚀 [REPLICATE REST] Disparando IA com prompt calibrado (<77 tokens) e trava oclusal...")
+        print("🚀 [REPLICATE REST] Disparando IA direta (sem máscara fixa) com prompt calibrado (<77 tokens)...")
 
         replicate_token = os.environ.get("REPLICATE_API_TOKEN")
         headers = {
@@ -540,7 +518,6 @@ def process_smile():
             "Content-Type": "application/json"
         }
 
-        # 🎯 PROMPTS CALIBRADOS ABAIXO DE 77 TOKENS (Prioridade máxima no CLIP)
         prompt_text = (
             "photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1>, "
             "(closed bite, aligned white teeth:1.3), beautiful natural teeth, human like teeth, "
@@ -553,16 +530,14 @@ def process_smile():
             "worst quality, low quality"
         )
 
+        # 🎯 PAYLOAD IDÊNTICO AO JSON VALIDADO NO REPLICATE
         payload = {
             "version": "4956c634b9aa976129f13166c713f8cf38bd337cd58c77925e8cd71d935d5696",
             "input": {
                 "image": image_uri,
-                "mask": mask_uri,
                 "prompt": prompt_text,
                 "negative_prompt": negative_prompt_text,
-                "num_outputs": 4,
-                "num_inference_steps": 50,
-                "guidance_scale": 7.5
+                "num_outputs": 1
             }
         }
 
@@ -586,13 +561,9 @@ def process_smile():
 
             if status == "succeeded":
                 output = poll_data.get("output")
-
-                # 🎯 CORREÇÃO CIRÚRGICA: Seleciona a variação [2] (ou fallback seguro)
-                if isinstance(output, list) and len(output) > 2:
-                    image_url = output[2]
-                    print("✅ [REPLICATE] Variação [2] selecionada com sucesso!")
-                elif isinstance(output, list) and len(output) > 0:
+                if isinstance(output, list) and len(output) > 0:
                     image_url = output[0]
+                    print("✅ [REPLICATE] Simulação direta [0] recebida com sucesso!")
                 else:
                     image_url = output
                 break
@@ -607,11 +578,9 @@ def process_smile():
 
         ai_image_raw = Image.open(io.BytesIO(ai_image_bytes)).convert("RGB")
         ai_crop_restaurado = ai_image_raw.resize((512, 512), Image.Resampling.LANCZOS)
-
         ai_np = np.array(ai_crop_restaurado)
-        orig_np = np.array(imagem_rgb)
 
-        # 🎨 ISOLAMENTO CROMÁTICO: Aplica o ajuste de cor BL1-BL4 apenas nos pixels claros (dentes)
+        # 🎨 ISOLAMENTO CROMÁTICO: Aplica a tonalidade BL1-BL4 apenas nos pixels claros (dentes)
         hsv_ai = cv2.cvtColor(ai_np, cv2.COLOR_RGB2HSV).astype(np.float32)
 
         tooth_mask = ((hsv_ai[:, :, 2] > 110) & (hsv_ai[:, :, 1] < 115)).astype(np.float32)
@@ -636,26 +605,7 @@ def process_smile():
         hsv_ai[:, :, 2] = np.clip(hsv_ai[:, :, 2] * (1.0 + (val_mult - 1.0) * tooth_mask_smooth), 0, 255)
         hsv_ai[:, :, 1] = np.clip(hsv_ai[:, :, 1] * (1.0 + (sat_mult - 1.0) * tooth_mask_smooth), 0, 255)
 
-        ai_colorido_np = cv2.cvtColor(hsv_ai.astype(np.uint8), cv2.COLOR_HSV2RGB)
-
-        # 🛡️ BLINDAGEM OCLUSAL INFERIOR COM TRANSIÇÃO SUAVE
-        limite_inferior = int(512 * 0.52)
-        fade_height = 14
-
-        alpha_mask = np.zeros((512, 512), dtype=np.float32)
-        alpha_mask[:limite_inferior - fade_height, :] = 1.0
-        for idx, y in enumerate(range(limite_inferior - fade_height, limite_inferior)):
-            alpha_mask[y, :] = 1.0 - (idx / float(fade_height))
-
-        crop_mask_pil = Image.fromarray(mascara_sup_dilatada).filter(ImageFilter.GaussianBlur(radius=5))
-        ellipse_alpha = np.array(crop_mask_pil, dtype=np.float32) / 255.0
-
-        final_alpha = np.expand_dims(ellipse_alpha * alpha_mask, axis=2)
-
-        imagem_final_rgb = (
-            ai_colorido_np.astype(np.float32) * final_alpha +
-            orig_np.astype(np.float32) * (1.0 - final_alpha)
-        ).astype(np.uint8)
+        imagem_final_rgb = cv2.cvtColor(hsv_ai.astype(np.uint8), cv2.COLOR_HSV2RGB)
 
         final_bgr = cv2.cvtColor(imagem_final_rgb, cv2.COLOR_RGB2BGR)
         _, buffer = cv2.imencode('.jpg', final_bgr, [cv2.IMWRITE_JPEG_QUALITY, 95])
@@ -669,7 +619,7 @@ def process_smile():
         conn.close()
 
         print("=" * 60)
-        print("📤 [PYTHON REST] Simulação concluída com variação [2] e trava oclusal!")
+        print("📤 [PYTHON REST] Simulação concluída com pipeline direto do Replicate!")
         print("=" * 60)
 
         return jsonify({
