@@ -68,7 +68,7 @@ def init_db():
 
 init_db()
 
-print("⚙️ Servidor iniciado com Fusão Suave e Blindagem Oclusal Inferior")
+print("⚙️ Servidor iniciado com Calibração Térmica BL1-BL4 e Harmonização Oclusal")
 
 def enviar_email_codigo(destinatario, nome, codigo, assunto="Código de Verificação - Dental Smile"):
     if not RESEND_API_KEY:
@@ -527,7 +527,7 @@ def process_smile():
         mask_512.save(buffered_mask_512, format="PNG")
         mask_uri = f"data:image/png;base64,{base64.b64encode(buffered_mask_512.getvalue()).decode('utf-8')}"
 
-        print("🚀 [REPLICATE REST] Disparando IA com máscara superior, fusão suave e prompt calibrado (<77 tokens)...")
+        print("🚀 [REPLICATE REST] Disparando IA com calibração térmica BL1-BL4 e harmonização oclusal...")
 
         replicate_token = os.environ.get("REPLICATE_API_TOKEN")
         headers = {
@@ -598,37 +598,45 @@ def process_smile():
         ai_image_raw = Image.open(io.BytesIO(ai_image_bytes)).convert("RGB")
         ai_crop_restaurado = ai_image_raw.resize((512, 512), Image.Resampling.LANCZOS)
 
-        ai_np = np.array(ai_crop_restaurado)
-        orig_np = np.array(imagem_rgb)
+        ai_np = np.array(ai_crop_restaurado).astype(np.float32)
+        orig_np = np.array(imagem_rgb).astype(np.float32)
 
-        # 🎨 ISOLAMENTO CROMÁTICO: Aplica a tonalidade BL1-BL4 apenas nos pixels claros (dentes)
-        hsv_ai = cv2.cvtColor(ai_np, cv2.COLOR_RGB2HSV).astype(np.float32)
+        # 🎨 1. CALIBRAÇÃO TÉRMICA NATURAL (Neutraliza o azul frio da IA e aplica BL1-BL4)
+        hsv_ai = cv2.cvtColor(ai_np.astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
+        tooth_mask_sup = ((hsv_ai[:, :, 2] > 110) & (hsv_ai[:, :, 1] < 115)).astype(np.float32)
+        tooth_mask_sup_smooth = cv2.GaussianBlur(tooth_mask_sup, (7, 7), 0)
 
-        tooth_mask = ((hsv_ai[:, :, 2] > 110) & (hsv_ai[:, :, 1] < 115)).astype(np.float32)
-        tooth_mask_smooth = cv2.GaussianBlur(tooth_mask, (7, 7), 0)
-
-        val_mult = 1.00
-        sat_mult = 1.00
-
+        # Ajustes de temperatura RGB (R = aquece/marfim, B = reduz o azul frio)
+        r_gain, g_gain, b_gain = 1.00, 1.00, 1.00
         if selected_color == 'bl1':
-            val_mult = 1.04
-            sat_mult = 0.92
+            r_gain, g_gain, b_gain = 1.02, 1.01, 0.96   # Branco puro natural sem azular
         elif selected_color == 'bl2':
-            val_mult = 1.01
-            sat_mult = 0.98
+            r_gain, g_gain, b_gain = 1.03, 1.01, 0.93   # Branco natural equilibrado
         elif selected_color == 'bl3':
-            val_mult = 0.98
-            sat_mult = 1.03
+            r_gain, g_gain, b_gain = 1.04, 1.00, 0.89   # Marfim natural suave
         elif selected_color == 'bl4':
-            val_mult = 0.96
-            sat_mult = 1.06
+            r_gain, g_gain, b_gain = 1.05, 0.99, 0.85   # Marfim quente natural
 
-        hsv_ai[:, :, 2] = np.clip(hsv_ai[:, :, 2] * (1.0 + (val_mult - 1.0) * tooth_mask_smooth), 0, 255)
-        hsv_ai[:, :, 1] = np.clip(hsv_ai[:, :, 1] * (1.0 + (sat_mult - 1.0) * tooth_mask_smooth), 0, 255)
+        ai_colorido_np = ai_np.copy()
+        ai_colorido_np[:, :, 0] = np.clip(ai_np[:, :, 0] * (1.0 + (r_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
+        ai_colorido_np[:, :, 1] = np.clip(ai_np[:, :, 1] * (1.0 + (g_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
+        ai_colorido_np[:, :, 2] = np.clip(ai_np[:, :, 2] * (1.0 + (b_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
 
-        ai_colorido_np = cv2.cvtColor(hsv_ai.astype(np.uint8), cv2.COLOR_HSV2RGB)
+        # ✨ 2. HARMONIZAÇÃO SUTIL DOS DENTES INFERIORES ORIGINAIS (Tira o amarelado sem deformar)
+        hsv_orig = cv2.cvtColor(orig_np.astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
+        # Detecta apenas os dentes originais (baixa saturação relativa ao lábio vermelho/rosa, brilho médio-alto)
+        lower_tooth_mask = ((hsv_orig[:, :, 2] > 95) & (hsv_orig[:, :, 1] < 130) & (hsv_orig[:, :, 0] > 10) & (hsv_orig[:, :, 0] < 35)).astype(np.float32)
+        lower_tooth_smooth = cv2.GaussianBlur(lower_tooth_mask, (7, 7), 0)
 
-        # 🛡️ BLINDAGEM OCLUSAL INFERIOR COM TRANSIÇÃO SUAVE AMPLIADA
+        # Reduz suavemente o amarelo e sobe levemente o brilho nos dentes inferiores originais
+        sat_reduce = 0.68 if selected_color in ['bl1', 'bl2'] else 0.78
+        val_boost = 1.12 if selected_color in ['bl1', 'bl2'] else 1.07
+
+        hsv_orig[:, :, 1] = np.clip(hsv_orig[:, :, 1] * (1.0 - (1.0 - sat_reduce) * lower_tooth_smooth), 0, 255)
+        hsv_orig[:, :, 2] = np.clip(hsv_orig[:, :, 2] * (1.0 + (val_boost - 1.0) * lower_tooth_smooth), 0, 255)
+        orig_harmonizado_np = cv2.cvtColor(hsv_orig.astype(np.uint8), cv2.COLOR_HSV2RGB).astype(np.float32)
+
+        # 🛡️ 3. BLINDAGEM OCLUSAL INFERIOR COM TRANSIÇÃO SUAVE AMPLIADA
         limite_inferior = int(512 * 0.52)
         fade_height = 22
 
@@ -643,8 +651,8 @@ def process_smile():
         final_alpha = np.expand_dims(ellipse_alpha * alpha_mask, axis=2)
 
         imagem_final_rgb = (
-            ai_colorido_np.astype(np.float32) * final_alpha +
-            orig_np.astype(np.float32) * (1.0 - final_alpha)
+            ai_colorido_np * final_alpha +
+            orig_harmonizado_np * (1.0 - final_alpha)
         ).astype(np.uint8)
 
         final_bgr = cv2.cvtColor(imagem_final_rgb, cv2.COLOR_RGB2BGR)
@@ -659,7 +667,7 @@ def process_smile():
         conn.close()
 
         print("=" * 60)
-        print("📤 [PYTHON REST] Simulação concluída com blindagem oclusal e proporção natural!")
+        print("📤 [PYTHON REST] Simulação concluída com calibração térmica e harmonização!")
         print("=" * 60)
 
         return jsonify({
