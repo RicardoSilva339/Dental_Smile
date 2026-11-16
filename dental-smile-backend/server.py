@@ -68,7 +68,7 @@ def init_db():
 
 init_db()
 
-print("⚙️ Servidor iniciado com Calibração Térmica BL1-BL4 e Harmonização Oclusal Protegida")
+print("⚙️ Servidor iniciado com Calibração Térmica BL1-BL4 e Oclusão Superior Preservada")
 
 def enviar_email_codigo(destinatario, nome, codigo, assunto="Código de Verificação - Dental Smile"):
     if not RESEND_API_KEY:
@@ -511,12 +511,12 @@ def process_smile():
         original_processed_b64 = b64_clean
         image_uri = f"data:image/jpeg;base64,{b64_clean}"
 
-        # 🛠️ MÁSCARA ELÍPTICA SUPERIOR ESTRITA
+        # 🛠️ MÁSCARA SUPERIOR PRECISA (Mantém o lábio superior original intacto)
         mascara_sup = np.zeros((512, 512), dtype=np.uint8)
         centro_x = 256
-        centro_y = int(512 * 0.48)
-        raio_x = int(512 * 0.26)
-        raio_y = int(512 * 0.048)
+        centro_y = int(512 * 0.46)
+        raio_x = int(512 * 0.25)
+        raio_y = int(512 * 0.042)
         cv2.ellipse(mascara_sup, (centro_x, centro_y), (raio_x, raio_y), 0, 0, 360, 255, -1)
 
         kernel = np.ones((5, 5), np.uint8)
@@ -527,7 +527,7 @@ def process_smile():
         mask_512.save(buffered_mask_512, format="PNG")
         mask_uri = f"data:image/png;base64,{base64.b64encode(buffered_mask_512.getvalue()).decode('utf-8')}"
 
-        print("🚀 [REPLICATE REST] Disparando IA com calibração térmica BL1-BL4 e harmonização oclusal protegida...")
+        print("🚀 [REPLICATE REST] Disparando IA com calibração térmica e oclusão superior preservada...")
 
         replicate_token = os.environ.get("REPLICATE_API_TOKEN")
         headers = {
@@ -623,7 +623,7 @@ def process_smile():
 
         # ✨ 2. HARMONIZAÇÃO SUTIL DOS DENTES INFERIORES (RESTRITA EXCLUSIVAMENTE À BOCA)
         mascara_boca_inf = np.zeros((512, 512), dtype=np.uint8)
-        cv2.ellipse(mascara_boca_inf, (256, int(512 * 0.52)), (int(512 * 0.24), int(512 * 0.08)), 0, 0, 360, 255, -1)
+        cv2.ellipse(mascara_boca_inf, (256, int(512 * 0.54)), (int(512 * 0.22), int(512 * 0.06)), 0, 0, 360, 255, -1)
         zona_boca_inf = cv2.GaussianBlur(mascara_boca_inf.astype(np.float32) / 255.0, (15, 15), 0)
 
         hsv_orig = cv2.cvtColor(orig_np.astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
@@ -637,16 +637,16 @@ def process_smile():
         hsv_orig[:, :, 2] = np.clip(hsv_orig[:, :, 2] * (1.0 + (val_boost - 1.0) * lower_tooth_smooth), 0, 255)
         orig_harmonizado_np = cv2.cvtColor(hsv_orig.astype(np.uint8), cv2.COLOR_HSV2RGB).astype(np.float32)
 
-        # 🛡️ 3. BLINDAGEM OCLUSAL INFERIOR NÍTIDA (Sem fusão fantasma entre arcadas)
-        limite_inferior = int(512 * 0.52)
-        fade_height = 12
+        # 🛡️ 3. BLINDAGEM OCLUSAL INFERIOR MAIS ALTA (Oculta completamente os dentes inferiores)
+        limite_inferior = int(512 * 0.49)  # Subido de 0.52 para 0.49 para cobrir os dentes de baixo
+        fade_height = 10
 
         alpha_mask = np.zeros((512, 512), dtype=np.float32)
         alpha_mask[:limite_inferior - fade_height, :] = 1.0
         for idx, y in enumerate(range(limite_inferior - fade_height, limite_inferior)):
             alpha_mask[y, :] = 1.0 - (idx / float(fade_height))
 
-        crop_mask_pil = Image.fromarray(mascara_sup_dilatada).filter(ImageFilter.GaussianBlur(radius=5))
+        crop_mask_pil = Image.fromarray(mascara_sup_dilatada).filter(ImageFilter.GaussianBlur(radius=4))
         ellipse_alpha = np.array(crop_mask_pil, dtype=np.float32) / 255.0
 
         final_alpha = np.expand_dims(ellipse_alpha * alpha_mask, axis=2)
@@ -668,7 +668,7 @@ def process_smile():
         conn.close()
 
         print("=" * 60)
-        print("📤 [PYTHON REST] Simulação concluída com pele protegida e separação oclusal nítida!")
+        print("📤 [PYTHON REST] Simulação concluída: Lábio superior original + dentes inferiores ocultos!")
         print("=" * 60)
 
         return jsonify({

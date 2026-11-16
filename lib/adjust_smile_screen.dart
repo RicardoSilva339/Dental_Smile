@@ -35,20 +35,6 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
   late String _selectedColor;
   bool _isInit = true;
 
-  // 🔄 Variáveis para controlar as mensagens dinâmicas dentro do botão a cada 15 segundos
-  Timer? _timerMensagens;
-  int _mensagemIndex = 0;
-
-  final List<String> _mensagensLoading = [
-    "Conectando ao servidor seguro de IA...",
-    "Acordando motor gráfico na nuvem (GPU)...",
-    "Enviando matriz de imagem do paciente...",
-    "Processando proporções e alinhamento do sorriso...",
-    "Aplicando escala Bleach selecionada...",
-    "Finalizando renderização de alta precisão...",
-    "Quase pronto! Otimizando resultado final..."
-  ];
-
   // 🦷 Apenas os códigos curtos e objetivos
   final Map<String, String> _colors = {
     'bl1': 'BL1',
@@ -70,12 +56,6 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
     if (_isInit) {
       _isInit = false;
     }
-  }
-
-  @override
-  void dispose() {
-    _timerMensagens?.cancel();
-    super.dispose();
   }
 
   String _obterApiKeyAtual() {
@@ -137,15 +117,6 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
 
     setState(() {
       _isProcessing = true;
-      _mensagemIndex = 0;
-    });
-
-    _timerMensagens = Timer.periodic(const Duration(seconds: 15), (timer) {
-      if (mounted) {
-        setState(() {
-          _mensagemIndex = (_mensagemIndex + 1) % _mensagensLoading.length;
-        });
-      }
     });
 
     String? processedImagePath;
@@ -161,10 +132,8 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
         shape: 'Oval',
         size: 'Médio',
         apiKey: apiKey.isNotEmpty ? apiKey : '',
-        deviceId: deviceId, // 👈 Adicionado o deviceId exigido pela API
+        deviceId: deviceId,
       );
-
-      _timerMensagens?.cancel();
 
       if (resultado['success'] == true) {
         processedImagePath = resultado['imagePath'];
@@ -190,7 +159,6 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
         }
       }
     } catch (e) {
-      _timerMensagens?.cancel();
       debugPrint("Falha na chamada do servidor: $e");
     }
 
@@ -372,7 +340,7 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
                   )
                       : const Icon(Icons.auto_awesome, size: 18),
                   label: Text(
-                    _isProcessing ? _mensagensLoading[_mensagemIndex] : 'Aplicar Clareamento',
+                    _isProcessing ? 'Processando...' : 'Aplicar Clareamento',
                     style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
                     textAlign: TextAlign.center,
                   ),

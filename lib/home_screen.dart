@@ -12,7 +12,8 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen>
+    with SingleTickerProviderStateMixin {
   // 🔒 Flag estática: evita verificações pesadas repetidas na mesma sessão
   static bool _jaInicializouSessao = false;
 
@@ -21,9 +22,19 @@ class _HomeScreenState extends State<HomeScreen> {
   Timer? _timerAvisoServidor;
   DateTime? _momentoExibicaoCard;
 
+  // 🔴 Controlador da animação piscante em vermelho para o aviso de conexão
+  late AnimationController _blinkController;
+  late Animation<double> _blinkAnimation;
+
   @override
   void initState() {
     super.initState();
+
+    _blinkController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 700),
+    )..repeat(reverse: true);
+    _blinkAnimation = Tween<double>(begin: 0.35, end: 1.0).animate(_blinkController);
 
     // 🛡️ Recupera imediatamente o último saldo salvo em cache local para evitar piscar zero
     final boxUser = Hive.box('box_usuario');
@@ -40,6 +51,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _timerAvisoServidor?.cancel();
+    _blinkController.dispose();
     super.dispose();
   }
 
@@ -56,7 +68,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     // Aguarda 3 segundos antes de exibir o card de conexão:
     // - Servidor ativo: carrega silenciosamente sem piscar
-    // - Servidor dormindo: exibe o aviso transparente de conexão após 3s
+    // - Servidor dormindo: exibe o aviso elegante de conexão após 3s
     if (isInitial && apiKey.isNotEmpty) {
       _timerAvisoServidor?.cancel();
       _timerAvisoServidor = Timer(const Duration(milliseconds: 3000), () {
@@ -407,179 +419,194 @@ class _HomeScreenState extends State<HomeScreen> {
     final bool saldoZerado = _creditos <= 0;
 
     return Scaffold(
-      body: Background(
-        imagePath: 'assets/images/antes_depois.jpg',
-        opacity: 0.9,
-        child: SafeArea(
-          child: _isLoadingCredits
-              ? Center(
-            child: Container(
-              padding: const EdgeInsets.all(24),
-              margin: const EdgeInsets.symmetric(horizontal: 32),
-              decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.75),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.white24),
-              ),
-              child: const Column(
-                mainAxisSize: MainAxisSize.min,
+      body: Stack(
+        children: [
+          Background(
+            imagePath: 'assets/images/antes_depois.jpg',
+            opacity: 0.9,
+            child: SafeArea(
+              child: Column(
                 children: [
-                  CircularProgressIndicator(color: Colors.amber),
-                  SizedBox(height: 20),
-                  Text(
-                    'Conectando ao servidor...\nPreparando o sistema.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      height: 1.4,
+                  // Topo com Badge de Créditos
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 12.0),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Dental Smile',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                        Container(
+                          decoration: BoxDecoration(
+                            color: !estaLogado
+                                ? Colors.black.withOpacity(0.30)
+                                : (saldoZerado
+                                ? Colors.red.shade900.withOpacity(0.8)
+                                : Colors.black.withOpacity(0.55)),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: !estaLogado
+                                  ? Colors.white.withOpacity(0.25)
+                                  : (saldoZerado ? Colors.redAccent : Colors.amber.withOpacity(0.7)),
+                              width: 1.2,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              InkWell(
+                                borderRadius: const BorderRadius.horizontal(left: Radius.circular(20)),
+                                onTap: _mostrarMenuAcessoOuLoja,
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        !estaLogado
+                                            ? Icons.lock_outline
+                                            : (saldoZerado ? Icons.add_shopping_cart : Icons.stars),
+                                        color: !estaLogado
+                                            ? Colors.white54
+                                            : (saldoZerado ? Colors.redAccent : Colors.amber),
+                                        size: 16,
+                                      ),
+                                      const SizedBox(width: 5),
+                                      Text(
+                                        !estaLogado ? '3 CR' : '$_creditos CR',
+                                        style: TextStyle(
+                                          color: !estaLogado
+                                              ? Colors.white54
+                                              : (saldoZerado ? Colors.red.shade100 : Colors.white),
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              Container(height: 16, width: 1, color: Colors.white24),
+                              InkWell(
+                                borderRadius: const BorderRadius.horizontal(right: Radius.circular(20)),
+                                onTap: _mostrarMenuAcessoOuLoja,
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        estaLogado ? Icons.account_circle : Icons.login,
+                                        color: Colors.white,
+                                        size: 16,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        estaLogado ? 'Conta' : 'Ativar',
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  SizedBox(height: 8),
-                  Text(
-                    'Aguarde alguns segundos enquanto o servidor desperta.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Colors.white70,
-                      fontSize: 12,
+
+                  // Conteúdo Central
+                  Expanded(
+                    child: Center(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                minimumSize: const Size(double.infinity, 60),
+                                textStyle: const TextStyle(fontSize: 23, fontWeight: FontWeight.w600),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                backgroundColor: Colors.indigo[300],
+                                foregroundColor: Colors.white,
+                              ),
+                              onPressed: _aoClicarNovaSimulacao,
+                              child: const Text('Nova Simulação'),
+                            ),
+                            const SizedBox(height: 20),
+                            _buildButton(context, 'Histórico de Simulações', '/history'),
+                            const SizedBox(height: 20),
+                            _buildButton(context, 'Sobre o Tratamento', '/about'),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
                 ],
               ),
             ),
-          )
-              : Column(
-            children: [
-              // Topo com Badge de Créditos
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 12.0),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'Dental Smile',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
+          ),
+          if (_isLoadingCredits)
+            Container(
+              color: Colors.black.withOpacity(0.65),
+              child: Center(
+                child: Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 28),
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF2B2B2B).withOpacity(0.95),
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: Colors.redAccent.withOpacity(0.4), width: 1.2),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const CircularProgressIndicator(
+                        color: Colors.amber,
+                        strokeWidth: 3.5,
                       ),
-                    ),
-                    Container(
-                      decoration: BoxDecoration(
-                        color: !estaLogado
-                            ? Colors.black.withOpacity(0.30)
-                            : (saldoZerado
-                            ? Colors.red.shade900.withOpacity(0.8)
-                            : Colors.black.withOpacity(0.55)),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: !estaLogado
-                              ? Colors.white.withOpacity(0.25)
-                              : (saldoZerado ? Colors.redAccent : Colors.amber.withOpacity(0.7)),
-                          width: 1.2,
+                      const SizedBox(height: 20),
+                      const Text(
+                        'Estabelecendo conexão com o servidor,',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                          height: 1.3,
                         ),
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          InkWell(
-                            borderRadius: const BorderRadius.horizontal(left: Radius.circular(20)),
-                            onTap: _mostrarMenuAcessoOuLoja,
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    !estaLogado
-                                        ? Icons.lock_outline
-                                        : (saldoZerado ? Icons.add_shopping_cart : Icons.stars),
-                                    color: !estaLogado
-                                        ? Colors.white54
-                                        : (saldoZerado ? Colors.redAccent : Colors.amber),
-                                    size: 16,
-                                  ),
-                                  const SizedBox(width: 5),
-                                  Text(
-                                    !estaLogado ? '3 CR' : '$_creditos CR',
-                                    style: TextStyle(
-                                      color: !estaLogado
-                                          ? Colors.white54
-                                          : (saldoZerado ? Colors.red.shade100 : Colors.white),
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 13,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
+                      const SizedBox(height: 6),
+                      FadeTransition(
+                        opacity: _blinkAnimation,
+                        child: const Text(
+                          'favor aguardar alguns instantes',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.redAccent,
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            height: 1.3,
                           ),
-                          Container(height: 16, width: 1, color: Colors.white24),
-                          InkWell(
-                            borderRadius: const BorderRadius.horizontal(right: Radius.circular(20)),
-                            onTap: _mostrarMenuAcessoOuLoja,
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    estaLogado ? Icons.account_circle : Icons.login,
-                                    color: Colors.white,
-                                    size: 16,
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    estaLogado ? 'Conta' : 'Ativar',
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              // Conteúdo Central
-              Expanded(
-                child: Center(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            minimumSize: const Size(double.infinity, 60),
-                            textStyle: const TextStyle(fontSize: 23, fontWeight: FontWeight.w600),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            backgroundColor: Colors.indigo[300],
-                            foregroundColor: Colors.white,
-                          ),
-                          onPressed: _aoClicarNovaSimulacao,
-                          child: const Text('Nova Simulação'),
                         ),
-                        const SizedBox(height: 20),
-                        _buildButton(context, 'Histórico de Simulações', '/history'),
-                        const SizedBox(height: 20),
-                        _buildButton(context, 'Sobre o Tratamento', '/about'),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
               ),
-            ],
-          ),
-        ),
+            ),
+        ],
       ),
     );
   }

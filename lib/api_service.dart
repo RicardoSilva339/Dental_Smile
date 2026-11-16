@@ -109,7 +109,7 @@ class ApiService {
     }
   }
 
-  // 4. Esqueci minha senha (envia código de 6 dígitos para redefinição)
+  // 4. Esqueci minha senha (envia código de 6 dígitos para redefinir)
   static Future<dynamic> forgotPassword({required String email}) async {
     try {
       final url = Uri.parse('$baseUrl/forgot-password');
@@ -218,7 +218,8 @@ class ApiService {
     String shape = 'Oval',
     String size = 'Médio',
     required String apiKey,
-    List<double>? mouthBox, required String deviceId,
+    List<double>? mouthBox,
+    required String deviceId,
   }) async {
     try {
       final url = Uri.parse('$baseUrl/process-smile');
@@ -226,21 +227,21 @@ class ApiService {
       List<int> imageBytes = await imageFile.readAsBytes();
       String base64Image = base64Encode(imageBytes);
 
-      String deviceId = await _getDeviceId();
+      String currentDeviceId = await _getDeviceId();
 
       final response = await http.post(
         url,
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'api_key': apiKey,
-          'device_id': deviceId,
+          'device_id': currentDeviceId,
           'image': base64Image,
           'color': color,
           'shape': shape,
           'size': size,
           if (mouthBox != null) 'mouth_box': mouthBox,
         }),
-      ).timeout(const Duration(seconds: 120));
+      ).timeout(const Duration(seconds: 180));
 
       final data = jsonDecode(response.body);
 
@@ -275,7 +276,7 @@ class ApiService {
       if (mensagemErro.contains('Connection reset by peer') || mensagemErro.contains('SocketException')) {
         mensagemErro = 'A conexão com o servidor foi interrompida durante o download da imagem. Verifique sua internet e tente novamente.';
       } else if (mensagemErro.contains('TimeoutException')) {
-        mensagemErro = 'O tempo limite de processamento foi atingido. A IA na nuvem demou a responder.';
+        mensagemErro = 'O tempo limite de processamento foi atingido. A IA na nuvem demorou a responder.';
       }
 
       return {'success': false, 'error': mensagemErro};
