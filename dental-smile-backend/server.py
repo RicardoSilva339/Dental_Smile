@@ -68,7 +68,7 @@ def init_db():
 
 init_db()
 
-print("⚙️ Servidor iniciado com Calibração Térmica BL1-BL4 e Proporção Coronária Superior Calibrada")
+print("⚙️ Servidor iniciado com Prompt Oficial do Replicate e Calibração Térmica BL1-BL4")
 
 def enviar_email_codigo(destinatario, nome, codigo, assunto="Código de Verificação - Dental Smile"):
     if not RESEND_API_KEY:
@@ -511,7 +511,7 @@ def process_smile():
         original_processed_b64 = b64_clean
         image_uri = f"data:image/jpeg;base64,{b64_clean}"
 
-        # 🛠️ MÁSCARA SUPERIOR CALIBRADA PARA ALTURA CORONÁRIA COMPLETA (0.455 / 0.062)
+        # 🛠️ MÁSCARA SUPERIOR CALIBRADA (0.455 / 0.062)
         mascara_sup = np.zeros((512, 512), dtype=np.uint8)
         centro_x = 256
         centro_y = int(512 * 0.455)
@@ -527,7 +527,7 @@ def process_smile():
         mask_512.save(buffered_mask_512, format="PNG")
         mask_uri = f"data:image/png;base64,{base64.b64encode(buffered_mask_512.getvalue()).decode('utf-8')}"
 
-        print("🚀 [REPLICATE REST] Disparando IA com altura coronária completa e proporção padrão...")
+        print("🚀 [REPLICATE REST] Disparando IA com o prompt oficial do playground...")
 
         replicate_token = os.environ.get("REPLICATE_API_TOKEN")
         headers = {
@@ -535,16 +535,26 @@ def process_smile():
             "Content-Type": "application/json"
         }
 
+        # 🎯 PROMPT OFICIAL DO PLAYGROUND DO REPLICATE
         prompt_text = (
-            "photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1>, "
-            "upper teeth only, well-proportioned natural teeth, realistic dental veneers, "
-            "aligned white teeth, human like teeth, (no teeth gap), good proportion teeth, realistic texture"
+            "photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1>"
+            "(Beautiful natural teeth, aligned bite teeth), aligned white teeth, "
+            "human like teeth, (no teeth gap), celebrity-like teeth, "
+            "healthy teeth with a perfect smile, not big incisor, "
+            "good proportion teeth, good proportion smile"
         )
+
+        # 🛡️ NEGATIVE PROMPT OFICIAL DO PLAYGROUND DO REPLICATE
         negative_prompt_text = (
-            "(open mouth, gaping, jaw opening, protruding lower teeth, double row of teeth:1.5), "
-            "(deformed, distorted, abnormal teeth:1.3, large teeth:1.8, short teeth:1.4), bad anatomy, rabbit teeth, "
-            "missing teeth, disconnected teeth, unnatural mouth, crooked teeth, cgi, 3d, cartoon, "
-            "worst quality, low quality"
+            "(deformed teeth, semi-realistic, cgi, 3d, render, sketch, cartoon, drawing, anime), "
+            "(deformed, distorted, abnormal teeth:1.3, disfigured:1.3, large teeth:2), "
+            "poorly drawn, Fixer, bad anatomy, rabbit teeth, wrong anatomy, "
+            "missing teeth, disconnected teeth, unnatural mouth, bunny teeth, "
+            "big incisor teeth, disproportionate front teeth, bad smile, reflection, "
+            "crooked teeth, distorted teeth, cropped, out of frame, worst quality, "
+            "low quality, jpeg artifacts, ugly, morbid, disfigured, gross proportions, "
+            "too many teeth, lipstick, lip gloss, too less teeth, unnatural size teeth, "
+            "poorly drawn mouth, poorly drawn teeth"
         )
 
         payload = {
@@ -658,7 +668,7 @@ def process_smile():
         conn.close()
 
         print("=" * 60)
-        print("📤 [PYTHON REST] Simulação concluída com coroas superiores no tamanho padrão!")
+        print("📤 [PYTHON REST] Simulação concluída com o prompt oficial do playground!")
         print("=" * 60)
 
         return jsonify({
