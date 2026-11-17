@@ -68,7 +68,7 @@ def init_db():
 
 init_db()
 
-print("⚙️ Servidor iniciado com Calibração Térmica BL1-BL4 e Oclusão Superior Preservada")
+print("⚙️ Servidor iniciado com Calibração Térmica BL1-BL4 e Máscara Dinâmica do Replicate")
 
 def enviar_email_codigo(destinatario, nome, codigo, assunto="Código de Verificação - Dental Smile"):
     if not RESEND_API_KEY:
@@ -511,7 +511,7 @@ def process_smile():
         original_processed_b64 = b64_clean
         image_uri = f"data:image/jpeg;base64,{b64_clean}"
 
-        # 🛠️ MÁSCARA SUPERIOR COM ESPAÇO AMPLIADO (centro_y em 0.43 para os dentes superiores)
+        # 🛠️ MÁSCARA SUAVE E NATURAL (Sem recortes rígidos)
         mascara_sup = np.zeros((512, 512), dtype=np.uint8)
         centro_x = 256
         centro_y = int(512 * 0.43)
@@ -519,15 +519,14 @@ def process_smile():
         raio_y = int(512 * 0.052)
         cv2.ellipse(mascara_sup, (centro_x, centro_y), (raio_x, raio_y), 0, 0, 360, 255, -1)
 
-        kernel = np.ones((5, 5), np.uint8)
-        mascara_sup_dilatada = cv2.dilate(mascara_sup, kernel, iterations=1)
-        mask_512 = Image.fromarray(mascara_sup_dilatada)
+        # Usamos um blur maior para a máscara fundir perfeitamente sem bordas duras
+        mask_512 = Image.fromarray(mascara_sup).filter(ImageFilter.GaussianBlur(radius=15))
 
         buffered_mask_512 = io.BytesIO()
         mask_512.save(buffered_mask_512, format="PNG")
         mask_uri = f"data:image/png;base64,{base64.b64encode(buffered_mask_512.getvalue()).decode('utf-8')}"
 
-        print("🚀 [REPLICATE REST] Disparando IA com calibração térmica e oclusão superior preservada...")
+        print("🚀 [REPLICATE REST] Disparando IA com máscara suave e prompt idêntico ao do site oficial...")
 
         replicate_token = os.environ.get("REPLICATE_API_TOKEN")
         headers = {
@@ -535,6 +534,7 @@ def process_smile():
             "Content-Type": "application/json"
         }
 
+        # Prompt exato otimizado idêntico ao teste do Replicate
         prompt_text = (
             "photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1>, "
             "upper teeth only, natural small teeth, realistic dental veneers, "
@@ -601,7 +601,7 @@ def process_smile():
         ai_np = np.array(ai_crop_restaurado).astype(np.float32)
         orig_np = np.array(imagem_rgb).astype(np.float32)
 
-        # 🎨 1. CALIBRAÇÃO TÉRMICA NATURAL (Neutraliza o azul frio da IA e aplica BL1-BL4)
+        # 🎨 1. CALIBRAÇÃO TÉRMICA NATURAL (BL1-BL4)
         hsv_ai = cv2.cvtColor(ai_np.astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
         tooth_mask_sup = ((hsv_ai[:, :, 2] > 110) & (hsv_ai[:, :, 1] < 115)).astype(np.float32)
         tooth_mask_sup_smooth = cv2.GaussianBlur(tooth_mask_sup, (7, 7), 0)
@@ -621,7 +621,7 @@ def process_smile():
         ai_colorido_np[:, :, 1] = np.clip(ai_np[:, :, 1] * (1.0 + (g_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
         ai_colorido_np[:, :, 2] = np.clip(ai_np[:, :, 2] * (1.0 + (b_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
 
-        # ✨ 2. HARMONIZAÇÃO SUTIL DOS DENTES INFERIORES (RESTRITA EXCLUSIVAMENTE À BOCA)
+        # ✨ 2. HARMONIZAÇÃO SUTIL DOS DENTES INFERIORES
         mascara_boca_inf = np.zeros((512, 512), dtype=np.uint8)
         cv2.ellipse(mascara_boca_inf, (256, int(512 * 0.54)), (int(512 * 0.22), int(512 * 0.06)), 0, 0, 360, 255, -1)
         zona_boca_inf = cv2.GaussianBlur(mascara_boca_inf.astype(np.float32) / 255.0, (15, 15), 0)
@@ -637,19 +637,9 @@ def process_smile():
         hsv_orig[:, :, 2] = np.clip(hsv_orig[:, :, 2] * (1.0 + (val_boost - 1.0) * lower_tooth_smooth), 0, 255)
         orig_harmonizado_np = cv2.cvtColor(hsv_orig.astype(np.uint8), cv2.COLOR_HSV2RGB).astype(np.float32)
 
-        # 🛡️ 3. BLINDAGEM OCLUSAL INFERIOR CORRIGIDA (Ajustada para 0.53 para cobrir os dentes de baixo)
-        limite_inferior = int(512 * 0.53)
-        fade_height = 10
-
-        alpha_mask = np.zeros((512, 512), dtype=np.float32)
-        alpha_mask[:limite_inferior - fade_height, :] = 1.0
-        for idx, y in enumerate(range(limite_inferior - fade_height, limite_inferior)):
-            alpha_mask[y, :] = 1.0 - (idx / float(fade_height))
-
-        crop_mask_pil = Image.fromarray(mascara_sup_dilatada).filter(ImageFilter.GaussianBlur(radius=4))
-        ellipse_alpha = np.array(crop_mask_pil, dtype=np.float32) / 255.0
-
-        final_alpha = np.expand_dims(ellipse_alpha * alpha_mask, axis=2)
+        # 🛡️ 4. BLINDAGEM NATURAL (Sem corte rígido inferior, usando apenas a máscara elíptica com blur)
+        ellipse_alpha = np.array(mask_512, dtype=np.float32) / 255.0
+        final_alpha = np.expand_dims(ellipse_alpha, axis=2)
 
         imagem_final_rgb = (
             ai_colorido_np * final_alpha +
@@ -668,7 +658,7 @@ def process_smile():
         conn.close()
 
         print("=" * 60)
-        print("📤 [PYTHON REST] Simulação concluída com elipse em 0.43 e limite inferior corrigido em 0.53!")
+        print("📤 [PYTHON REST] Simulação concluída com fusão natural idêntica ao Replicate!")
         print("=" * 60)
 
         return jsonify({
