@@ -68,7 +68,7 @@ def init_db():
 
 init_db()
 
-print("⚙️ Servidor iniciado com Calibração Térmica BL1-BL4 e Máscara Dinâmica do Replicate")
+print("⚙️ Servidor iniciado com Calibração Térmica BL1-BL4 e Proporção Coronária Superior Calibrada")
 
 def enviar_email_codigo(destinatario, nome, codigo, assunto="Código de Verificação - Dental Smile"):
     if not RESEND_API_KEY:
@@ -511,22 +511,23 @@ def process_smile():
         original_processed_b64 = b64_clean
         image_uri = f"data:image/jpeg;base64,{b64_clean}"
 
-        # 🛠️ MÁSCARA SUAVE E NATURAL (Sem recortes rígidos)
+        # 🛠️ MÁSCARA SUPERIOR CALIBRADA PARA ALTURA CORONÁRIA COMPLETA (0.455 / 0.062)
         mascara_sup = np.zeros((512, 512), dtype=np.uint8)
         centro_x = 256
-        centro_y = int(512 * 0.43)
+        centro_y = int(512 * 0.455)
         raio_x = int(512 * 0.26)
-        raio_y = int(512 * 0.052)
+        raio_y = int(512 * 0.062)
         cv2.ellipse(mascara_sup, (centro_x, centro_y), (raio_x, raio_y), 0, 0, 360, 255, -1)
 
-        # Usamos um blur maior para a máscara fundir perfeitamente sem bordas duras
-        mask_512 = Image.fromarray(mascara_sup).filter(ImageFilter.GaussianBlur(radius=15))
+        kernel = np.ones((3, 3), np.uint8)
+        mascara_sup_dilatada = cv2.dilate(mascara_sup, kernel, iterations=1)
+        mask_512 = Image.fromarray(mascara_sup_dilatada).filter(ImageFilter.GaussianBlur(radius=7))
 
         buffered_mask_512 = io.BytesIO()
         mask_512.save(buffered_mask_512, format="PNG")
         mask_uri = f"data:image/png;base64,{base64.b64encode(buffered_mask_512.getvalue()).decode('utf-8')}"
 
-        print("🚀 [REPLICATE REST] Disparando IA com máscara suave e prompt idêntico ao do site oficial...")
+        print("🚀 [REPLICATE REST] Disparando IA com altura coronária completa e proporção padrão...")
 
         replicate_token = os.environ.get("REPLICATE_API_TOKEN")
         headers = {
@@ -534,15 +535,14 @@ def process_smile():
             "Content-Type": "application/json"
         }
 
-        # Prompt exato otimizado idêntico ao teste do Replicate
         prompt_text = (
             "photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1>, "
-            "upper teeth only, natural small teeth, realistic dental veneers, "
+            "upper teeth only, well-proportioned natural teeth, realistic dental veneers, "
             "aligned white teeth, human like teeth, (no teeth gap), good proportion teeth, realistic texture"
         )
         negative_prompt_text = (
             "(open mouth, gaping, jaw opening, protruding lower teeth, double row of teeth:1.5), "
-            "(deformed, distorted, abnormal teeth:1.3, large teeth:1.8), bad anatomy, rabbit teeth, "
+            "(deformed, distorted, abnormal teeth:1.3, large teeth:1.8, short teeth:1.4), bad anatomy, rabbit teeth, "
             "missing teeth, disconnected teeth, unnatural mouth, crooked teeth, cgi, 3d, cartoon, "
             "worst quality, low quality"
         )
@@ -637,7 +637,7 @@ def process_smile():
         hsv_orig[:, :, 2] = np.clip(hsv_orig[:, :, 2] * (1.0 + (val_boost - 1.0) * lower_tooth_smooth), 0, 255)
         orig_harmonizado_np = cv2.cvtColor(hsv_orig.astype(np.uint8), cv2.COLOR_HSV2RGB).astype(np.float32)
 
-        # 🛡️ 4. BLINDAGEM NATURAL (Sem corte rígido inferior, usando apenas a máscara elíptica com blur)
+        # 🛡️ 3. FUSÃO NATURAL COM BORDAS CALIBRADAS
         ellipse_alpha = np.array(mask_512, dtype=np.float32) / 255.0
         final_alpha = np.expand_dims(ellipse_alpha, axis=2)
 
@@ -658,7 +658,7 @@ def process_smile():
         conn.close()
 
         print("=" * 60)
-        print("📤 [PYTHON REST] Simulação concluída com fusão natural idêntica ao Replicate!")
+        print("📤 [PYTHON REST] Simulação concluída com coroas superiores no tamanho padrão!")
         print("=" * 60)
 
         return jsonify({
