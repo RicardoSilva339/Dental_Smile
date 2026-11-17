@@ -68,7 +68,7 @@ def init_db():
 
 init_db()
 
-print("⚙️ Servidor iniciado com Prompt Oficial do Replicate e Calibração Térmica BL1-BL4")
+print("⚙️ Servidor iniciado com Prompt Otimizado (<77 tokens) e Calibração Térmica BL1-BL4")
 
 def enviar_email_codigo(destinatario, nome, codigo, assunto="Código de Verificação - Dental Smile"):
     if not RESEND_API_KEY:
@@ -527,7 +527,7 @@ def process_smile():
         mask_512.save(buffered_mask_512, format="PNG")
         mask_uri = f"data:image/png;base64,{base64.b64encode(buffered_mask_512.getvalue()).decode('utf-8')}"
 
-        print("🚀 [REPLICATE REST] Disparando IA com o prompt oficial do playground...")
+        print("🚀 [REPLICATE REST] Disparando IA com prompt otimizado (<77 tokens) e mascara suave...")
 
         replicate_token = os.environ.get("REPLICATE_API_TOKEN")
         headers = {
@@ -535,13 +535,12 @@ def process_smile():
             "Content-Type": "application/json"
         }
 
-        # 🎯 PROMPT OFICIAL DO PLAYGROUND DO REPLICATE
+        # 🎯 PROMPT OFICIAL OTIMIZADO PARA <77 TOKENS (SEM TRUNCAMENTO)
         prompt_text = (
-            "photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1>"
+            "photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1> "
             "(Beautiful natural teeth, aligned bite teeth), aligned white teeth, "
             "human like teeth, (no teeth gap), celebrity-like teeth, "
-            "healthy teeth with a perfect smile, not big incisor, "
-            "good proportion teeth, good proportion smile"
+            "healthy teeth with a perfect smile, good proportion teeth"
         )
 
         # 🛡️ NEGATIVE PROMPT OFICIAL DO PLAYGROUND DO REPLICATE
@@ -668,7 +667,7 @@ def process_smile():
         conn.close()
 
         print("=" * 60)
-        print("📤 [PYTHON REST] Simulação concluída com o prompt oficial do playground!")
+        print("📤 [PYTHON REST] Simulação concluída com prompt otimizado sem truncamento!")
         print("=" * 60)
 
         return jsonify({
