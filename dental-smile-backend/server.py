@@ -68,7 +68,7 @@ def init_db():
 
 init_db()
 
-print("⚙️ Servidor iniciado com Prompt Otimizado (<77 tokens) e Calibração Térmica BL1-BL4")
+print("⚙️ Servidor iniciado com Payload Oficial Nativo do Replicate e Calibração Térmica BL1-BL4")
 
 def enviar_email_codigo(destinatario, nome, codigo, assunto="Código de Verificação - Dental Smile"):
     if not RESEND_API_KEY:
@@ -511,23 +511,7 @@ def process_smile():
         original_processed_b64 = b64_clean
         image_uri = f"data:image/jpeg;base64,{b64_clean}"
 
-        # 🛠️ MÁSCARA SUPERIOR CALIBRADA (0.455 / 0.062)
-        mascara_sup = np.zeros((512, 512), dtype=np.uint8)
-        centro_x = 256
-        centro_y = int(512 * 0.455)
-        raio_x = int(512 * 0.26)
-        raio_y = int(512 * 0.062)
-        cv2.ellipse(mascara_sup, (centro_x, centro_y), (raio_x, raio_y), 0, 0, 360, 255, -1)
-
-        kernel = np.ones((3, 3), np.uint8)
-        mascara_sup_dilatada = cv2.dilate(mascara_sup, kernel, iterations=1)
-        mask_512 = Image.fromarray(mascara_sup_dilatada).filter(ImageFilter.GaussianBlur(radius=7))
-
-        buffered_mask_512 = io.BytesIO()
-        mask_512.save(buffered_mask_512, format="PNG")
-        mask_uri = f"data:image/png;base64,{base64.b64encode(buffered_mask_512.getvalue()).decode('utf-8')}"
-
-        print("🚀 [REPLICATE REST] Disparando IA com prompt otimizado (<77 tokens) e mascara suave...")
+        print("🚀 [REPLICATE REST] Disparando IA com payload oficial nativo (sem máscara externa)...")
 
         replicate_token = os.environ.get("REPLICATE_API_TOKEN")
         headers = {
@@ -535,37 +519,31 @@ def process_smile():
             "Content-Type": "application/json"
         }
 
-        # 🎯 PROMPT OFICIAL OTIMIZADO PARA <77 TOKENS (SEM TRUNCAMENTO)
+        # 🎯 PROMPT OFICIAL EXATO DO PLAYGROUND
         prompt_text = (
-            "photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1> "
-            "(Beautiful natural teeth, aligned bite teeth), aligned white teeth, "
-            "human like teeth, (no teeth gap), celebrity-like teeth, "
-            "healthy teeth with a perfect smile, good proportion teeth"
+            "photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1>"
+            "(Beautiful natural teeth,aligned bite teeth), aligned white teeth, human like teeth, (no teeth gap),"
+            "celebrity-like teeth, healthy teeth with a perfect smile, not big incisor,good proportion teeth,good proportion smile,"
         )
 
-        # 🛡️ NEGATIVE PROMPT OFICIAL DO PLAYGROUND DO REPLICATE
+        # 🛡️ NEGATIVE PROMPT OFICIAL EXATO DO PLAYGROUND
         negative_prompt_text = (
             "(deformed teeth, semi-realistic, cgi, 3d, render, sketch, cartoon, drawing, anime), "
-            "(deformed, distorted, abnormal teeth:1.3, disfigured:1.3, large teeth:2), "
-            "poorly drawn, Fixer, bad anatomy, rabbit teeth, wrong anatomy, "
-            "missing teeth, disconnected teeth, unnatural mouth, bunny teeth, "
-            "big incisor teeth, disproportionate front teeth, bad smile, reflection, "
-            "crooked teeth, distorted teeth, cropped, out of frame, worst quality, "
-            "low quality, jpeg artifacts, ugly, morbid, disfigured, gross proportions, "
-            "too many teeth, lipstick, lip gloss, too less teeth, unnatural size teeth, "
-            "poorly drawn mouth, poorly drawn teeth"
+            "(deformed, distorted, abnormal teeth:1.3, disfigured:1.3, large teeth:2),poorly drawn,Fixer, bad anatomy, rabbit teeth, "
+            "wrong anatomy, missing teeth, disconnected teeth, unnatural mouth, bunny teeth,big incisor teeth,disproportionate front teeth, "
+            "bad smile, reflection, crooked teeth, distorted teeth,cropped, out of frame, worst quality, low quality, "
+            "jpeg artifacts, ugly, morbid,disfigured, gross proportions,too many teeth,lipstick, lip gloss, "
+            "too less teeth, unnatural size teeth, poorly drawn mouth, poorly drawn teeth"
         )
 
+        # ⚙️ PAYLOAD NATIVO IDÊNTICO AO CÓDIGO PYTHON DO PLAYGROUND
         payload = {
             "version": "4956c634b9aa976129f13166c713f8cf38bd337cd58c77925e8cd71d935d5696",
             "input": {
                 "image": image_uri,
-                "mask": mask_uri,
                 "prompt": prompt_text,
                 "negative_prompt": negative_prompt_text,
-                "num_outputs": 1,
-                "num_inference_steps": 50,
-                "guidance_scale": 7.5
+                "num_outputs": 1
             }
         }
 
@@ -591,7 +569,7 @@ def process_smile():
                 output = poll_data.get("output")
                 if isinstance(output, list) and len(output) > 0:
                     image_url = output[0]
-                    print("✅ [REPLICATE] Simulação superior [0] recebida com sucesso!")
+                    print("✅ [REPLICATE] Simulação recebida com sucesso!")
                 else:
                     image_url = output
                 break
@@ -646,14 +624,9 @@ def process_smile():
         hsv_orig[:, :, 2] = np.clip(hsv_orig[:, :, 2] * (1.0 + (val_boost - 1.0) * lower_tooth_smooth), 0, 255)
         orig_harmonizado_np = cv2.cvtColor(hsv_orig.astype(np.uint8), cv2.COLOR_HSV2RGB).astype(np.float32)
 
-        # 🛡️ 3. FUSÃO NATURAL COM BORDAS CALIBRADAS
-        ellipse_alpha = np.array(mask_512, dtype=np.float32) / 255.0
-        final_alpha = np.expand_dims(ellipse_alpha, axis=2)
-
-        imagem_final_rgb = (
-            ai_colorido_np * final_alpha +
-            orig_harmonizado_np * (1.0 - final_alpha)
-        ).astype(np.uint8)
+        # 🛡️ 3. FUSÃO FINAL NATIVA COM A CALIBRAÇÃO TÉRMICA
+        # Como a IA já entregou a face tratada, aplicamos o thermal color grading suave sobre o resultado dela
+        imagem_final_rgb = ai_colorido_np.astype(np.uint8)
 
         final_bgr = cv2.cvtColor(imagem_final_rgb, cv2.COLOR_RGB2BGR)
         _, buffer = cv2.imencode('.jpg', final_bgr, [cv2.IMWRITE_JPEG_QUALITY, 95])
@@ -667,7 +640,7 @@ def process_smile():
         conn.close()
 
         print("=" * 60)
-        print("📤 [PYTHON REST] Simulação concluída com prompt otimizado sem truncamento!")
+        print("📤 [PYTHON REST] Simulação concluída com payload oficial nativo!")
         print("=" * 60)
 
         return jsonify({
