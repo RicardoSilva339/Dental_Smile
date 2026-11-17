@@ -68,7 +68,7 @@ def init_db():
 
 init_db()
 
-print("⚙️ Servidor iniciado com Abordagem Híbrida: Máscara Restritiva + Prompt Oficial + Calibração Térmica")
+print("⚙️ Servidor iniciado com Black Forest Labs Flux 2 Pro e Calibração BL1-BL4")
 
 def enviar_email_codigo(destinatario, nome, codigo, assunto="Código de Verificação - Dental Smile"):
     if not RESEND_API_KEY:
@@ -502,32 +502,13 @@ def process_smile():
         imagem_rgb = np.array(img_512)
 
         print("=" * 60)
-        print(f"📥 [PYTHON REST] Imagem 512x512 recebida | Cor selecionada: {selected_color.upper()}")
+        print(f"📥 [PYTHON REST] Imagem recebida | Cor selecionada: {selected_color.upper()}")
         print("=" * 60)
 
         buffered_orig = io.BytesIO()
         img_512.save(buffered_orig, format="JPEG", quality=92)
         b64_clean = base64.b64encode(buffered_orig.getvalue()).decode('utf-8')
         original_processed_b64 = b64_clean
-        image_uri = f"data:image/jpeg;base64,{b64_clean}"
-
-        # 🛠️ MÁSCARA SUPERIOR CALIBRADA DE CONTENÇÃO (0.455 / 0.062)
-        mascara_sup = np.zeros((512, 512), dtype=np.uint8)
-        centro_x = 256
-        centro_y = int(512 * 0.455)
-        raio_x = int(512 * 0.26)
-        raio_y = int(512 * 0.062)
-        cv2.ellipse(mascara_sup, (centro_x, centro_y), (raio_x, raio_y), 0, 0, 360, 255, -1)
-
-        kernel = np.ones((3, 3), np.uint8)
-        mascara_sup_dilatada = cv2.dilate(mascara_sup, kernel, iterations=1)
-        mask_512 = Image.fromarray(mascara_sup_dilatada).filter(ImageFilter.GaussianBlur(radius=7))
-
-        buffered_mask_512 = io.BytesIO()
-        mask_512.save(buffered_mask_512, format="PNG")
-        mask_uri = f"data:image/png;base64,{base64.b64encode(buffered_mask_512.getvalue()).decode('utf-8')}"
-
-        print("🚀 [REPLICATE REST] Disparando IA com Máscara Restritiva + Prompt Oficial...")
 
         replicate_token = os.environ.get("REPLICATE_API_TOKEN")
         headers = {
@@ -535,34 +516,41 @@ def process_smile():
             "Content-Type": "application/json"
         }
 
-        # 🎯 PROMPT OFICIAL EXATO DO PLAYGROUND
+        # 1. Enviar a imagem para a API de arquivos do Replicate para obter a URL pública exigida pelo Flux
+        print("☁️ [REPLICATE] Enviando imagem para o repositório temporário de arquivos...")
+        file_resp = requests.post(
+            "https://api.replicate.com/v1/files",
+            headers={"Authorization": f"Bearer {replicate_token}"},
+            files={"file": ("image.jpg", buffered_orig.getvalue(), "image/jpeg")},
+            timeout=30
+        )
+
+        if file_resp.status_code not in [200, 201]:
+            raise Exception(f"Erro ao enviar arquivo para o Replicate: {file_resp.text}")
+
+        file_data = file_resp.json()
+        input_image_url = file_data.get("urls", {}).get("get") or file_data.get("url")
+
+        print("🚀 [REPLICATE REST] Disparando Black Forest Labs Flux 2 Pro...")
+
+        # 🎯 PROMPT OFICIAL QUE GEROU O SUCESSO ABSOLUTO
         prompt_text = (
-            "photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1>"
-            "(Beautiful natural teeth,aligned bite teeth), aligned white teeth, human like teeth, (no teeth gap),"
-            "celebrity-like teeth, healthy teeth with a perfect smile, not big incisor,good proportion teeth,good proportion smile,"
+            "photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1> "
+            "upper teeth only, (Beautiful natural teeth), aligned white teeth, "
+            "human like teeth, (no teeth gap), celebrity-like teeth, "
+            "healthy teeth with a perfect smile, not big incisor, good proportion teeth"
         )
 
-        # 🛡️ NEGATIVE PROMPT OFICIAL EXATO DO PLAYGROUND
-        negative_prompt_text = (
-            "(deformed teeth, semi-realistic, cgi, 3d, render, sketch, cartoon, drawing, anime), "
-            "(deformed, distorted, abnormal teeth:1.3, disfigured:1.3, large teeth:2),poorly drawn,Fixer, bad anatomy, rabbit teeth, "
-            "wrong anatomy, missing teeth, disconnected teeth, unnatural mouth, bunny teeth,big incisor teeth,disproportionate front teeth, "
-            "bad smile, reflection, crooked teeth, distorted teeth,cropped, out of frame, worst quality, low quality, "
-            "jpeg artifacts, ugly, morbid,disfigured, gross proportions,too many teeth,lipstick, lip gloss, "
-            "too less teeth, unnatural size teeth, poorly drawn mouth, poorly drawn teeth"
-        )
-
-        # ⚙️ PAYLOAD HÍBRIDO: IMAGEM + MÁSCARA RESTRITIVA + PROMPT OFICIAL
         payload = {
-            "version": "4956c634b9aa976129f13166c713f8cf38bd337cd58c77925e8cd71d935d5696",
+            "model": "black-forest-labs/flux-2-pro",
             "input": {
-                "image": image_uri,
-                "mask": mask_uri,
+                "input_images": [input_image_url],
                 "prompt": prompt_text,
-                "negative_prompt": negative_prompt_text,
-                "num_outputs": 1,
-                "num_inference_steps": 50,
-                "guidance_scale": 7.5
+                "aspect_ratio": "1:1",
+                "output_format": "webp",
+                "output_quality": 80,
+                "resolution": "1 MP",
+                "safety_tolerance": 2
             }
         }
 
@@ -588,7 +576,7 @@ def process_smile():
                 output = poll_data.get("output")
                 if isinstance(output, list) and len(output) > 0:
                     image_url = output[0]
-                    print("✅ [REPLICATE] Simulação superior recebida com sucesso!")
+                    print("✅ [REPLICATE] Simulação Flux 2 Pro recebida com sucesso!")
                 else:
                     image_url = output
                 break
@@ -605,9 +593,8 @@ def process_smile():
         ai_crop_restaurado = ai_image_raw.resize((512, 512), Image.Resampling.LANCZOS)
 
         ai_np = np.array(ai_crop_restaurado).astype(np.float32)
-        orig_np = np.array(imagem_rgb).astype(np.float32)
 
-        # 🎨 1. CALIBRAÇÃO TÉRMICA NATURAL (BL1-BL4)
+        # 🎨 CALIBRAÇÃO TÉRMICA OPCIONAL (BL1-BL4) SOBRE O RESULTADO DO FLUX
         hsv_ai = cv2.cvtColor(ai_np.astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
         tooth_mask_sup = ((hsv_ai[:, :, 2] > 110) & (hsv_ai[:, :, 1] < 115)).astype(np.float32)
         tooth_mask_sup_smooth = cv2.GaussianBlur(tooth_mask_sup, (7, 7), 0)
@@ -627,30 +614,7 @@ def process_smile():
         ai_colorido_np[:, :, 1] = np.clip(ai_np[:, :, 1] * (1.0 + (g_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
         ai_colorido_np[:, :, 2] = np.clip(ai_np[:, :, 2] * (1.0 + (b_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
 
-        # ✨ 2. HARMONIZAÇÃO SUTIL DOS DENTES INFERIORES
-        mascara_boca_inf = np.zeros((512, 512), dtype=np.uint8)
-        cv2.ellipse(mascara_boca_inf, (256, int(512 * 0.54)), (int(512 * 0.22), int(512 * 0.06)), 0, 0, 360, 255, -1)
-        zona_boca_inf = cv2.GaussianBlur(mascara_boca_inf.astype(np.float32) / 255.0, (15, 15), 0)
-
-        hsv_orig = cv2.cvtColor(orig_np.astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
-        lower_tooth_mask = ((hsv_orig[:, :, 2] > 95) & (hsv_orig[:, :, 1] < 130) & (hsv_orig[:, :, 0] > 10) & (hsv_orig[:, :, 0] < 35)).astype(np.float32)
-        lower_tooth_smooth = cv2.GaussianBlur(lower_tooth_mask, (7, 7), 0) * zona_boca_inf
-
-        sat_reduce = 0.82 if selected_color in ['bl1', 'bl2'] else 0.88
-        val_boost = 1.05 if selected_color in ['bl1', 'bl2'] else 1.03
-
-        hsv_orig[:, :, 1] = np.clip(hsv_orig[:, :, 1] * (1.0 - (1.0 - sat_reduce) * lower_tooth_smooth), 0, 255)
-        hsv_orig[:, :, 2] = np.clip(hsv_orig[:, :, 2] * (1.0 + (val_boost - 1.0) * lower_tooth_smooth), 0, 255)
-        orig_harmonizado_np = cv2.cvtColor(hsv_orig.astype(np.uint8), cv2.COLOR_HSV2RGB).astype(np.float32)
-
-        # 🛡️ 3. FUSÃO PRECISA COM A MÁSCARA ELÍPTICA
-        ellipse_alpha = np.array(mask_512, dtype=np.float32) / 255.0
-        final_alpha = np.expand_dims(ellipse_alpha, axis=2)
-
-        imagem_final_rgb = (
-            ai_colorido_np * final_alpha +
-            orig_harmonizado_np * (1.0 - final_alpha)
-        ).astype(np.uint8)
+        imagem_final_rgb = ai_colorido_np.astype(np.uint8)
 
         final_bgr = cv2.cvtColor(imagem_final_rgb, cv2.COLOR_RGB2BGR)
         _, buffer = cv2.imencode('.jpg', final_bgr, [cv2.IMWRITE_JPEG_QUALITY, 95])
@@ -664,7 +628,7 @@ def process_smile():
         conn.close()
 
         print("=" * 60)
-        print("📤 [PYTHON REST] Simulação concluída com Abordagem Híbrida perfeita!")
+        print("📤 [PYTHON REST] Simulação concluída com sucesso absoluto (Flux 2 Pro)!")
         print("=" * 60)
 
         return jsonify({
