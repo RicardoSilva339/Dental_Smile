@@ -3,13 +3,12 @@ import io
 import random
 import base64
 import time
-import urllib.request
 import psycopg2
 import traceback
 import requests
 import numpy as np
 from flask import Flask, request, jsonify
-from PIL import Image, ImageOps, ImageFilter
+from PIL import Image, ImageOps
 import cv2
 
 app = Flask(__name__)
@@ -68,7 +67,7 @@ def init_db():
 
 init_db()
 
-print("⚙️ Servidor iniciado com Black Forest Labs Flux 2 Pro e Calibração BL1-BL4")
+print("⚙️ Servidor iniciado com Endpoint Oficial Black Forest Labs Flux 2 Pro e Calibração BL1-BL4")
 
 def enviar_email_codigo(destinatario, nome, codigo, assunto="Código de Verificação - Dental Smile"):
     if not RESEND_API_KEY:
@@ -499,7 +498,6 @@ def process_smile():
 
         rgb_image = orig_image.convert("RGB")
         img_512 = rgb_image.resize((512, 512), Image.Resampling.LANCZOS)
-        imagem_rgb = np.array(img_512)
 
         print("=" * 60)
         print(f"📥 [PYTHON REST] Imagem recebida | Cor selecionada: {selected_color.upper()}")
@@ -516,8 +514,8 @@ def process_smile():
             "Content-Type": "application/json"
         }
 
-        # 1. Envio da imagem corrigido para usar o campo 'content' exigido pelo Replicate
-        print("☁️ [REPLICATE] Enviando imagem para o repositório de ficheiros...")
+        # 1. Envio da imagem via campo 'content' exigido pelo Replicate
+        print("☁️ [REPLICATE] Enviando imagem para o repositório de arquivos...")
         file_resp = requests.post(
             "https://api.replicate.com/v1/files",
             headers={"Authorization": f"Bearer {replicate_token}"},
@@ -531,7 +529,7 @@ def process_smile():
         file_data = file_resp.json()
         input_image_url = file_data.get("urls", {}).get("get") or file_data.get("url")
 
-        print("🚀 [REPLICATE REST] Disparando Black Forest Labs Flux 2 Pro...")
+        print("🚀 [REPLICATE REST] Disparando Official Model Black Forest Labs Flux 2 Pro...")
 
         prompt_text = (
             "photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1> "
@@ -540,8 +538,8 @@ def process_smile():
             "healthy teeth with a perfect smile, not big incisor, good proportion teeth"
         )
 
+        # Endpoint específico para Official Models no Replicate (sem campo 'version')
         payload = {
-            "version": "black-forest-labs/flux-2-pro",
             "input": {
                 "input_images": [input_image_url],
                 "prompt": prompt_text,
@@ -553,9 +551,14 @@ def process_smile():
             }
         }
 
-        response = requests.post("https://api.replicate.com/v1/predictions", json=payload, headers=headers, timeout=120)
+        response = requests.post(
+            "https://api.replicate.com/v1/models/black-forest-labs/flux-2-pro/predictions",
+            json=payload,
+            headers=headers,
+            timeout=120
+        )
 
-        if response.status_code != 201:
+        if response.status_code not in [200, 201]:
             raise Exception(f"Erro na API do Replicate ({response.status_code}): {response.text}")
 
         pred_data = response.json()
@@ -575,9 +578,9 @@ def process_smile():
                 output = poll_data.get("output")
                 if isinstance(output, list) and len(output) > 0:
                     image_url = output[0]
-                    print("✅ [REPLICATE] Simulação Flux 2 Pro recebida com sucesso!")
                 else:
                     image_url = output
+                print("✅ [REPLICATE] Simulação Flux 2 Pro recebida com sucesso!")
                 break
             elif status == "failed":
                 raise Exception(f"Processamento da IA falhou: {poll_data.get('error')}")
@@ -585,10 +588,11 @@ def process_smile():
         if not image_url:
             raise Exception("Tempo limite excedido aguardando o Replicate.")
 
-        with urllib.request.urlopen(image_url) as url_response:
-            ai_image_bytes = url_response.read()
+        img_download = requests.get(image_url, timeout=30)
+        if img_download.status_code != 200:
+            raise Exception(f"Erro ao baixar imagem gerada: {img_download.status_code}")
 
-        ai_image_raw = Image.open(io.BytesIO(ai_image_bytes)).convert("RGB")
+        ai_image_raw = Image.open(io.BytesIO(img_download.content)).convert("RGB")
         ai_crop_restaurado = ai_image_raw.resize((512, 512), Image.Resampling.LANCZOS)
 
         ai_np = np.array(ai_crop_restaurado).astype(np.float32)
