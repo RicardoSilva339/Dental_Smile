@@ -516,12 +516,12 @@ def process_smile():
             "Content-Type": "application/json"
         }
 
-        # 1. Enviar a imagem para a API de arquivos do Replicate para obter a URL pública exigida pelo Flux
-        print("☁️ [REPLICATE] Enviando imagem para o repositório temporário de arquivos...")
+        # 1. Envio da imagem corrigido para usar o campo 'content' exigido pelo Replicate
+        print("☁️ [REPLICATE] Enviando imagem para o repositório de ficheiros...")
         file_resp = requests.post(
             "https://api.replicate.com/v1/files",
             headers={"Authorization": f"Bearer {replicate_token}"},
-            files={"file": ("image.jpg", buffered_orig.getvalue(), "image/jpeg")},
+            files={"content": ("image.jpg", buffered_orig.getvalue(), "image/jpeg")},
             timeout=30
         )
 
@@ -533,7 +533,6 @@ def process_smile():
 
         print("🚀 [REPLICATE REST] Disparando Black Forest Labs Flux 2 Pro...")
 
-        # 🎯 PROMPT OFICIAL QUE GEROU O SUCESSO ABSOLUTO
         prompt_text = (
             "photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1> "
             "upper teeth only, (Beautiful natural teeth), aligned white teeth, "
@@ -542,7 +541,7 @@ def process_smile():
         )
 
         payload = {
-            "model": "black-forest-labs/flux-2-pro",
+            "version": "black-forest-labs/flux-2-pro",
             "input": {
                 "input_images": [input_image_url],
                 "prompt": prompt_text,
@@ -594,7 +593,7 @@ def process_smile():
 
         ai_np = np.array(ai_crop_restaurado).astype(np.float32)
 
-        # 🎨 CALIBRAÇÃO TÉRMICA OPCIONAL (BL1-BL4) SOBRE O RESULTADO DO FLUX
+        # Calibração Térmica BL1-BL4
         hsv_ai = cv2.cvtColor(ai_np.astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
         tooth_mask_sup = ((hsv_ai[:, :, 2] > 110) & (hsv_ai[:, :, 1] < 115)).astype(np.float32)
         tooth_mask_sup_smooth = cv2.GaussianBlur(tooth_mask_sup, (7, 7), 0)
