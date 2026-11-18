@@ -532,7 +532,6 @@ def criar_pagamento():
                 "payments": [
                     {
                         "amount": str(pacote['valor']),
-                        "statement_descriptor": "DENTAL SMILE",
                         "payment_method": {
                             "id": "pix",
                             "type": "bank_transfer"
