@@ -472,25 +472,20 @@ def criar_pagamento():
 
     primeiro_nome = "APRO"
     sobrenome = "Dentista"
-    data_registro_iso = "2026-11-01T10:00:00.000-03:00"
 
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        cur.execute("SELECT nome, criado_em FROM usuarios WHERE email = %s OR api_key = %s;", (email, email))
+        cur.execute("SELECT nome FROM usuarios WHERE email = %s OR api_key = %s;", (email, email))
         user_row = cur.fetchone()
-        if user_row:
-            nome_db, criado_em_db = user_row
-            if nome_db and nome_db.strip():
-                partes_nome = nome_db.strip().split(" ", 1)
-                primeiro_nome = partes_nome[0]
-                sobrenome = partes_nome[1] if len(partes_nome) > 1 else "Silva"
-            if criado_em_db:
-                data_registro_iso = criado_em_db.strftime("%Y-%m-%dT%H:%M:%S.000-03:00")
+        if user_row and user_row[0] and user_row[0].strip():
+            partes_nome = user_row[0].strip().split(" ", 1)
+            primeiro_nome = partes_nome[0]
+            sobrenome = partes_nome[1] if len(partes_nome) > 1 else "Silva"
         cur.close()
         conn.close()
     except Exception as db_err:
-        print(f"Aviso ao consultar dados complementares do pagador: {db_err}")
+        print(f"Aviso ao consultar nome do pagador: {db_err}")
 
     try:
         order_url = "https://api.mercadopago.com/v1/orders"
@@ -524,7 +519,6 @@ def criar_pagamento():
             "type": "online",
             "external_reference": safe_ext_ref,
             "total_amount": str(pacote['valor']),
-            "statement_descriptor": "DENTAL SMILE",
             "payer": payer_obj,
             "items": [
                 {
@@ -534,17 +528,11 @@ def criar_pagamento():
                     "quantity": 1
                 }
             ],
-            "additional_info": {
-                "payer": {
-                    "first_name": primeiro_nome,
-                    "last_name": sobrenome,
-                    "registration_date": data_registro_iso
-                }
-            },
             "transactions": {
                 "payments": [
                     {
                         "amount": str(pacote['valor']),
+                        "statement_descriptor": "DENTAL SMILE",
                         "payment_method": {
                             "id": "pix",
                             "type": "bank_transfer"
