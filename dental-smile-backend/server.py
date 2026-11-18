@@ -457,6 +457,7 @@ def criar_pagamento():
     email = data.get('api_key', '').strip().lower()
     pacote_tipo = data.get('pacote', '30')
     device_session_id = data.get('device_id', '').strip() or f"ds_device_{random.randint(100000, 999999)}"
+    cpf_pagador = data.get('cpf', '').strip()
 
     if not email:
         return jsonify({"success": False, "error": "Usuario nao identificado."}), 401
@@ -468,6 +469,28 @@ def criar_pagamento():
     }
 
     pacote = tabela_pacotes.get(str(pacote_tipo), tabela_pacotes['30'])
+
+    primeiro_nome = "APRO"
+    sobrenome = "Dentista"
+    data_registro_iso = "2026-11-01T10:00:00.000-03:00"
+
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT nome, criado_em FROM usuarios WHERE email = %s OR api_key = %s;", (email, email))
+        user_row = cur.fetchone()
+        if user_row:
+            nome_db, criado_em_db = user_row
+            if nome_db and nome_db.strip():
+                partes_nome = nome_db.strip().split(" ", 1)
+                primeiro_nome = partes_nome[0]
+                sobrenome = partes_nome[1] if len(partes_nome) > 1 else "Silva"
+            if criado_em_db:
+                data_registro_iso = criado_em_db.strftime("%Y-%m-%dT%H:%M:%S.000-03:00")
+        cur.close()
+        conn.close()
+    except Exception as db_err:
+        print(f"Aviso ao consultar dados complementares do pagador: {db_err}")
 
     try:
         order_url = "https://api.mercadopago.com/v1/orders"
@@ -483,22 +506,41 @@ def criar_pagamento():
 
         safe_ext_ref = f"ds_ref_{random.randint(10000, 99999)}"
 
+        payer_obj = {
+            "email": email,
+            "first_name": primeiro_nome,
+            "last_name": sobrenome
+        }
+
+        if cpf_pagador:
+            cpf_limpo = "".join(filter(str.isdigit, cpf_pagador))
+            if len(cpf_limpo) == 11:
+                payer_obj["identification"] = {
+                    "type": "CPF",
+                    "number": cpf_limpo
+                }
+
         order_payload = {
             "type": "online",
             "external_reference": safe_ext_ref,
             "total_amount": str(pacote['valor']),
             "statement_descriptor": "DENTAL SMILE",
-            "payer": {
-                "email": email,
-                "first_name": "APRO"
-            },
+            "payer": payer_obj,
             "items": [
                 {
                     "title": pacote['titulo'],
+                    "category_id": "services",
                     "unit_price": str(pacote['valor']),
                     "quantity": 1
                 }
             ],
+            "additional_info": {
+                "payer": {
+                    "first_name": primeiro_nome,
+                    "last_name": sobrenome,
+                    "registration_date": data_registro_iso
+                }
+            },
             "transactions": {
                 "payments": [
                     {
