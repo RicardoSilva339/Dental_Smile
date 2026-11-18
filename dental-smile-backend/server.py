@@ -7,6 +7,7 @@ import psycopg2
 import traceback
 import requests
 import numpy as np
+import mercadopago
 from flask import Flask, request, jsonify
 from PIL import Image, ImageOps
 import cv2
@@ -19,6 +20,10 @@ def health_check():
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
+
+# Inicializa o SDK do Mercado Pago com o Token de Acesso (Configure MP_ACCESS_TOKEN no Render)
+mp_access_token = os.environ.get("MP_ACCESS_TOKEN", "")
+sdk = mercadopago.SDK(mp_access_token)
 
 def get_db_connection():
     return psycopg2.connect(DATABASE_URL, sslmode='require')
@@ -67,7 +72,7 @@ def init_db():
 
 init_db()
 
-print("⚙️ Servidor iniciado com Endpoint Oficial Black Forest Labs Flux 2 Pro e Calibração BL1-BL4")
+print("⚙️ Servidor iniciado com Virada de Ouro (Flux 2 Pro) + Mercado Pago Pix")
 
 def enviar_email_codigo(destinatario, nome, codigo, assunto="Código de Verificação - Dental Smile"):
     if not RESEND_API_KEY:
@@ -442,6 +447,127 @@ def add_credits():
         return jsonify({"success": True, "novo_saldo": res[0], "limite_dispositivos": res[1]}), 200
     return jsonify({"success": False, "error": "Conta não encontrada."}), 404
 
+# --- NOVAS ROTAS DE PAGAMENTO COM MERCADO PAGO (PIX) ---
+
+@app.route('/criar-pagamento', methods=['POST'])
+def criar_pagamento():
+    data = request.get_json(force=True, silent=True) or {}
+    email = data.get('api_key', '').strip().lower()
+    pacote_tipo = data.get('pacote', '30')
+
+    if not email:
+        return jsonify({"success": False, "error": "Usuário não identificado."}), 401
+
+    tabela_pacotes = {
+        '10': {'creditos': 10, 'valor': 29.90, 'titulo': 'Pacote 10 Créditos Dental Smile'},
+        '30': {'creditos': 30, 'valor': 79.90, 'titulo': 'Pacote 30 Créditos Dental Smile'},
+        '100': {'creditos': 100, 'valor': 199.90, 'titulo': 'Pacote 100 Créditos Dental Smile'}
+    }
+
+    pacote = tabela_pacotes.get(str(pacote_tipo), tabela_pacotes['30'])
+
+    try:
+        payment_data = {
+            "transaction_amount": float(pacote['valor']),
+            "description": pacote['titulo'],
+            "payment_method_id": "pix",
+            "payer": {
+                "email": email
+            },
+            "metadata": {
+                "email_dentista": email,
+                "qtd_creditos": pacote['creditos']
+            }
+        }
+
+        result = sdk.payment().create(payment_data)
+        payment_response = result.get("response", {})
+
+        if result.get("status") not in [200, 201]:
+            raise Exception(f"Erro ao gerar Pix no Mercado Pago: {payment_response}")
+
+        point_of_interaction = payment_response.get("point_of_interaction", {})
+        qr_data = point_of_interaction.get("transaction_data", {}).get("qr_code", "")
+        qr_base64 = point_of_interaction.get("transaction_data", {}).get("qr_code_base64", "")
+        payment_id = payment_response.get("id")
+
+        print(f"💳 [PIX CRIADO] ID: {payment_id} | Usuário: {email} | Créditos: {pacote['creditos']}")
+
+        return jsonify({
+            "success": True,
+            "payment_id": payment_id,
+            "qr_code": qr_data,
+            "qr_code_base64": qr_base64,
+            "valor": pacote['valor'],
+            "creditos": pacote['creditos']
+        }), 200
+
+    except Exception as e:
+        print(f"❌ Erro ao criar pagamento: {str(e)}")
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/webhook-mercadopago', methods=['POST'])
+def webhook_mercadopago():
+    data = request.get_json(force=True, silent=True) or {}
+    topic = data.get("type") or data.get("topic")
+
+    if topic != "payment":
+        return jsonify({"status": "ignored"}), 200
+
+    payment_info = data.get("data", {})
+    payment_id = payment_info.get("id") or data.get("id")
+
+    if not payment_id:
+        return jsonify({"status": "no_payment_id"}), 400
+
+    try:
+        payment_result = sdk.payment().get(payment_id)
+        payment_obj = payment_result.get("response", {})
+
+        status = payment_obj.get("status")
+        metadata = payment_obj.get("metadata", {})
+
+        email_dentista = metadata.get("email_dentista")
+        qtd_creditos = int(metadata.get("qtd_creditos", 0))
+
+        print(f"🔔 [WEBHOOK MP] Pagamento ID {payment_id} | Status: {status} | Usuário: {email_dentista}")
+
+        if status == "approved" and email_dentista and qtd_creditos > 0:
+            conn = get_db_connection()
+            cur = conn.cursor()
+
+            novo_limite = 1
+            if qtd_creditos >= 100:
+                novo_limite = 3
+            elif qtd_creditos >= 30:
+                novo_limite = 2
+
+            cur.execute("""
+                UPDATE usuarios
+                SET creditos = creditos + %s,
+                    limite_dispositivos = GREATEST(COALESCE(limite_dispositivos, 1), %s)
+                WHERE email = %s
+                RETURNING creditos, limite_dispositivos;
+            """, (qtd_creditos, novo_limite, email_dentista))
+
+            res = cur.fetchone()
+            conn.commit()
+            cur.close()
+            conn.close()
+
+            if res:
+                print(f"✅ [CRÉDITOS LIBERADOS] {qtd_creditos} créditos adicionados para {email_dentista}. Novo saldo: {res[0]}")
+
+        return jsonify({"status": "success"}), 200
+
+    except Exception as e:
+        print(f"❌ Erro no Webhook do Mercado Pago: {str(e)}")
+        traceback.print_exc()
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+# --- FIM DAS ROTAS DE PAGAMENTO ---
+
 @app.route('/process-smile', methods=['POST'])
 def process_smile():
     data = request.get_json(force=True, silent=True) or {}
@@ -538,7 +664,6 @@ def process_smile():
             "healthy teeth with a perfect smile, not big incisor, good proportion teeth"
         )
 
-        # Endpoint específico para Official Models no Replicate (sem campo 'version')
         payload = {
             "input": {
                 "input_images": [input_image_url],

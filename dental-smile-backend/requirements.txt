@@ -9,3 +9,4 @@ numpy
 replicate
 opencv-python-headless
 mediapipe
+mercadopago>=2.2.0
