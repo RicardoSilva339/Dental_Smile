@@ -707,6 +707,7 @@ def process_smile():
 
         rgb_image = orig_image.convert("RGB")
         img_512 = rgb_image.resize((512, 512), Image.Resampling.LANCZOS)
+        orig_np = np.array(img_512).astype(np.float32)
 
         buffered_orig = io.BytesIO()
         img_512.save(buffered_orig, format="JPEG", quality=92)
@@ -733,14 +734,15 @@ def process_smile():
         file_data = file_resp.json()
         input_image_url = file_data.get("urls", {}).get("get") or file_data.get("url")
 
-        print("Disparando modelo Flux 2 Pro com Correcao Completa...")
+        print("Disparando modelo Flux 2 Pro com Preservacao Facial...")
 
         prompt_text = (
-            "professional cinematic dental photography, perfect smile makeover, "
+            "dental smile makeover edit only on teeth, keeping exact original face, skin texture, "
+            "clean shaven skin, lighting, glasses, and lips untouched, "
             "<lora:lora_perfectsmile_v1_from_v1_160:1> "
             "upper teeth only, impeccably aligned white teeth, perfectly proportioned teeth, "
             "natural symmetrical gum line, human-like flawless teeth, zero gaps, celebrity Hollywood smile, "
-            "bright clean aesthetic dental restoration"
+            "bright clean aesthetic dental restoration, do not add facial hair or beard"
         )
 
         payload = {
@@ -798,11 +800,27 @@ def process_smile():
 
         ai_image_raw = Image.open(io.BytesIO(img_download.content)).convert("RGB")
         ai_crop_restaurado = ai_image_raw.resize((512, 512), Image.Resampling.LANCZOS)
-
         ai_np = np.array(ai_crop_restaurado).astype(np.float32)
 
+        # Mascara espacial focada apenas na regiao da boca/sorriso (evita alterar pele, queixo, barba ou oculos)
+        h, w, _ = ai_np.shape
+        mouth_roi_mask = np.zeros((h, w), dtype=np.float32)
+        cv2.ellipse(
+            mouth_roi_mask,
+            center=(int(w * 0.50), int(h * 0.54)),
+            axes=(int(w * 0.28), int(h * 0.14)),
+            angle=0,
+            startAngle=0,
+            endAngle=360,
+            color=1.0,
+            thickness=-1
+        )
+        mouth_blend_mask = cv2.GaussianBlur(mouth_roi_mask, (45, 45), 0)
+        mouth_blend_3ch = np.stack([mouth_blend_mask] * 3, axis=-1)
+
+        # Restringe a correcao de cor BL1-BL4 estritamente aos dentes dentro da boca
         hsv_ai = cv2.cvtColor(ai_np.astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
-        tooth_mask_sup = ((hsv_ai[:, :, 2] > 100) & (hsv_ai[:, :, 1] < 120)).astype(np.float32)
+        tooth_mask_sup = ((hsv_ai[:, :, 2] > 100) & (hsv_ai[:, :, 1] < 120)).astype(np.float32) * mouth_roi_mask
         tooth_mask_sup_smooth = cv2.GaussianBlur(tooth_mask_sup, (7, 7), 0)
 
         r_gain, g_gain, b_gain = 1.00, 1.00, 1.00
@@ -820,7 +838,9 @@ def process_smile():
         ai_colorido_np[:, :, 1] = np.clip(ai_np[:, :, 1] * (1.0 + (g_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
         ai_colorido_np[:, :, 2] = np.clip(ai_np[:, :, 2] * (1.0 + (b_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
 
-        imagem_final_rgb = ai_colorido_np.astype(np.uint8)
+        # Mescla a boca transformada com 100% do rosto, pele e iluminacao originais ao redor
+        blended_np = (ai_colorido_np * mouth_blend_3ch) + (orig_np * (1.0 - mouth_blend_3ch))
+        imagem_final_rgb = np.clip(blended_np, 0, 255).astype(np.uint8)
 
         final_bgr = cv2.cvtColor(imagem_final_rgb, cv2.COLOR_RGB2BGR)
         _, buffer = cv2.imencode('.jpg', final_bgr, [cv2.IMWRITE_JPEG_QUALITY, 95])
