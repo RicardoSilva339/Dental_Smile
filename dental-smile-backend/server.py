@@ -452,7 +452,7 @@ def add_credits():
         return jsonify({"success": True, "novo_saldo": res[0], "limite_dispositivos": res[1]}), 200
     return jsonify({"success": False, "error": "Conta não encontrada."}), 404
 
-# --- ROTAS DE PAGAMENTO COM MERCADO PAGO (ORDERS API - PIX) ---
+# --- ROTAS DE PAGAMENTO COM MERCADO PAGO (ORDERS API OFICIAL - PIX) ---
 
 @app.route('/criar-pagamento', methods=['POST'])
 def criar_pagamento():
@@ -465,59 +465,53 @@ def criar_pagamento():
 
     # VALOR DE TESTE R$ 1.00
     tabela_pacotes = {
-        '10': {'creditos': 10, 'valor': 1.00, 'titulo': 'Pacote 10 Créditos Dental Smile (Teste)'},
-        '30': {'creditos': 30, 'valor': 1.00, 'titulo': 'Pacote 30 Créditos Dental Smile (Teste)'},
-        '100': {'creditos': 100, 'valor': 1.00, 'titulo': 'Pacote 100 Créditos Dental Smile (Teste)'}
+        '10': {'creditos': 10, 'valor': '1.00', 'titulo': 'Pacote 10 Créditos Dental Smile (Teste)'},
+        '30': {'creditos': 30, 'valor': '1.00', 'titulo': 'Pacote 30 Créditos Dental Smile (Teste)'},
+        '100': {'creditos': 100, 'valor': '1.00', 'titulo': 'Pacote 100 Créditos Dental Smile (Teste)'}
     }
 
     pacote = tabela_pacotes.get(str(pacote_tipo), tabela_pacotes['30'])
 
     try:
-        # Usando a Orders API oficial do Mercado Pago (/v1/orders) exigida para Pix Orders
         order_url = "https://api.mercadopago.com/v1/orders"
         headers = {
             "Authorization": f"Bearer {mp_access_token}",
             "Content-Type": "application/json"
         }
 
+        # Payload exato conforme a documentação oficial enviada pelo usuário
         order_payload = {
             "type": "online",
-            "processing_mode": "aggregator",
             "external_reference": email,
-            "items": [
-                {
-                    "id": str(pacote_tipo),
-                    "title": pacote['titulo'],
-                    "description": pacote['titulo'],
-                    "unit_price": float(pacote['valor']),
-                    "quantity": 1,
-                    "unit_measure": "unit",
-                    "total_amount": float(pacote['valor'])
-                }
-            ],
+            "total_amount": str(pacote['valor']),
             "payer": {
                 "email": email,
-                "first_name": "Dentista",
-                "last_name": "Cliente"
+                "first_name": "APRO"  # Comando oficial de homologação/teste do Mercado Pago
             },
-            "payments": [
-                {
-                    "transaction_amount": float(pacote['valor']),
-                    "payment_method_id": "pix"
-                }
-            ]
+            "transactions": {
+                "payments": [
+                    {
+                        "amount": str(pacote['valor']),
+                        "payment_method": {
+                            "id": "pix",
+                            "type": "bank_transfer"
+                        }
+                    }
+                ]
+            }
         }
 
         resp = requests.post(order_url, json=order_payload, headers=headers, timeout=30)
         order_response = resp.json()
 
         if resp.status_code not in [200, 201]:
-            raise Exception(f"Erro ao criar Order no Mercado Pago: {order_response}")
+            raise Exception(f"Erro ao criar Order oficial no Mercado Pago: {order_response}")
 
-        order_id = order_response.get("id")
+        order_id = order_response.get("id")  # Ex: ORD01JP...
 
-        # Extrai o pagamento e o QR code de dentro da order criada
-        payments_list = order_response.get("payments", [])
+        # Extrai os dados do pagamento e do QR Code da estrutura oficial de transactions.payments
+        transactions = order_response.get("transactions", {})
+        payments_list = transactions.get("payments", [])
         payment_id = None
         qr_data = ""
         qr_base64 = ""
@@ -525,12 +519,11 @@ def criar_pagamento():
         if payments_list:
             first_payment = payments_list[0]
             payment_id = first_payment.get("id")
-            point_of_interaction = first_payment.get("point_of_interaction", {})
-            transaction_data = point_of_interaction.get("transaction_data", {})
-            qr_data = transaction_data.get("qr_code", "")
-            qr_base64 = transaction_data.get("qr_code_base64", "")
+            payment_method = first_payment.get("payment_method", {})
+            qr_data = payment_method.get("qr_code", "")
+            qr_base64 = payment_method.get("qr_code_base64", "")
 
-        print(f"💳 [ORDER PIX CRIADA] Order ID: {order_id} | Payment ID: {payment_id} | Usuário: {email}")
+        print(f"💳 [ORDER OFICIAL CRIADA] Order ID: {order_id} | Payment ID: {payment_id} | Usuário: {email}")
 
         return jsonify({
             "success": True,
@@ -538,12 +531,12 @@ def criar_pagamento():
             "order_id": str(order_id),
             "qr_code": qr_data,
             "qr_code_base64": qr_base64,
-            "valor": pacote['valor'],
+            "valor": float(pacote['valor']),
             "creditos": pacote['creditos']
         }), 200
 
     except Exception as e:
-        print(f"❌ Erro ao criar pagamento via Orders API: {str(e)}")
+        print(f"❌ Erro ao criar pagamento via Orders API oficial: {str(e)}")
         traceback.print_exc()
         return jsonify({"success": False, "error": str(e)}), 500
 
