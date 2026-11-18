@@ -473,6 +473,28 @@ def criar_pagamento():
     pacote = tabela_pacotes.get(str(pacote_tipo), tabela_pacotes['30'])
 
     try:
+        # 1. Cria a Merchant Order oficial para satisfazer a exigência de Order ID do Mercado Pago
+        merchant_order_data = {
+            "items": [
+                {
+                    "id": str(pacote_tipo),
+                    "title": pacote['titulo'],
+                    "quantity": 1,
+                    "unit_price": float(pacote['valor']),
+                    "currency_id": "BRL"
+                }
+            ],
+            "payer": {
+                "email": email
+            },
+            "external_reference": email
+        }
+
+        mo_result = sdk.merchant_order().create(merchant_order_data)
+        mo_response = mo_result.get("response", {})
+        order_id = mo_response.get("id")
+
+        # 2. Cria o pagamento via Pix (Checkout Transparente)
         payment_data = {
             "transaction_amount": float(pacote['valor']),
             "description": pacote['titulo'],
@@ -497,15 +519,16 @@ def criar_pagamento():
         qr_base64 = point_of_interaction.get("transaction_data", {}).get("qr_code_base64", "")
         payment_id = payment_response.get("id")
 
-        # O Order ID para Pix direto via API é o próprio payment_id
-        order_id = str(payment_id)
+        # Se por acaso a order_id vier vazia, usamos o payment_id como fallback
+        if not order_id:
+            order_id = str(payment_id)
 
-        print(f"💳 [PIX CRIADO] Payment ID: {payment_id} | Order ID: {order_id} | Usuário: {email}")
+        print(f"💳 [PIX CRIADO] Payment ID: {payment_id} | Order ID (Merchant Order): {order_id} | Usuário: {email}")
 
         return jsonify({
             "success": True,
             "payment_id": payment_id,
-            "order_id": order_id,
+            "order_id": str(order_id),
             "qr_code": qr_data,
             "qr_code_base64": qr_base64,
             "valor": pacote['valor'],
