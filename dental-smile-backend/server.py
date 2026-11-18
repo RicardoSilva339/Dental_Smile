@@ -786,7 +786,7 @@ def process_smile():
             "creditos_restantes": novo_saldo
         }), 200
 
-    exceptException as e:
+    except Exception as e:
         if 'cur' in locals() and cur: cur.close()
         if 'conn' in locals() and conn: conn.close()
         print(f"❌ Erro crítico no backend: {str(e)}")
