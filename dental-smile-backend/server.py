@@ -463,16 +463,16 @@ def criar_pagamento():
     if not email:
         return jsonify({"success": False, "error": "Usuário não identificado."}), 401
 
+    # VALOR AJUSTADO PARA R$ 1.00 PARA TESTE PONTA A PONTA
     tabela_pacotes = {
-        '10': {'creditos': 10, 'valor': 29.90, 'titulo': 'Pacote 10 Créditos Dental Smile'},
-        '30': {'creditos': 30, 'valor': 79.90, 'titulo': 'Pacote 30 Créditos Dental Smile'},
-        '100': {'creditos': 100, 'valor': 199.90, 'titulo': 'Pacote 100 Créditos Dental Smile'}
+        '10': {'creditos': 10, 'valor': 1.00, 'titulo': 'Pacote 10 Créditos Dental Smile (Teste)'},
+        '30': {'creditos': 30, 'valor': 1.00, 'titulo': 'Pacote 30 Créditos Dental Smile (Teste)'},
+        '100': {'creditos': 100, 'valor': 1.00, 'titulo': 'Pacote 100 Créditos Dental Smile (Teste)'}
     }
 
     pacote = tabela_pacotes.get(str(pacote_tipo), tabela_pacotes['30'])
 
     try:
-        # CORREÇÃO: Usando um formato de e-mail válido para o sandbox do Mercado Pago
         payment_data = {
             "transaction_amount": float(pacote['valor']),
             "description": pacote['titulo'],
@@ -497,7 +497,7 @@ def criar_pagamento():
         qr_base64 = point_of_interaction.get("transaction_data", {}).get("qr_code_base64", "")
         payment_id = payment_response.get("id")
 
-        print(f"💳 [PIX CRIADO] ID: {payment_id} | Usuário real: {email} | Créditos: {pacote['creditos']}")
+        print(f"💳 [PIX CRIADO] ID: {payment_id} | Usuário real: {email} | Créditos: {pacote['creditos']} | Valor: R$ {pacote['valor']}")
 
         return jsonify({
             "success": True,
