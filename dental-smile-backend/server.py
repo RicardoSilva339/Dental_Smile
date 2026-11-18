@@ -452,7 +452,7 @@ def add_credits():
         return jsonify({"success": True, "novo_saldo": res[0], "limite_dispositivos": res[1]}), 200
     return jsonify({"success": False, "error": "Conta não encontrada."}), 404
 
-# --- ROTAS DE PAGAMENTO COM MERCADO PAGO (PIX) ---
+# --- ROTAS DE PAGAMENTO COM MERCADO PAGO (ORDERS API - PIX) ---
 
 @app.route('/criar-pagamento', methods=['POST'])
 def criar_pagamento():
@@ -473,57 +473,64 @@ def criar_pagamento():
     pacote = tabela_pacotes.get(str(pacote_tipo), tabela_pacotes['30'])
 
     try:
-        # 1. Cria a Merchant Order oficial para satisfazer a exigência de Order ID do Mercado Pago
-        merchant_order_data = {
+        # Usando a Orders API oficial do Mercado Pago (/v1/orders) exigida para Pix Orders
+        order_url = "https://api.mercadopago.com/v1/orders"
+        headers = {
+            "Authorization": f"Bearer {mp_access_token}",
+            "Content-Type": "application/json"
+        }
+
+        order_payload = {
+            "type": "online",
+            "processing_mode": "aggregator",
+            "external_reference": email,
             "items": [
                 {
                     "id": str(pacote_tipo),
                     "title": pacote['titulo'],
-                    "quantity": 1,
+                    "description": pacote['titulo'],
                     "unit_price": float(pacote['valor']),
-                    "currency_id": "BRL"
+                    "quantity": 1,
+                    "unit_measure": "unit",
+                    "total_amount": float(pacote['valor'])
                 }
             ],
             "payer": {
-                "email": email
+                "email": email,
+                "first_name": "Dentista",
+                "last_name": "Cliente"
             },
-            "external_reference": email
+            "payments": [
+                {
+                    "transaction_amount": float(pacote['valor']),
+                    "payment_method_id": "pix"
+                }
+            ]
         }
 
-        mo_result = sdk.merchant_order().create(merchant_order_data)
-        mo_response = mo_result.get("response", {})
-        order_id = mo_response.get("id")
+        resp = requests.post(order_url, json=order_payload, headers=headers, timeout=30)
+        order_response = resp.json()
 
-        # 2. Cria o pagamento via Pix (Checkout Transparente)
-        payment_data = {
-            "transaction_amount": float(pacote['valor']),
-            "description": pacote['titulo'],
-            "payment_method_id": "pix",
-            "payer": {
-                "email": "test_user_buyer@test.com"
-            },
-            "metadata": {
-                "email_dentista": email,
-                "qtd_creditos": pacote['creditos']
-            }
-        }
+        if resp.status_code not in [200, 201]:
+            raise Exception(f"Erro ao criar Order no Mercado Pago: {order_response}")
 
-        result = sdk.payment().create(payment_data)
-        payment_response = result.get("response", {})
+        order_id = order_response.get("id")
 
-        if result.get("status") not in [200, 201]:
-            raise Exception(f"Erro ao gerar Pix no Mercado Pago: {payment_response}")
+        # Extrai o pagamento e o QR code de dentro da order criada
+        payments_list = order_response.get("payments", [])
+        payment_id = None
+        qr_data = ""
+        qr_base64 = ""
 
-        point_of_interaction = payment_response.get("point_of_interaction", {})
-        qr_data = point_of_interaction.get("transaction_data", {}).get("qr_code", "")
-        qr_base64 = point_of_interaction.get("transaction_data", {}).get("qr_code_base64", "")
-        payment_id = payment_response.get("id")
+        if payments_list:
+            first_payment = payments_list[0]
+            payment_id = first_payment.get("id")
+            point_of_interaction = first_payment.get("point_of_interaction", {})
+            transaction_data = point_of_interaction.get("transaction_data", {})
+            qr_data = transaction_data.get("qr_code", "")
+            qr_base64 = transaction_data.get("qr_code_base64", "")
 
-        # Se por acaso a order_id vier vazia, usamos o payment_id como fallback
-        if not order_id:
-            order_id = str(payment_id)
-
-        print(f"💳 [PIX CRIADO] Payment ID: {payment_id} | Order ID (Merchant Order): {order_id} | Usuário: {email}")
+        print(f"💳 [ORDER PIX CRIADA] Order ID: {order_id} | Payment ID: {payment_id} | Usuário: {email}")
 
         return jsonify({
             "success": True,
@@ -536,7 +543,7 @@ def criar_pagamento():
         }), 200
 
     except Exception as e:
-        print(f"❌ Erro ao criar pagamento: {str(e)}")
+        print(f"❌ Erro ao criar pagamento via Orders API: {str(e)}")
         traceback.print_exc()
         return jsonify({"success": False, "error": str(e)}), 500
 
