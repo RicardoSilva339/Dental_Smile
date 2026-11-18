@@ -497,13 +497,8 @@ def criar_pagamento():
         qr_base64 = point_of_interaction.get("transaction_data", {}).get("qr_code_base64", "")
         payment_id = payment_response.get("id")
 
-        # DEBUG COMPLETO: Imprime todas as chaves do pagamento para inspecionar onde está o Order ID / Merchant Order
-        print(f"🔍 [MP DEBUG] Chaves do response de pagamento: {list(payment_response.keys())}")
-        print(f"🔍 [MP DEBUG] merchant_order_id: {payment_response.get('merchant_order_id')}")
-        print(f"🔍 [MP DEBUG] order: {payment_response.get('order')}")
-
-        order_info = payment_response.get("order", {})
-        order_id = order_info.get("id") or payment_response.get("merchant_order_id") or payment_id
+        # O Order ID para Pix direto via API é o próprio payment_id
+        order_id = str(payment_id)
 
         print(f"💳 [PIX CRIADO] Payment ID: {payment_id} | Order ID: {order_id} | Usuário: {email}")
 
