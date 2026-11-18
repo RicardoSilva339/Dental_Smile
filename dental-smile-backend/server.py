@@ -452,7 +452,7 @@ def add_credits():
         return jsonify({"success": True, "novo_saldo": res[0], "limite_dispositivos": res[1]}), 200
     return jsonify({"success": False, "error": "Conta não encontrada."}), 404
 
-# --- ROTAS DE PAGAMENTO COM MERCADO PAGO (ORDERS API COM IDEMPOTENCY KEY) ---
+# --- ROTAS DE PAGAMENTO COM MERCADO PAGO (ORDERS API CORRIGIDA) ---
 
 @app.route('/criar-pagamento', methods=['POST'])
 def criar_pagamento():
@@ -475,7 +475,6 @@ def criar_pagamento():
     try:
         order_url = "https://api.mercadopago.com/v1/orders"
 
-        # Gera uma Idempotency Key única para cada tentativa de pedido
         idempotency_key = f"ds_order_{random.randint(10000000, 99999999)}_{int(time.time())}"
 
         headers = {
@@ -484,10 +483,12 @@ def criar_pagamento():
             "X-Idempotency-Key": idempotency_key
         }
 
-        # Payload exato conforme documentação oficial com first_name APRO
+        # external_reference limpo (sem arroba ou caracteres especiais para atender ao padrão da Orders API)
+        safe_ext_ref = f"ds_ref_{random.randint(10000, 99999)}"
+
         order_payload = {
             "type": "online",
-            "external_reference": email,
+            "external_reference": safe_ext_ref,
             "total_amount": str(pacote['valor']),
             "payer": {
                 "email": email,
