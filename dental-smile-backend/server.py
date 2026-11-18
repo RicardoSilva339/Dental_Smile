@@ -452,7 +452,7 @@ def add_credits():
         return jsonify({"success": True, "novo_saldo": res[0], "limite_dispositivos": res[1]}), 200
     return jsonify({"success": False, "error": "Conta não encontrada."}), 404
 
-# --- ROTAS DE PAGAMENTO COM MERCADO PAGO (ORDERS API COM WEBHOOK CORRIGIDO) ---
+# --- ROTAS DE PAGAMENTO COM MERCADO PAGO ---
 
 @app.route('/criar-pagamento', methods=['POST'])
 def criar_pagamento():
@@ -464,9 +464,9 @@ def criar_pagamento():
         return jsonify({"success": False, "error": "Usuário não identificado."}), 401
 
     tabela_pacotes = {
-        '10': {'creditos': 10, 'valor': '1.00', 'titulo': 'Pacote 10 Créditos Dental Smile (Teste)'},
-        '30': {'creditos': 30, 'valor': '1.00', 'titulo': 'Pacote 30 Créditos Dental Smile (Teste)'},
-        '100': {'creditos': 100, 'valor': '1.00', 'titulo': 'Pacote 100 Créditos Dental Smile (Teste)'}
+        '10': {'creditos': 10, 'valor': '1.00', 'titulo': 'Pacote 10 Créditos Dental Smile'},
+        '30': {'creditos': 30, 'valor': '1.00', 'titulo': 'Pacote 30 Créditos Dental Smile'},
+        '100': {'creditos': 100, 'valor': '1.00', 'titulo': 'Pacote 100 Créditos Dental Smile'}
     }
 
     pacote = tabela_pacotes.get(str(pacote_tipo), tabela_pacotes['30'])
@@ -554,14 +554,12 @@ def webhook_mercadopago():
 
     payment_id = None
 
-    # NOVO: Extrai o ID do pagamento corretamente se vier da Orders API
     if data.get("type") == "order" or "order" in str(data.get("action", "")):
         order_data = data.get("data", {})
         payments_arr = order_data.get("transactions", {}).get("payments", [])
         if payments_arr:
             payment_id = payments_arr.get("id")
 
-    # Fallback padrão
     if not payment_id:
         payment_info = data.get("data", {})
         payment_id = payment_info.get("id") or data.get("id")
@@ -797,5 +795,37 @@ def process_smile():
         ai_colorido_np[:, :, 1] = np.clip(ai_np[:, :, 1] * (1.0 + (g_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
         ai_colorido_np[:, :, 2] = np.clip(ai_np[:, :, 2] * (1.0 + (b_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
 
+        imagem_final_rgb = ai_colorido_np.astype(np.uint8)
+
+        final_bgr = cv2.cvtColor(imagem_final_rgb, cv2.COLOR_RGB2BGR)
+        _, buffer = cv2.imencode('.jpg', final_bgr, [cv2.IMWRITE_JPEG_QUALITY, 95])
+        processed_b64 = base64.b64encode(buffer).decode('utf-8')
+
+        cur.execute("UPDATE usuarios SET creditos = creditos - 1 WHERE api_key = %s OR email = %s RETURNING creditos;", (api_key, api_key))
+        novo_saldo = cur.fetchone()[0]
+
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        print("=" * 60)
+        print("📤 [PYTHON REST] Simulação concluída com sucesso absoluto (Flux 2 Pro)!")
+        print("=" * 60)
+
+        return jsonify({
+            "success": True,
+            "original_image": original_processed_b64,
+            "processed_image": processed_b64,
+            "creditos_restantes": novo_saldo
+        }), 200
+
     except Exception as e:
-        print(f"Erro no processamento: {e}")
+        if 'cur' in locals() and cur: cur.close()
+        if 'conn' in locals() and conn: conn.close()
+        print(f"❌ Erro crítico no backend: {str(e)}")
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+if __name__ == '__main__':
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
