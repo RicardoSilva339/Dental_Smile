@@ -456,6 +456,7 @@ def criar_pagamento():
     data = request.get_json(force=True, silent=True) or {}
     email = data.get('api_key', '').strip().lower()
     pacote_tipo = data.get('pacote', '30')
+    device_session_id = data.get('device_id', '').strip() or f"ds_device_{random.randint(100000, 999999)}"
 
     if not email:
         return jsonify({"success": False, "error": "Usuario nao identificado."}), 401
@@ -476,7 +477,8 @@ def criar_pagamento():
         headers = {
             "Authorization": f"Bearer {mp_access_token}",
             "Content-Type": "application/json",
-            "X-Idempotency-Key": idempotency_key
+            "X-Idempotency-Key": idempotency_key,
+            "X-meli-session-id": device_session_id
         }
 
         safe_ext_ref = f"ds_ref_{random.randint(10000, 99999)}"
@@ -485,10 +487,18 @@ def criar_pagamento():
             "type": "online",
             "external_reference": safe_ext_ref,
             "total_amount": str(pacote['valor']),
+            "statement_descriptor": "DENTAL SMILE",
             "payer": {
                 "email": email,
                 "first_name": "APRO"
             },
+            "items": [
+                {
+                    "title": pacote['titulo'],
+                    "unit_price": str(pacote['valor']),
+                    "quantity": 1
+                }
+            ],
             "transactions": {
                 "payments": [
                     {
@@ -551,8 +561,8 @@ def webhook_mercadopago():
     if data.get("type") == "order" or "order" in str(data.get("action", "")):
         order_data = data.get("data", {})
         payments_arr = order_data.get("transactions", {}).get("payments", [])
-        if payments_arr:
-            payment_id = payments_arr.get("id")
+        if payments_arr and isinstance(payments_arr, list):
+            payment_id = payments_arr[0].get("id")
 
     if not payment_id:
         payment_info = data.get("data", {})
