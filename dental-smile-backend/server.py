@@ -463,7 +463,7 @@ def criar_pagamento():
     if not email:
         return jsonify({"success": False, "error": "Usuário não identificado."}), 401
 
-    # VALOR AJUSTADO PARA R$ 1.00 PARA TESTE PONTA A PONTA
+    # VALOR DE TESTE R$ 1.00
     tabela_pacotes = {
         '10': {'creditos': 10, 'valor': 1.00, 'titulo': 'Pacote 10 Créditos Dental Smile (Teste)'},
         '30': {'creditos': 30, 'valor': 1.00, 'titulo': 'Pacote 30 Créditos Dental Smile (Teste)'},
@@ -516,16 +516,23 @@ def criar_pagamento():
 @app.route('/webhook-mercadopago', methods=['POST'])
 def webhook_mercadopago():
     data = request.get_json(force=True, silent=True) or {}
-    topic = data.get("type") or data.get("topic")
+    print(f"🔔 [WEBHOOK RECEBIDO] Dados brutos: {data}")
 
-    if topic != "payment":
-        return jsonify({"status": "ignored"}), 200
-
+    payment_id = None
     payment_info = data.get("data", {})
     payment_id = payment_info.get("id") or data.get("id")
 
+    if not payment_id and "resource" in data:
+        resource = str(data.get("resource", ""))
+        if "payments" in resource:
+            try:
+                payment_id = resource.split("/")[-1]
+            except Exception:
+                pass
+
     if not payment_id:
-        return jsonify({"status": "no_payment_id"}), 400
+        print("⚠️ [WEBHOOK] Notificação recebida sem ID de pagamento explicitado. Ignorando.")
+        return jsonify({"status": "ignored"}), 200
 
     try:
         payment_result = sdk.payment().get(payment_id)
@@ -537,7 +544,7 @@ def webhook_mercadopago():
         email_dentista = metadata.get("email_dentista")
         qtd_creditos = int(metadata.get("qtd_creditos", 0))
 
-        print(f"🔔 [WEBHOOK MP] Pagamento ID {payment_id} | Status: {status} | Usuário: {email_dentista}")
+        print(f"🔔 [WEBHOOK MP] Pagamento ID {payment_id} | Status: {status} | Usuário: {email_dentista} | Créditos: {qtd_creditos}")
 
         if status == "approved" and email_dentista and qtd_creditos > 0:
             conn = get_db_connection()
