@@ -452,7 +452,7 @@ def add_credits():
         return jsonify({"success": True, "novo_saldo": res[0], "limite_dispositivos": res[1]}), 200
     return jsonify({"success": False, "error": "Conta não encontrada."}), 404
 
-# --- ROTAS DE PAGAMENTO COM MERCADO PAGO (ORDERS API OFICIAL - PIX) ---
+# --- ROTAS DE PAGAMENTO COM MERCADO PAGO (ORDERS API COM IDEMPOTENCY KEY) ---
 
 @app.route('/criar-pagamento', methods=['POST'])
 def criar_pagamento():
@@ -474,19 +474,24 @@ def criar_pagamento():
 
     try:
         order_url = "https://api.mercadopago.com/v1/orders"
+
+        # Gera uma Idempotency Key única para cada tentativa de pedido
+        idempotency_key = f"ds_order_{random.randint(10000000, 99999999)}_{int(time.time())}"
+
         headers = {
             "Authorization": f"Bearer {mp_access_token}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "X-Idempotency-Key": idempotency_key
         }
 
-        # Payload exato conforme a documentação oficial enviada pelo usuário
+        # Payload exato conforme documentação oficial com first_name APRO
         order_payload = {
             "type": "online",
             "external_reference": email,
             "total_amount": str(pacote['valor']),
             "payer": {
                 "email": email,
-                "first_name": "APRO"  # Comando oficial de homologação/teste do Mercado Pago
+                "first_name": "APRO"
             },
             "transactions": {
                 "payments": [
@@ -509,7 +514,6 @@ def criar_pagamento():
 
         order_id = order_response.get("id")  # Ex: ORD01JP...
 
-        # Extrai os dados do pagamento e do QR Code da estrutura oficial de transactions.payments
         transactions = order_response.get("transactions", {})
         payments_list = transactions.get("payments", [])
         payment_id = None
