@@ -501,19 +501,19 @@ def criar_pagamento():
 
         safe_ext_ref = f"ds_ref_{random.randint(10000, 99999)}"
 
+        cpf_limpo = "".join(filter(str.isdigit, cpf_pagador))
+        if len(cpf_limpo) != 11:
+            cpf_limpo = "19119119100"
+
         payer_obj = {
             "email": email,
             "first_name": primeiro_nome,
-            "last_name": sobrenome
+            "last_name": sobrenome,
+            "identification": {
+                "type": "CPF",
+                "number": cpf_limpo
+            }
         }
-
-        if cpf_pagador:
-            cpf_limpo = "".join(filter(str.isdigit, cpf_pagador))
-            if len(cpf_limpo) == 11:
-                payer_obj["identification"] = {
-                    "type": "CPF",
-                    "number": cpf_limpo
-                }
 
         order_payload = {
             "type": "online",
@@ -534,7 +534,8 @@ def criar_pagamento():
                         "amount": str(pacote['valor']),
                         "payment_method": {
                             "id": "pix",
-                            "type": "bank_transfer"
+                            "type": "bank_transfer",
+                            "statement_descriptor": "DENTAL SMILE"
                         }
                     }
                 ]
