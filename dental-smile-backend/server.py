@@ -497,11 +497,16 @@ def criar_pagamento():
         qr_base64 = point_of_interaction.get("transaction_data", {}).get("qr_code_base64", "")
         payment_id = payment_response.get("id")
 
-        print(f"💳 [PIX CRIADO] ID: {payment_id} | Usuário real: {email} | Créditos: {pacote['creditos']} | Valor: R$ {pacote['valor']}")
+        # Captura do Order ID / Merchant Order ID para o checklist do Mercado Pago
+        order_info = payment_response.get("order", {})
+        order_id = order_info.get("id") or payment_response.get("merchant_order_id")
+
+        print(f"💳 [PIX CRIADO] Payment ID: {payment_id} | Order ID: {order_id} | Usuário: {email} | Créditos: {pacote['creditos']} | Valor: R$ {pacote['valor']}")
 
         return jsonify({
             "success": True,
             "payment_id": payment_id,
+            "order_id": order_id,
             "qr_code": qr_data,
             "qr_code_base64": qr_base64,
             "valor": pacote['valor'],
@@ -513,8 +518,12 @@ def criar_pagamento():
         traceback.print_exc()
         return jsonify({"success": False, "error": str(e)}), 500
 
-@app.route('/webhook-mercadopago', methods=['POST'])
+@app.route('/webhook-mercadopago', methods=['GET', 'POST'])
 def webhook_mercadopago():
+    if request.method == 'GET':
+        print("🔍 [WEBHOOK PING] Mercado Pago verificando a URL do Webhook (GET)")
+        return jsonify({"status": "verified"}), 200
+
     data = request.get_json(force=True, silent=True) or {}
     print(f"🔔 [WEBHOOK RECEBIDO] Dados brutos: {data}")
 
@@ -777,7 +786,7 @@ def process_smile():
             "creditos_restantes": novo_saldo
         }), 200
 
-    except Exception as e:
+    exceptException as e:
         if 'cur' in locals() and cur: cur.close()
         if 'conn' in locals() and conn: conn.close()
         print(f"❌ Erro crítico no backend: {str(e)}")
