@@ -21,8 +21,13 @@ def health_check():
 DATABASE_URL = os.environ.get("DATABASE_URL")
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
 
-# Inicializa o SDK do Mercado Pago com o Token de Acesso (Configure MP_ACCESS_TOKEN no Render)
-mp_access_token = os.environ.get("MP_ACCESS_TOKEN", "")
+# Inicializa o SDK do Mercado Pago com verificação de segurança no boot
+mp_access_token = os.environ.get("MP_ACCESS_TOKEN", "").strip()
+if not mp_access_token:
+    print("⚠️ ATENÇÃO: MP_ACCESS_TOKEN não foi encontrado nas variáveis de ambiente!")
+else:
+    print(f"💳 Mercado Pago inicializado com token: {mp_access_token[:10]}...")
+
 sdk = mercadopago.SDK(mp_access_token)
 
 def get_db_connection():
@@ -447,7 +452,7 @@ def add_credits():
         return jsonify({"success": True, "novo_saldo": res[0], "limite_dispositivos": res[1]}), 200
     return jsonify({"success": False, "error": "Conta não encontrada."}), 404
 
-# --- NOVAS ROTAS DE PAGAMENTO COM MERCADO PAGO (PIX) ---
+# --- ROTAS DE PAGAMENTO COM MERCADO PAGO (PIX) ---
 
 @app.route('/criar-pagamento', methods=['POST'])
 def criar_pagamento():
@@ -640,7 +645,6 @@ def process_smile():
             "Content-Type": "application/json"
         }
 
-        # 1. Envio da imagem via campo 'content' exigido pelo Replicate
         print("☁️ [REPLICATE] Enviando imagem para o repositório de arquivos...")
         file_resp = requests.post(
             "https://api.replicate.com/v1/files",
@@ -722,7 +726,6 @@ def process_smile():
 
         ai_np = np.array(ai_crop_restaurado).astype(np.float32)
 
-        # Calibração Térmica BL1-BL4
         hsv_ai = cv2.cvtColor(ai_np.astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
         tooth_mask_sup = ((hsv_ai[:, :, 2] > 110) & (hsv_ai[:, :, 1] < 115)).astype(np.float32)
         tooth_mask_sup_smooth = cv2.GaussianBlur(tooth_mask_sup, (7, 7), 0)
