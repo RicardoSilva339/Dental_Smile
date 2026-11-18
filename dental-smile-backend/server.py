@@ -458,7 +458,7 @@ def add_credits():
 def criar_pagamento():
     data = request.get_json(force=True, silent=True) or {}
     email = data.get('api_key', '').strip().lower()
-    pacote_tipo = data.get('pagador', data.get('pacote', '30'))
+    pacote_tipo = data.get('pacote', '30')
 
     if not email:
         return jsonify({"success": False, "error": "Usuário não identificado."}), 401
@@ -469,19 +469,16 @@ def criar_pagamento():
         '100': {'creditos': 100, 'valor': 199.90, 'titulo': 'Pacote 100 Créditos Dental Smile'}
     }
 
-    # Tratamento caso o pacote venha direto
-    pacote_chave = str(data.get('pacote', '30'))
-    pacote = tabela_pacotes.get(pacote_chave, tabela_pacotes['30'])
+    pacote = tabela_pacotes.get(str(pacote_tipo), tabela_pacotes['30'])
 
     try:
-        # CORREÇÃO CRUCIAL: O Mercado Pago exige um e-mail de teste (TESTUSER...) no payer.email para sandbox/APP_USR
-        # O e-mail real do dentista é preservado no metadata para os créditos caírem na conta certa via webhook.
+        # CORREÇÃO: Usando um formato de e-mail válido para o sandbox do Mercado Pago
         payment_data = {
             "transaction_amount": float(pacote['valor']),
             "description": pacote['titulo'],
             "payment_method_id": "pix",
             "payer": {
-                "email": "TESTUSER7827368650157246958"
+                "email": "test_user_buyer@test.com"
             },
             "metadata": {
                 "email_dentista": email,
