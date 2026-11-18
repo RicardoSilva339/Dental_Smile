@@ -212,6 +212,28 @@ class ApiService {
     return false;
   }
 
+  // 💳 7. Criar Pagamento Pix via Mercado Pago
+  static Future<dynamic> criarPagamentoPix({
+    required String apiKey,
+    required String pacote,
+  }) async {
+    try {
+      final url = Uri.parse('$baseUrl/criar-pagamento');
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'api_key': apiKey,
+          'pacote': pacote,
+        }),
+      );
+      return jsonDecode(response.body);
+    } catch (e) {
+      debugPrint("Erro ao criar pagamento Pix: $e");
+      return {'success': false, 'error': 'Falha na conexão com o servidor: $e'};
+    }
+  }
+
   static Future<dynamic> processSmile({
     required File imageFile,
     String color = 'BL2',

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:dental_smile/api_service.dart';
 import 'background.dart';
@@ -758,6 +759,93 @@ class _PlansScreenState extends State<PlansScreen> {
     return autenticadoComSucesso;
   }
 
+  // 💳 MODAL DE PIX DO MERCADO PAGO
+  void _exibirModalPix({
+    required String nomePlano,
+    required String preco,
+    required String qrCode,
+    required int creditos,
+  }) {
+    showDialog(
+      context: this.context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            const Icon(Icons.qr_code_2, color: Color(0xFF5C6BC0), size: 30),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                "Pix - $nomePlano",
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+            ),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                "Valor: $preco",
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.green),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                "Copie o código Pix abaixo ou utilize seu aplicativo de banco para pagar:",
+                style: TextStyle(fontSize: 13, color: Colors.black87),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey.shade300),
+                ),
+                child: SelectableText(
+                  qrCode.isEmpty ? "Erro ao gerar código Pix." : qrCode,
+                  style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
+                  maxLines: 4,
+                ),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF5C6BC0),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  minimumSize: const Size(double.infinity, 45),
+                ),
+                onPressed: () {
+                  Clipboard.setData(ClipboardData(text: qrCode));
+                  ScaffoldMessenger.of(this.context).showSnackBar(
+                    const SnackBar(content: Text("Código Pix copiado para a área de transferência! 📋")),
+                  );
+                },
+                icon: const Icon(Icons.copy, size: 18),
+                label: const Text("Copiar Código Pix", style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _registrarHistoricoCompra(nomePlano, creditos, preco);
+              Navigator.pop(this.context, true);
+            },
+            child: const Text("Já Realizei o Pagamento", style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF5C6BC0))),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 🚀 MÉTODO DE COMPRA ATUALIZADO COM O MERCADO PAGO
   Future<void> _comprarPlano(int creditos, String nomePlano, String preco, String detalhesDispositivos) async {
     if (!_usuarioEstaLogado()) {
       final autenticou = await _exibirDialogoAutenticacaoApenas();
@@ -792,12 +880,11 @@ class _PlansScreenState extends State<PlansScreen> {
             ),
             const SizedBox(height: 12),
             const Text(
-              "Formas de Pagamento:",
+              "Forma de Pagamento:",
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
             ),
             const SizedBox(height: 4),
-            const Text("• Pix (Aprovação instantânea)", style: TextStyle(fontSize: 13, color: Colors.black87)),
-            const Text("• Cartão de Crédito / Débito", style: TextStyle(fontSize: 13, color: Colors.black87)),
+            const Text("• Pix (Geração instantânea via Mercado Pago)", style: TextStyle(fontSize: 13, color: Colors.black87)),
             const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.all(12),
@@ -833,18 +920,18 @@ class _PlansScreenState extends State<PlansScreen> {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text("Confirmar e Pagar", style: TextStyle(fontWeight: FontWeight.bold)),
+            child: const Text("Gerar Pix", style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
     );
 
     if (confirmarCompra != true) return;
-
     if (!mounted) return;
 
     final apiKeyAtual = _obterApiKeyAtual();
 
+    // Mostra o loading enquanto o Flask gera o Pix no Mercado Pago
     showDialog(
       context: this.context,
       barrierDismissible: false,
@@ -854,53 +941,40 @@ class _PlansScreenState extends State<PlansScreen> {
           children: [
             const CircularProgressIndicator(),
             const SizedBox(width: 20),
-            Expanded(child: Text("Processando $nomePlano ($preco)...")),
+            Expanded(child: Text("Gerando Pix para o $nomePlano ($preco)...")),
           ],
         ),
       ),
     );
 
-    await Future.delayed(const Duration(seconds: 2));
-
     try {
-      final sucesso = await ApiService.adicionarCreditos(apiKeyAtual, creditos);
+      // Chamada à API para criar o pagamento via Mercado Pago no backend
+      final respostaPix = await ApiService.criarPagamentoPix(
+        apiKey: apiKeyAtual,
+        pacote: creditos.toString(),
+      );
 
       if (!mounted) return;
-      Navigator.pop(this.context);
+      Navigator.pop(this.context); // Fecha o loading
 
-      if (sucesso) {
-        await _registrarHistoricoCompra(nomePlano, creditos, preco);
+      if (respostaPix['success'] == true) {
+        final String qrCodeCopiaECola = respostaPix['qr_code'] ?? '';
+        final int creditosGerados = respostaPix['creditos'] ?? creditos;
 
-        if (!mounted) return;
-
-        showDialog(
-          context: this.context,
-          builder: (context) => AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            title: const Text("Pagamento Aprovado! 🎉"),
-            content: Text("Foram adicionados $creditos créditos à conta de ($apiKeyAtual) com sucesso."),
-            actions: [
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF5C6BC0),
-                  foregroundColor: Colors.white,
-                ),
-                onPressed: () {
-                  Navigator.pop(context);
-                  Navigator.pop(this.context, true);
-                },
-                child: const Text("OK"),
-              ),
-            ],
-          ),
+        // Exibe o Modal do Pix para o usuário copiar e pagar
+        _exibirModalPix(
+          nomePlano: nomePlano,
+          preco: preco,
+          qrCode: qrCodeCopiaECola,
+          creditos: creditosGerados,
         );
       } else {
-        _mostrarErro("Não foi possível atualizar os créditos no servidor.");
+        _mostrarErro(respostaPix['error'] ?? "Não foi possível gerar o pagamento.");
       }
     } catch (e) {
       if (!mounted) return;
       Navigator.pop(this.context);
-      _mostrarErro("Erro ao processar a compra: $e");
+      _mostrarErro("Erro ao conectar com o servidor de pagamentos: $e");
     }
   }
 
@@ -1122,31 +1196,31 @@ class _PlansScreenState extends State<PlansScreen> {
               ),
               const SizedBox(height: 16),
 
-              // 2. PLANO PROFISSIONAL (30 Créditos - R$ 197,00 - 2 Aparelhos)
+              // 2. PLANO PROFISSIONAL (30 Créditos - R$ 197,00)
               _buildPlanCard(
                 titulo: "Plano Profissional",
                 creditos: "30 Créditos",
                 preco: "R\$ 197,00",
                 detalhePreco: "R\$ 6,56 por simulação (Economia de 17%)",
                 descricao: "O plano preferido dos dentistas para uso recorrente na clínica.",
-                detalhesDispositivos: "Benefício incluso: Acesso liberado para até 2 dispositivos simultâneos usando o mesmo e-mail, usuário e senha!",
+                detalhesDispositivos: "Benefício incluso: Acesso liberado para até 2 dispositivos simultâneos usando o mesmo e-mail!",
                 corCard: Colors.indigo.shade50,
                 isPopular: true,
-                onPressed: () => _comprarPlano(30, "Plano Profissional", "R\$ 197,00", "Benefício incluso: Acesso liberado para até 2 dispositivos simultâneos usando o mesmo e-mail, usuário e senha!"),
+                onPressed: () => _comprarPlano(30, "Plano Profissional", "R\$ 197,00", "Benefício incluso: Acesso liberado para até 2 dispositivos simultâneos usando o mesmo e-mail!"),
               ),
               const SizedBox(height: 16),
 
-              // 3. PLANO MASTER (100 Créditos - R$ 569,00 - 3 Aparelhos)
+              // 3. PLANO MASTER (100 Créditos - R$ 569,00)
               _buildPlanCard(
                 titulo: "Plano Master",
                 creditos: "100 Créditos",
                 preco: "R\$ 569,00",
                 detalhePreco: "R\$ 5,69 por simulação (Melhor custo-benefício)",
                 descricao: "Para clínicas de alto fluxo com múltiplos profissionais.",
-                detalhesDispositivos: "Benefício incluso: Acesso liberado para até 3 dispositivos simultâneos usando o mesmo e-mail, usuário e senha para a equipe!",
+                detalhesDispositivos: "Benefício incluso: Acesso liberado para até 3 dispositivos simultâneos usando o mesmo e-mail!",
                 corCard: Colors.white,
                 isPopular: false,
-                onPressed: () => _comprarPlano(100, "Plano Master", "R\$ 569,00", "Benefício incluso: Acesso liberado para até 3 dispositivos simultâneos usando o mesmo e-mail, usuário e senha para a equipe!"),
+                onPressed: () => _comprarPlano(100, "Plano Master", "R\$ 569,00", "Benefício incluso: Acesso liberado para até 3 dispositivos simultâneos usando o mesmo e-mail!"),
               ),
             ],
           ),
