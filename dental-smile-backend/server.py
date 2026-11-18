@@ -497,11 +497,15 @@ def criar_pagamento():
         qr_base64 = point_of_interaction.get("transaction_data", {}).get("qr_code_base64", "")
         payment_id = payment_response.get("id")
 
-        # Captura do Order ID / Merchant Order ID para o checklist do Mercado Pago
-        order_info = payment_response.get("order", {})
-        order_id = order_info.get("id") or payment_response.get("merchant_order_id")
+        # DEBUG COMPLETO: Imprime todas as chaves do pagamento para inspecionar onde está o Order ID / Merchant Order
+        print(f"🔍 [MP DEBUG] Chaves do response de pagamento: {list(payment_response.keys())}")
+        print(f"🔍 [MP DEBUG] merchant_order_id: {payment_response.get('merchant_order_id')}")
+        print(f"🔍 [MP DEBUG] order: {payment_response.get('order')}")
 
-        print(f"💳 [PIX CRIADO] Payment ID: {payment_id} | Order ID: {order_id} | Usuário: {email} | Créditos: {pacote['creditos']} | Valor: R$ {pacote['valor']}")
+        order_info = payment_response.get("order", {})
+        order_id = order_info.get("id") or payment_response.get("merchant_order_id") or payment_id
+
+        print(f"💳 [PIX CRIADO] Payment ID: {payment_id} | Order ID: {order_id} | Usuário: {email}")
 
         return jsonify({
             "success": True,
