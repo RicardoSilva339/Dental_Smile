@@ -816,15 +816,15 @@ def process_smile():
         file_data = file_resp.json()
         input_image_url = file_data.get("urls", {}).get("get") or file_data.get("url")
 
-        print("Disparando modelo Flux 2 Pro com Preservacao Facial...")
+        print("Disparando modelo Flux 2 Pro com Preservacao Facial e BL1 Branco...")
 
         prompt_text = (
             "dental smile makeover edit only on teeth, keeping exact original face, skin texture, "
-            "clean shaven skin, lighting, glasses, and lips untouched, "
+            "clean shaven skin, lighting, glasses, and natural lip color untouched, "
             "<lora:lora_perfectsmile_v1_from_v1_160:1> "
-            "upper teeth only, impeccably aligned white teeth, perfectly proportioned teeth, "
-            "natural symmetrical gum line, human-like flawless teeth, zero gaps, celebrity Hollywood smile, "
-            "bright clean aesthetic dental restoration, do not add facial hair or beard"
+            "upper teeth only, impeccably aligned bright white teeth, perfectly proportioned teeth, "
+            "natural symmetrical gum line, human-like flawless teeth, zero gaps, bright white Hollywood smile, "
+            "do not add facial hair or yellow tint to lips"
         )
 
         payload = {
@@ -884,43 +884,44 @@ def process_smile():
         ai_crop_restaurado = ai_image_raw.resize((512, 512), Image.Resampling.LANCZOS)
         ai_np = np.array(ai_crop_restaurado).astype(np.float32)
 
-        # Mascara espacial compacta focada apenas nos dentes/sorriso (evita mancha no queixo e labios inferiores)
+        # Mascara espacial focada na arcada dentaria sem invadir o labio inferior ou queixo
         h, w, _ = ai_np.shape
         mouth_roi_mask = np.zeros((h, w), dtype=np.float32)
         cv2.ellipse(
             mouth_roi_mask,
-            center=(int(w * 0.50), int(h * 0.52)),
-            axes=(int(w * 0.22), int(h * 0.08)),
+            center=(int(w * 0.50), int(h * 0.505)),
+            axes=(int(w * 0.21), int(h * 0.065)),
             angle=0,
             startAngle=0,
             endAngle=360,
             color=1.0,
             thickness=-1
         )
-        mouth_blend_mask = cv2.GaussianBlur(mouth_roi_mask, (25, 25), 0)
+        mouth_blend_mask = cv2.GaussianBlur(mouth_roi_mask, (17, 17), 0)
         mouth_blend_3ch = np.stack([mouth_blend_mask] * 3, axis=-1)
 
-        # Restringe a correcao de cor BL1-BL4 estritamente aos dentes dentro da boca
+        # Seleciona apenas os dentes claros/brancos dentro da area do sorriso (evita labios e gengiva)
         hsv_ai = cv2.cvtColor(ai_np.astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
-        tooth_mask_sup = ((hsv_ai[:, :, 2] > 100) & (hsv_ai[:, :, 1] < 120)).astype(np.float32) * mouth_roi_mask
-        tooth_mask_sup_smooth = cv2.GaussianBlur(tooth_mask_sup, (5, 5), 0)
+        tooth_mask = ((hsv_ai[:, :, 2] > 130) & (hsv_ai[:, :, 1] < 95)).astype(np.float32) * mouth_roi_mask
+        tooth_mask_smooth = cv2.GaussianBlur(tooth_mask, (3, 3), 0)
 
-        r_gain, g_gain, b_gain = 1.00, 1.00, 1.00
+        # Ganhos calibrados para manter branco limpo no BL1 e tons graduais sem amarelar excessivamente
+        r_gain, g_gain, b_gain = 1.02, 1.03, 1.05
         if selected_color == 'bl1':
-            r_gain, g_gain, b_gain = 1.08, 1.06, 0.90
+            r_gain, g_gain, b_gain = 1.03, 1.04, 1.06
         elif selected_color == 'bl2':
-            r_gain, g_gain, b_gain = 1.05, 1.03, 0.92
+            r_gain, g_gain, b_gain = 1.02, 1.03, 1.03
         elif selected_color == 'bl3':
-            r_gain, g_gain, b_gain = 1.06, 1.02, 0.88
+            r_gain, g_gain, b_gain = 1.04, 1.03, 0.99
         elif selected_color == 'bl4':
-            r_gain, g_gain, b_gain = 1.07, 1.01, 0.84
+            r_gain, g_gain, b_gain = 1.05, 1.02, 0.96
 
         ai_colorido_np = ai_np.copy()
-        ai_colorido_np[:, :, 0] = np.clip(ai_np[:, :, 0] * (1.0 + (r_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
-        ai_colorido_np[:, :, 1] = np.clip(ai_np[:, :, 1] * (1.0 + (g_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
-        ai_colorido_np[:, :, 2] = np.clip(ai_np[:, :, 2] * (1.0 + (b_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
+        ai_colorido_np[:, :, 0] = np.clip(ai_np[:, :, 0] * (1.0 + (r_gain - 1.0) * tooth_mask_smooth), 0, 255)
+        ai_colorido_np[:, :, 1] = np.clip(ai_np[:, :, 1] * (1.0 + (g_gain - 1.0) * tooth_mask_smooth), 0, 255)
+        ai_colorido_np[:, :, 2] = np.clip(ai_np[:, :, 2] * (1.0 + (b_gain - 1.0) * tooth_mask_smooth), 0, 255)
 
-        # Mescla os dentes transformados com 100% do rosto, labios inferiores, queixo e iluminacao originais
+        # Mescla a area do sorriso com o rosto original preservado
         blended_np = (ai_colorido_np * mouth_blend_3ch) + (orig_np * (1.0 - mouth_blend_3ch))
         imagem_final_rgb = np.clip(blended_np, 0, 255).astype(np.uint8)
 
