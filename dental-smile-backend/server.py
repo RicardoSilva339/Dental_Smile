@@ -789,7 +789,6 @@ def process_smile():
 
         rgb_image = orig_image.convert("RGB")
         img_512 = rgb_image.resize((512, 512), Image.Resampling.LANCZOS)
-        orig_np = np.array(img_512).astype(np.float32)
 
         buffered_orig = io.BytesIO()
         img_512.save(buffered_orig, format="JPEG", quality=92)
@@ -816,15 +815,14 @@ def process_smile():
         file_data = file_resp.json()
         input_image_url = file_data.get("urls", {}).get("get") or file_data.get("url")
 
-        print("Disparando modelo Flux 2 Pro com Preservacao Facial e BL1 Branco...")
+        print("Disparando Official Model Black Forest Labs Flux 2 Pro (Padrao Virada de Ouro)...")
 
         prompt_text = (
-            "dental smile makeover edit only on teeth, keeping exact original face, skin texture, "
-            "clean shaven skin, lighting, glasses, and natural lip color untouched, "
-            "<lora:lora_perfectsmile_v1_from_v1_160:1> "
-            "upper teeth only, impeccably aligned bright white teeth, perfectly proportioned teeth, "
-            "natural symmetrical gum line, human-like flawless teeth, zero gaps, bright white Hollywood smile, "
-            "do not add facial hair or yellow tint to lips"
+            "photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1> "
+            "upper teeth only, (Beautiful natural teeth), aligned white teeth, "
+            "human like teeth, (no teeth gap), celebrity-like teeth, "
+            "healthy teeth with a perfect smile, not big incisor, good proportion teeth, "
+            "keep exact original skin texture without adding beard or facial hair"
         )
 
         payload = {
@@ -833,7 +831,7 @@ def process_smile():
                 "prompt": prompt_text,
                 "aspect_ratio": "1:1",
                 "output_format": "webp",
-                "output_quality": 90,
+                "output_quality": 80,
                 "resolution": "1 MP",
                 "safety_tolerance": 2
             }
@@ -882,47 +880,30 @@ def process_smile():
 
         ai_image_raw = Image.open(io.BytesIO(img_download.content)).convert("RGB")
         ai_crop_restaurado = ai_image_raw.resize((512, 512), Image.Resampling.LANCZOS)
+
         ai_np = np.array(ai_crop_restaurado).astype(np.float32)
 
-        # Mascara espacial mais ampla nos cantos laterais do sorriso, mantendo altura contida
-        h, w, _ = ai_np.shape
-        mouth_roi_mask = np.zeros((h, w), dtype=np.float32)
-        cv2.ellipse(
-            mouth_roi_mask,
-            center=(int(w * 0.50), int(h * 0.50)),
-            axes=(int(w * 0.25), int(h * 0.055)),
-            angle=0,
-            startAngle=0,
-            endAngle=360,
-            color=1.0,
-            thickness=-1
-        )
-        mouth_blend_mask = cv2.GaussianBlur(mouth_roi_mask, (31, 31), 0)
-        mouth_blend_3ch = np.stack([mouth_blend_mask] * 3, axis=-1)
-
-        # Alcanca os dentes laterais superiores com sombra leve sem pegar labios/pele
+        # Calibracao Termica BL1-BL4 direta na arcada dentaria (sem recorte eliptico que corta os cantos)
         hsv_ai = cv2.cvtColor(ai_np.astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
-        tooth_mask = ((hsv_ai[:, :, 2] > 115) & (hsv_ai[:, :, 1] < 105)).astype(np.float32) * mouth_roi_mask
-        tooth_mask_smooth = cv2.GaussianBlur(tooth_mask, (5, 5), 0)
+        tooth_mask_sup = ((hsv_ai[:, :, 2] > 110) & (hsv_ai[:, :, 1] < 115)).astype(np.float32)
+        tooth_mask_sup_smooth = cv2.GaussianBlur(tooth_mask_sup, (7, 7), 0)
 
-        # Calibracao BL1-BL4: BL1 com branco limpo e uniforme inclusive nos cantos
-        r_gain, g_gain, b_gain = 1.03, 1.04, 1.06
+        r_gain, g_gain, b_gain = 1.00, 1.00, 1.00
         if selected_color == 'bl1':
-            r_gain, g_gain, b_gain = 1.04, 1.05, 1.07
+            r_gain, g_gain, b_gain = 1.01, 1.02, 1.03
         elif selected_color == 'bl2':
-            r_gain, g_gain, b_gain = 1.03, 1.04, 1.04
+            r_gain, g_gain, b_gain = 1.02, 1.01, 0.98
         elif selected_color == 'bl3':
-            r_gain, g_gain, b_gain = 1.04, 1.03, 1.01
+            r_gain, g_gain, b_gain = 1.04, 1.00, 0.92
         elif selected_color == 'bl4':
-            r_gain, g_gain, b_gain = 1.05, 1.02, 0.98
+            r_gain, g_gain, b_gain = 1.05, 0.99, 0.87
 
         ai_colorido_np = ai_np.copy()
-        ai_colorido_np[:, :, 0] = np.clip(ai_np[:, :, 0] * (1.0 + (r_gain - 1.0) * tooth_mask_smooth), 0, 255)
-        ai_colorido_np[:, :, 1] = np.clip(ai_np[:, :, 1] * (1.0 + (g_gain - 1.0) * tooth_mask_smooth), 0, 255)
-        ai_colorido_np[:, :, 2] = np.clip(ai_np[:, :, 2] * (1.0 + (b_gain - 1.0) * tooth_mask_smooth), 0, 255)
+        ai_colorido_np[:, :, 0] = np.clip(ai_np[:, :, 0] * (1.0 + (r_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
+        ai_colorido_np[:, :, 1] = np.clip(ai_np[:, :, 1] * (1.0 + (g_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
+        ai_colorido_np[:, :, 2] = np.clip(ai_np[:, :, 2] * (1.0 + (b_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
 
-        blended_np = (ai_colorido_np * mouth_blend_3ch) + (orig_np * (1.0 - mouth_blend_3ch))
-        imagem_final_rgb = np.clip(blended_np, 0, 255).astype(np.uint8)
+        imagem_final_rgb = ai_colorido_np.astype(np.uint8)
 
         final_bgr = cv2.cvtColor(imagem_final_rgb, cv2.COLOR_RGB2BGR)
         _, buffer = cv2.imencode('.jpg', final_bgr, [cv2.IMWRITE_JPEG_QUALITY, 95])
@@ -935,7 +916,7 @@ def process_smile():
         cur.close()
         conn.close()
 
-        print("Simulacao concluida com sucesso absoluto!")
+        print("Simulacao concluida com sucesso absoluto (Virada de Ouro + Mercado Pago 91pts)!")
 
         return jsonify({
             "success": True,
