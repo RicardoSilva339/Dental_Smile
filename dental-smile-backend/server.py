@@ -74,6 +74,17 @@ def init_db():
             );
         """)
 
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS pedidos_mp (
+                id SERIAL PRIMARY KEY,
+                order_id VARCHAR(100) UNIQUE NOT NULL,
+                email_dentista VARCHAR(100) NOT NULL,
+                qtd_creditos INTEGER NOT NULL,
+                creditado BOOLEAN DEFAULT FALSE,
+                criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+
         conn.commit()
         cur.close()
         conn.close()
@@ -507,7 +518,7 @@ def criar_pagamento():
             "X-meli-session-id": device_session_id
         }
 
-        safe_ext_ref = f"ds_pkg_{qtd_creditos}_{email}_{random.randint(10000, 99999)}"
+        safe_ext_ref = f"ds_pkg{qtd_creditos}_{random.randint(100000, 999999)}"
 
         cpf_limpo = "".join(filter(str.isdigit, cpf_pagador))
         if len(cpf_limpo) != 11:
@@ -556,7 +567,21 @@ def criar_pagamento():
         if resp.status_code not in [200, 201]:
             raise Exception(f"Erro ao criar Order oficial no Mercado Pago: {order_response}")
 
-        order_id = order_response.get("id")
+        order_id = str(order_response.get("id"))
+
+        try:
+            conn = get_db_connection()
+            cur = conn.cursor()
+            cur.execute("""
+                INSERT INTO pedidos_mp (order_id, email_dentista, qtd_creditos, creditado)
+                VALUES (%s, %s, %s, FALSE)
+                ON CONFLICT (order_id) DO NOTHING;
+            """, (order_id, email, qtd_creditos))
+            conn.commit()
+            cur.close()
+            conn.close()
+        except Exception as db_pedido_err:
+            print(f"Aviso ao registrar pedido_mp: {db_pedido_err}")
 
         transactions = order_response.get("transactions", {})
         payments_list = transactions.get("payments", [])
@@ -576,7 +601,7 @@ def criar_pagamento():
         return jsonify({
             "success": True,
             "payment_id": payment_id,
-            "order_id": str(order_id),
+            "order_id": order_id,
             "qr_code": qr_data,
             "qr_code_base64": qr_base64,
             "valor": float(pacote['valor']),
@@ -631,20 +656,27 @@ def webhook_mercadopago():
             if aprovado:
                 email_dentista = None
                 qtd_creditos = 0
+                ja_creditado = False
 
-                payer_info = order_info.get("payer", {})
-                if isinstance(payer_info, dict) and payer_info.get("email"):
-                    email_dentista = payer_info.get("email").strip().lower()
+                conn = get_db_connection()
+                cur = conn.cursor()
+                cur.execute("SELECT email_dentista, qtd_creditos, creditado FROM pedidos_mp WHERE order_id = %s;", (order_id,))
+                pedido_row = cur.fetchone()
+                if pedido_row:
+                    email_dentista = pedido_row[0]
+                    qtd_creditos = int(pedido_row[1] or 0)
+                    ja_creditado = bool(pedido_row[2])
 
-                if ext_ref.startswith("ds_pkg_"):
-                    partes = ext_ref.split("_")
-                    if len(partes) >= 4:
-                        try:
-                            qtd_creditos = int(partes[2])
-                        except ValueError:
-                            qtd_creditos = 0
-                        if not email_dentista:
-                            email_dentista = partes[3].strip().lower()
+                if ja_creditado:
+                    cur.close()
+                    conn.close()
+                    print(f"[WEBHOOK ORDER DUPLICADO] order_id={order_id} ja creditado anteriormente.")
+                    return jsonify({"status": "success"}), 200
+
+                if not email_dentista:
+                    payer_info = order_info.get("payer", {})
+                    if isinstance(payer_info, dict) and payer_info.get("email"):
+                        email_dentista = payer_info.get("email").strip().lower()
 
                 if not qtd_creditos:
                     items_info = order_info.get("items", [])
@@ -659,9 +691,14 @@ def webhook_mercadopago():
 
                 if email_dentista and qtd_creditos > 0:
                     res = creditar_usuario_por_email(email_dentista, qtd_creditos)
+                    cur.execute("UPDATE pedidos_mp SET creditado = TRUE WHERE order_id = %s;", (order_id,))
+                    conn.commit()
                     print(f"[CREDITOS ENTREGUES VIA ORDER] email={email_dentista} | +{qtd_creditos} | novo_saldo={res}")
                 else:
                     print(f"[WEBHOOK ORDER SEM DADOS COMPLETOS] email={email_dentista} | creditos={qtd_creditos} | ext_ref={ext_ref}")
+
+                cur.close()
+                conn.close()
 
             return jsonify({"status": "success"}), 200
 
@@ -679,21 +716,9 @@ def webhook_mercadopago():
 
         status = str(payment_obj.get("status", "")).lower()
         metadata = payment_obj.get("metadata", {}) if isinstance(payment_obj.get("metadata"), dict) else {}
-        ext_ref = str(payment_obj.get("external_reference") or ext_ref_query or "")
 
         email_dentista = metadata.get("email_dentista") or (payment_obj.get("payer") or {}).get("email")
         qtd_creditos = int(metadata.get("qtd_creditos", 0) or 0)
-
-        if (not email_dentista or not qtd_creditos) and ext_ref.startswith("ds_pkg_"):
-            partes = ext_ref.split("_")
-            if len(partes) >= 4:
-                if not qtd_creditos:
-                    try:
-                        qtd_creditos = int(partes[2])
-                    except ValueError:
-                        qtd_creditos = 0
-                if not email_dentista:
-                    email_dentista = partes[3].strip().lower()
 
         if status == "approved" and email_dentista and qtd_creditos > 0:
             res = creditar_usuario_por_email(email_dentista, qtd_creditos)
