@@ -862,7 +862,6 @@ class _PlansScreenState extends State<PlansScreen> {
     bool carregandoParcelas = true;
     bool processandoPagamento = false;
 
-    // Busca as parcelas calculadas (1x a 10x) direto do servidor
     final simRes = await ApiService.simularParcelasCartao(pacote: creditos.toString());
     if (simRes['success'] == true && simRes['opcoes_parcelamento'] is List) {
       opcoesParcelas = simRes['opcoes_parcelamento'];
@@ -977,9 +976,10 @@ class _PlansScreenState extends State<PlansScreen> {
                           controller: validadeCtrl,
                           keyboardType: TextInputType.number,
                           maxLength: 5,
+                          inputFormatters: [_ValidadeCartaoFormatter()],
                           decoration: InputDecoration(
                             labelText: "Validade (MM/AA)",
-                            hintText: "08/30",
+                            hintText: "11/30",
                             counterText: "",
                             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                             isDense: true,
@@ -1010,6 +1010,7 @@ class _PlansScreenState extends State<PlansScreen> {
                     controller: cpfCtrl,
                     keyboardType: TextInputType.number,
                     maxLength: 14,
+                    inputFormatters: [_CpfFormatter()],
                     decoration: InputDecoration(
                       labelText: "CPF do Titular do Cartão",
                       hintText: "000.000.000-00",
@@ -1037,11 +1038,11 @@ class _PlansScreenState extends State<PlansScreen> {
                     : () async {
                   final numLimpo = numeroCartaoCtrl.text.replaceAll(RegExp(r'\D'), '');
                   final titular = nomeTitularCtrl.text.trim();
-                  final validade = validadeCtrl.text.trim();
+                  final digitsVal = validadeCtrl.text.replaceAll(RegExp(r'\D'), '');
                   final cvv = cvvCtrl.text.trim();
                   final cpf = cpfCtrl.text.replaceAll(RegExp(r'\D'), '');
 
-                  if (numLimpo.length < 13 || titular.isEmpty || !validade.contains('/') || cvv.length < 3 || cpf.length != 11) {
+                  if (numLimpo.length < 13 || titular.isEmpty || digitsVal.length != 4 || cvv.length < 3 || cpf.length != 11) {
                     ScaffoldMessenger.of(this.context).showSnackBar(
                       const SnackBar(
                         content: Text("Preencha todos os dados do cartão e o CPF corretamente (MM/AA)."),
@@ -1051,9 +1052,8 @@ class _PlansScreenState extends State<PlansScreen> {
                     return;
                   }
 
-                  final partesVal = validade.split('/');
-                  final int mes = int.tryParse(partesVal[0]) ?? 0;
-                  final int ano = int.tryParse(partesVal[1]) ?? 0;
+                  final int mes = int.tryParse(digitsVal.substring(0, 2)) ?? 0;
+                  final int ano = int.tryParse(digitsVal.substring(2, 4)) ?? 0;
 
                   if (mes < 1 || mes > 12 || ano <= 0) {
                     ScaffoldMessenger.of(this.context).showSnackBar(
@@ -1064,7 +1064,6 @@ class _PlansScreenState extends State<PlansScreen> {
 
                   setModalState(() => processandoPagamento = true);
 
-                  // 1. Tokeniza o cartão direto no Mercado Pago
                   final tokenRes = await ApiService.gerarTokenCartaoMp(
                     cardNumber: numLimpo,
                     cardholderName: titular,
@@ -1082,7 +1081,6 @@ class _PlansScreenState extends State<PlansScreen> {
                     return;
                   }
 
-                  // 2. Envia o token para o servidor processar a Order oficial
                   final pagRes = await ApiService.criarPagamentoCartao(
                     apiKey: _obterApiKeyAtual(),
                     pacote: creditos.toString(),
@@ -1138,7 +1136,6 @@ class _PlansScreenState extends State<PlansScreen> {
 
     if (!mounted) return;
 
-    // Retorna 'pix', 'cartao' ou null
     final metodoEscolhido = await showDialog<String>(
       context: this.context,
       builder: (ctx) => AlertDialog(
@@ -1239,7 +1236,6 @@ class _PlansScreenState extends State<PlansScreen> {
       return;
     }
 
-    // Fluxo Pix
     final apiKeyAtual = _obterApiKeyAtual();
 
     showDialog(
@@ -1638,6 +1634,52 @@ class _PlansScreenState extends State<PlansScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _ValidadeCartaoFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
+    final digitsOnly = newValue.text.replaceAll(RegExp(r'\D'), '');
+    final limitado = digitsOnly.length > 4 ? digitsOnly.substring(0, 4) : digitsOnly;
+
+    final buffer = StringBuffer();
+    for (int i = 0; i < limitado.length; i++) {
+      buffer.write(limitado[i]);
+      if (i == 1 && limitado.length > 2) {
+        buffer.write('/');
+      }
+    }
+
+    final textoFormatado = buffer.toString();
+    return TextEditingValue(
+      text: textoFormatado,
+      selection: TextSelection.collapsed(offset: textoFormatado.length),
+    );
+  }
+}
+
+class _CpfFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
+    final digitsOnly = newValue.text.replaceAll(RegExp(r'\D'), '');
+    final limitado = digitsOnly.length > 11 ? digitsOnly.substring(0, 11) : digitsOnly;
+
+    final buffer = StringBuffer();
+    for (int i = 0; i < limitado.length; i++) {
+      buffer.write(limitado[i]);
+      if ((i == 2 || i == 5) && i != limitado.length - 1) {
+        buffer.write('.');
+      } else if (i == 8 && i != limitado.length - 1) {
+        buffer.write('-');
+      }
+    }
+
+    final textoFormatado = buffer.toString();
+    return TextEditingValue(
+      text: textoFormatado,
+      selection: TextSelection.collapsed(offset: textoFormatado.length),
     );
   }
 }
