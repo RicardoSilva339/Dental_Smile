@@ -884,37 +884,37 @@ def process_smile():
         ai_crop_restaurado = ai_image_raw.resize((512, 512), Image.Resampling.LANCZOS)
         ai_np = np.array(ai_crop_restaurado).astype(np.float32)
 
-        # Mascara espacial focada na arcada dentaria sem invadir o labio inferior ou queixo
+        # Mascara espacial suave centrada na regiao do sorriso (evita borda dura no queixo/labio)
         h, w, _ = ai_np.shape
         mouth_roi_mask = np.zeros((h, w), dtype=np.float32)
         cv2.ellipse(
             mouth_roi_mask,
-            center=(int(w * 0.50), int(h * 0.505)),
-            axes=(int(w * 0.21), int(h * 0.065)),
+            center=(int(w * 0.50), int(h * 0.50)),
+            axes=(int(w * 0.20), int(h * 0.06)),
             angle=0,
             startAngle=0,
             endAngle=360,
             color=1.0,
             thickness=-1
         )
-        mouth_blend_mask = cv2.GaussianBlur(mouth_roi_mask, (17, 17), 0)
+        mouth_blend_mask = cv2.GaussianBlur(mouth_roi_mask, (35, 35), 0)
         mouth_blend_3ch = np.stack([mouth_blend_mask] * 3, axis=-1)
 
-        # Seleciona apenas os dentes claros/brancos dentro da area do sorriso (evita labios e gengiva)
+        # Mascara focada nos dentes claros/brancos dentro da area do sorriso
         hsv_ai = cv2.cvtColor(ai_np.astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
-        tooth_mask = ((hsv_ai[:, :, 2] > 130) & (hsv_ai[:, :, 1] < 95)).astype(np.float32) * mouth_roi_mask
-        tooth_mask_smooth = cv2.GaussianBlur(tooth_mask, (3, 3), 0)
+        tooth_mask = ((hsv_ai[:, :, 2] > 140) & (hsv_ai[:, :, 1] < 80)).astype(np.float32) * mouth_roi_mask
+        tooth_mask_smooth = cv2.GaussianBlur(tooth_mask, (5, 5), 0)
 
-        # Ganhos calibrados para manter branco limpo no BL1 e tons graduais sem amarelar excessivamente
-        r_gain, g_gain, b_gain = 1.02, 1.03, 1.05
+        # Calibracao BL1-BL4: BL1 com branco limpo e luminoso (sem puxar para o amarelo)
+        r_gain, g_gain, b_gain = 1.03, 1.04, 1.06
         if selected_color == 'bl1':
-            r_gain, g_gain, b_gain = 1.03, 1.04, 1.06
+            r_gain, g_gain, b_gain = 1.04, 1.05, 1.07
         elif selected_color == 'bl2':
-            r_gain, g_gain, b_gain = 1.02, 1.03, 1.03
+            r_gain, g_gain, b_gain = 1.03, 1.04, 1.04
         elif selected_color == 'bl3':
-            r_gain, g_gain, b_gain = 1.04, 1.03, 0.99
+            r_gain, g_gain, b_gain = 1.04, 1.03, 1.01
         elif selected_color == 'bl4':
-            r_gain, g_gain, b_gain = 1.05, 1.02, 0.96
+            r_gain, g_gain, b_gain = 1.05, 1.02, 0.98
 
         ai_colorido_np = ai_np.copy()
         ai_colorido_np[:, :, 0] = np.clip(ai_np[:, :, 0] * (1.0 + (r_gain - 1.0) * tooth_mask_smooth), 0, 255)
