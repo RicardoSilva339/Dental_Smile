@@ -74,20 +74,6 @@ def calcular_opcoes_cartao(valor_base_pix):
         })
     return valor_base_cartao, opcoes
 
-def normalizar_bandeira_mp(bandeira):
-    b = (bandeira or "").strip().lower()
-    mapa_bandeiras = {
-        "master": "mastercard",
-        "mc": "mastercard",
-        "mastercard": "mastercard",
-        "visa": "visa",
-        "elo": "elo",
-        "amex": "amex",
-        "american_express": "amex",
-        "hipercard": "hipercard"
-    }
-    return mapa_bandeiras.get(b, b)
-
 def get_db_connection():
     return psycopg2.connect(DATABASE_URL, sslmode='require')
 
@@ -696,6 +682,7 @@ def criar_pagamento_cartao():
     email = data.get('api_key', '').strip().lower()
     pacote_tipo = str(data.get('pacote', '30'))
     card_token = data.get('card_token', '').strip()
+    payment_method_id = data.get('payment_method_id', '').strip().lower()
     parcelas = int(data.get('installments', 1) or 1)
     device_session_id = data.get('device_id', '').strip() or f"ds_device_{random.randint(100000, 999999)}"
     cpf_pagador = data.get('cpf', '').strip()
@@ -730,43 +717,67 @@ def criar_pagamento_cartao():
 
         safe_ext_ref = f"ds_cc_pkg{qtd_creditos}_{random.randint(100000, 999999)}"
 
-        payment_method_obj = {
-            "type": "credit_card",
-            "token": card_token,
-            "installments": parcelas,
-            "statement_descriptor": "DENTAL SMILE"
-        }
+        candidatos_id = []
+        if payment_method_id:
+            candidatos_id.append(payment_method_id)
+        if payment_method_id == "mastercard" and "master" not in candidatos_id:
+            candidatos_id.append("master")
+        elif payment_method_id == "master" and "mastercard" not in candidatos_id:
+            candidatos_id.append("mastercard")
+        if not candidatos_id:
+            candidatos_id = ["master", "mastercard", "visa"]
 
-        order_payload = {
-            "type": "online",
-            "processing_mode": "automatic",
-            "capture_mode": "automatic",
-            "external_reference": safe_ext_ref,
-            "total_amount": valor_order_str,
-            "payer": payer_obj,
-            "items": [
-                {
-                    "title": f"{pacote['titulo']} (Cartao)",
-                    "category_id": "services",
-                    "unit_price": valor_order_str,
-                    "quantity": 1
-                }
-            ],
-            "transactions": {
-                "payments": [
-                    {
-                        "amount": valor_order_str,
-                        "payment_method": payment_method_obj
-                    }
-                ]
+        resp = None
+        order_response = {}
+        for idx_tentativa, pm_id in enumerate(candidatos_id):
+            payment_method_obj = {
+                "id": pm_id,
+                "type": "credit_card",
+                "token": card_token,
+                "installments": parcelas,
+                "statement_descriptor": "DENTAL SMILE"
             }
-        }
 
-        resp = requests.post(order_url, json=order_payload, headers=headers, timeout=30)
-        order_response = resp.json()
+            order_payload = {
+                "type": "online",
+                "processing_mode": "automatic",
+                "capture_mode": "automatic",
+                "external_reference": safe_ext_ref,
+                "total_amount": valor_order_str,
+                "payer": payer_obj,
+                "items": [
+                    {
+                        "title": f"{pacote['titulo']} (Cartao)",
+                        "category_id": "services",
+                        "unit_price": valor_order_str,
+                        "quantity": 1
+                    }
+                ],
+                "transactions": {
+                    "payments": [
+                        {
+                            "amount": valor_order_str,
+                            "payment_method": payment_method_obj
+                        }
+                    ]
+                }
+            }
 
-        if resp.status_code not in [200, 201]:
-            print(f"[ERRO ORDER CARTAO MP] Status {resp.status_code}: {order_response}")
+            headers_tentativa = dict(headers)
+            headers_tentativa["X-Idempotency-Key"] = f"{idempotency_key}_{idx_tentativa}"
+
+            resp = requests.post(order_url, json=order_payload, headers=headers_tentativa, timeout=30)
+            order_response = resp.json()
+
+            if resp.status_code in [200, 201]:
+                break
+
+            erro_str = str(order_response)
+            if "payment_method.id" not in erro_str and "property_value" not in erro_str:
+                break
+
+        if resp is None or resp.status_code not in [200, 201]:
+            print(f"[ERRO ORDER CARTAO MP] Status {resp.status_code if resp else 'N/A'}: {order_response}")
             msg_erro = "Pagamento nao autorizado pela operadora do cartao."
             if isinstance(order_response, dict):
                 errors_list = order_response.get("errors", [])
