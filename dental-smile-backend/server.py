@@ -700,7 +700,7 @@ def criar_pagamento_cartao():
     qtd_creditos = pacote['creditos']
     valor_base_cartao, opcoes = calcular_opcoes_cartao(pacote['valor'])
     opcao_escolhida = next((o for o in opcoes if o["parcelas"] == parcelas), opcoes[0])
-    valor_order_num = round(float(valor_base_cartao), 2)
+    valor_order_str = f"{valor_base_cartao:.2f}"
 
     payer_obj = obter_dados_pagador(email, cpf_pagador)
 
@@ -742,20 +742,20 @@ def criar_pagamento_cartao():
                 "type": "online",
                 "processing_mode": "automatic",
                 "external_reference": safe_ext_ref,
-                "total_amount": valor_order_num,
+                "total_amount": valor_order_str,
                 "payer": payer_obj,
                 "items": [
                     {
                         "title": f"{pacote['titulo']} (Cartao)",
                         "category_id": "services",
-                        "unit_price": valor_order_num,
+                        "unit_price": valor_order_str,
                         "quantity": 1
                     }
                 ],
                 "transactions": {
                     "payments": [
                         {
-                            "amount": valor_order_num,
+                            "amount": valor_order_str,
                             "payment_method": payment_method_obj
                         }
                     ]
