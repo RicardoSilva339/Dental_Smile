@@ -29,12 +29,11 @@ else:
 
 sdk = mercadopago.SDK(mp_access_token)
 
-# Valores em R$ 1.00 para teste real controlado.
-# Para virada comercial oficial, trocar para: '79.00', '199.00' e '579.00'
+# Valores comerciais configurados para teste em 1x e parcelado (3x+) com cartao ficticio
 TABELA_PACOTES = {
-    '10': {'creditos': 10, 'valor': '1.00', 'titulo': 'Pacote 10 Creditos Dental Smile'},
-    '30': {'creditos': 30, 'valor': '1.00', 'titulo': 'Pacote 30 Creditos Dental Smile'},
-    '100': {'creditos': 100, 'valor': '1.00', 'titulo': 'Pacote 100 Creditos Dental Smile'}
+    '10': {'creditos': 10, 'valor': '79.00', 'titulo': 'Pacote 10 Creditos Dental Smile'},
+    '30': {'creditos': 30, 'valor': '199.00', 'titulo': 'Pacote 30 Creditos Dental Smile'},
+    '100': {'creditos': 100, 'valor': '579.00', 'titulo': 'Pacote 100 Creditos Dental Smile'}
 }
 
 # Tabela oficial Mercado Pago (Taxa base vendedora: 4.98% | Acrescimos parcelado comprador 2x a 10x)
