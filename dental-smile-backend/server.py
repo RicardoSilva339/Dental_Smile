@@ -696,7 +696,6 @@ def criar_pagamento_cartao():
     email = data.get('api_key', '').strip().lower()
     pacote_tipo = str(data.get('pacote', '30'))
     card_token = data.get('card_token', '').strip()
-    payment_method_id = normalizar_bandeira_mp(data.get('payment_method_id', ''))
     parcelas = int(data.get('installments', 1) or 1)
     device_session_id = data.get('device_id', '').strip() or f"ds_device_{random.randint(100000, 999999)}"
     cpf_pagador = data.get('cpf', '').strip()
@@ -737,8 +736,6 @@ def criar_pagamento_cartao():
             "installments": parcelas,
             "statement_descriptor": "DENTAL SMILE"
         }
-        if payment_method_id:
-            payment_method_obj["id"] = payment_method_id
 
         order_payload = {
             "type": "online",
