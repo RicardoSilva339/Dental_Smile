@@ -74,6 +74,20 @@ def calcular_opcoes_cartao(valor_base_pix):
         })
     return valor_base_cartao, opcoes
 
+def normalizar_bandeira_mp(bandeira):
+    b = (bandeira or "").strip().lower()
+    mapa_bandeiras = {
+        "master": "mastercard",
+        "mc": "mastercard",
+        "mastercard": "mastercard",
+        "visa": "visa",
+        "elo": "elo",
+        "amex": "amex",
+        "american_express": "amex",
+        "hipercard": "hipercard"
+    }
+    return mapa_bandeiras.get(b, b)
+
 def get_db_connection():
     return psycopg2.connect(DATABASE_URL, sslmode='require')
 
@@ -682,7 +696,7 @@ def criar_pagamento_cartao():
     email = data.get('api_key', '').strip().lower()
     pacote_tipo = str(data.get('pacote', '30'))
     card_token = data.get('card_token', '').strip()
-    payment_method_id = data.get('payment_method_id', '').strip().lower()
+    payment_method_id = normalizar_bandeira_mp(data.get('payment_method_id', ''))
     parcelas = int(data.get('installments', 1) or 1)
     device_session_id = data.get('device_id', '').strip() or f"ds_device_{random.randint(100000, 999999)}"
     cpf_pagador = data.get('cpf', '').strip()
@@ -729,7 +743,7 @@ def criar_pagamento_cartao():
         order_payload = {
             "type": "online",
             "processing_mode": "automatic",
-            "capture_mode": "automatic_async",
+            "capture_mode": "automatic",
             "external_reference": safe_ext_ref,
             "total_amount": valor_order_str,
             "payer": payer_obj,
