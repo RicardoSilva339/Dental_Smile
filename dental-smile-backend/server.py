@@ -29,9 +29,9 @@ else:
 
 sdk = mercadopago.SDK(mp_access_token)
 
-# Valor temporario de R$ 10.00 no pacote de 10 creditos para teste real de Pix e Cartao (1x)
+# Tabela oficial de pacotes comerciais em producao
 TABELA_PACOTES = {
-    '10': {'creditos': 10, 'valor': '10.00', 'titulo': 'Pacote 10 Creditos Dental Smile'},
+    '10': {'creditos': 10, 'valor': '79.00', 'titulo': 'Pacote 10 Creditos Dental Smile'},
     '30': {'creditos': 30, 'valor': '199.00', 'titulo': 'Pacote 30 Creditos Dental Smile'},
     '100': {'creditos': 100, 'valor': '579.00', 'titulo': 'Pacote 100 Creditos Dental Smile'}
 }
