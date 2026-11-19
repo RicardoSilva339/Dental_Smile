@@ -29,11 +29,50 @@ else:
 
 sdk = mercadopago.SDK(mp_access_token)
 
+# Valores em R$ 1.00 para teste real controlado.
+# Para virada comercial oficial, trocar para: '79.00', '199.00' e '579.00'
 TABELA_PACOTES = {
     '10': {'creditos': 10, 'valor': '1.00', 'titulo': 'Pacote 10 Creditos Dental Smile'},
     '30': {'creditos': 30, 'valor': '1.00', 'titulo': 'Pacote 30 Creditos Dental Smile'},
     '100': {'creditos': 100, 'valor': '1.00', 'titulo': 'Pacote 100 Creditos Dental Smile'}
 }
+
+# Tabela oficial Mercado Pago (Taxa base vendedora: 4.98% | Acrescimos parcelado comprador 2x a 10x)
+TAXA_BASE_CARTAO = 0.0498
+TABELA_JUROS_PARCELAS_MP = {
+    1: 0.0000,
+    2: 0.0964,
+    3: 0.1123,
+    4: 0.1136,
+    5: 0.1431,
+    6: 0.1432,
+    7: 0.1672,
+    8: 0.1673,
+    9: 0.1969,
+    10: 0.2065
+}
+
+def calcular_opcoes_cartao(valor_base_pix):
+    valor_liquido_desejado = float(valor_base_pix)
+    # Repassa a tarifa fixa de 4.98% para o valor base do cartao
+    valor_base_cartao = round(valor_liquido_desejado / (1.0 - TAXA_BASE_CARTAO), 2)
+    opcoes = []
+    for parcelas in range(1, 11):
+        taxa_mp = TABELA_JUROS_PARCELAS_MP.get(parcelas, 0.0)
+        total_comprador = round(valor_base_cartao * (1.0 + taxa_mp), 2)
+        valor_parcela = round(total_comprador / parcelas, 2)
+        opcoes.append({
+            "parcelas": parcelas,
+            "valor_base_order": f"{valor_base_cartao:.2f}",
+            "valor_parcela": valor_parcela,
+            "total_comprador": total_comprador,
+            "label": (
+                f"1x de R$ {total_comprador:.2f} (a vista no cartao)"
+                if parcelas == 1
+                else f"{parcelas}x de R$ {valor_parcela:.2f} (Total R$ {total_comprador:.2f})"
+            )
+        })
+    return valor_base_cartao, opcoes
 
 def get_db_connection():
     return psycopg2.connect(DATABASE_URL, sslmode='require')
@@ -81,9 +120,16 @@ def init_db():
                 email_dentista VARCHAR(100) NOT NULL,
                 qtd_creditos INTEGER NOT NULL,
                 creditado BOOLEAN DEFAULT FALSE,
+                metodo_pagamento VARCHAR(30) DEFAULT 'pix',
+                valor_pago VARCHAR(20),
+                parcelas INTEGER DEFAULT 1,
                 criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         """)
+
+        cur.execute("ALTER TABLE pedidos_mp ADD COLUMN IF NOT EXISTS metodo_pagamento VARCHAR(30) DEFAULT 'pix';")
+        cur.execute("ALTER TABLE pedidos_mp ADD COLUMN IF NOT EXISTS valor_pago VARCHAR(20);")
+        cur.execute("ALTER TABLE pedidos_mp ADD COLUMN IF NOT EXISTS parcelas INTEGER DEFAULT 1;")
 
         conn.commit()
         cur.close()
@@ -93,7 +139,7 @@ def init_db():
 
 init_db()
 
-print("Servidor iniciado com Virada de Ouro (Flux 2 Pro) + Escala BL1-BL4 Calibrada + Mercado Pago Pix")
+print("Servidor iniciado com Flux 2 Pro (BL1-BL4 Calibrado) + Mercado Pago Pix e Cartao de Credito")
 
 def enviar_email_codigo(destinatario, nome, codigo, assunto="Codigo de Verificacao - Dental Smile"):
     if not RESEND_API_KEY:
@@ -178,6 +224,37 @@ def creditar_usuario_por_email(email_dentista, qtd_creditos):
     cur.close()
     conn.close()
     return res
+
+def obter_dados_pagador(email, cpf_pagador):
+    primeiro_nome = "APRO"
+    sobrenome = "Dentista"
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT nome FROM usuarios WHERE email = %s OR api_key = %s;", (email, email))
+        user_row = cur.fetchone()
+        if user_row and user_row[0] and user_row[0].strip():
+            partes_nome = user_row[0].strip().split(" ", 1)
+            primeiro_nome = partes_nome[0]
+            sobrenome = partes_nome[1] if len(partes_nome) > 1 else "Silva"
+        cur.close()
+        conn.close()
+    except Exception as db_err:
+        print(f"Aviso ao consultar nome do pagador: {db_err}")
+
+    cpf_limpo = "".join(filter(str.isdigit, cpf_pagador or ""))
+    if len(cpf_limpo) != 11:
+        cpf_limpo = "19119119100"
+
+    return {
+        "email": email,
+        "first_name": primeiro_nome,
+        "last_name": sobrenome,
+        "identification": {
+            "type": "CPF",
+            "number": cpf_limpo
+        }
+    }
 
 @app.route('/register', methods=['POST'])
 def register():
@@ -475,6 +552,23 @@ def add_credits():
         return jsonify({"success": True, "novo_saldo": res[0], "limite_dispositivos": res[1]}), 200
     return jsonify({"success": False, "error": "Conta nao encontrada."}), 404
 
+@app.route('/simular-parcelas-cartao', methods=['POST'])
+def simular_parcelas_cartao():
+    data = request.get_json(force=True, silent=True) or {}
+    pacote_tipo = str(data.get('pacote', '30'))
+    pacote = TABELA_PACOTES.get(pacote_tipo, TABELA_PACOTES['30'])
+    valor_pix = float(pacote['valor'])
+    valor_base_cartao, opcoes = calcular_opcoes_cartao(valor_pix)
+
+    return jsonify({
+        "success": True,
+        "pacote": pacote_tipo,
+        "creditos": pacote['creditos'],
+        "valor_pix": valor_pix,
+        "valor_base_cartao": valor_base_cartao,
+        "opcoes_parcelamento": opcoes
+    }), 200
+
 @app.route('/criar-pagamento', methods=['POST'])
 def criar_pagamento():
     data = request.get_json(force=True, silent=True) or {}
@@ -488,28 +582,11 @@ def criar_pagamento():
 
     pacote = TABELA_PACOTES.get(pacote_tipo, TABELA_PACOTES['30'])
     qtd_creditos = pacote['creditos']
-
-    primeiro_nome = "APRO"
-    sobrenome = "Dentista"
-
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT nome FROM usuarios WHERE email = %s OR api_key = %s;", (email, email))
-        user_row = cur.fetchone()
-        if user_row and user_row[0] and user_row[0].strip():
-            partes_nome = user_row[0].strip().split(" ", 1)
-            primeiro_nome = partes_nome[0]
-            sobrenome = partes_nome[1] if len(partes_nome) > 1 else "Silva"
-        cur.close()
-        conn.close()
-    except Exception as db_err:
-        print(f"Aviso ao consultar nome do pagador: {db_err}")
+    payer_obj = obter_dados_pagador(email, cpf_pagador)
 
     try:
         order_url = "https://api.mercadopago.com/v1/orders"
-
-        idempotency_key = f"ds_order_{random.randint(10000000, 99999999)}_{int(time.time())}"
+        idempotency_key = f"ds_pix_{random.randint(10000000, 99999999)}_{int(time.time())}"
 
         headers = {
             "Authorization": f"Bearer {mp_access_token}",
@@ -519,20 +596,6 @@ def criar_pagamento():
         }
 
         safe_ext_ref = f"ds_pkg{qtd_creditos}_{random.randint(100000, 999999)}"
-
-        cpf_limpo = "".join(filter(str.isdigit, cpf_pagador))
-        if len(cpf_limpo) != 11:
-            cpf_limpo = "19119119100"
-
-        payer_obj = {
-            "email": email,
-            "first_name": primeiro_nome,
-            "last_name": sobrenome,
-            "identification": {
-                "type": "CPF",
-                "number": cpf_limpo
-            }
-        }
 
         order_payload = {
             "type": "online",
@@ -565,7 +628,7 @@ def criar_pagamento():
         order_response = resp.json()
 
         if resp.status_code not in [200, 201]:
-            raise Exception(f"Erro ao criar Order oficial no Mercado Pago: {order_response}")
+            raise Exception(f"Erro ao criar Order Pix no Mercado Pago: {order_response}")
 
         order_id = str(order_response.get("id"))
 
@@ -573,15 +636,15 @@ def criar_pagamento():
             conn = get_db_connection()
             cur = conn.cursor()
             cur.execute("""
-                INSERT INTO pedidos_mp (order_id, email_dentista, qtd_creditos, creditado)
-                VALUES (%s, %s, %s, FALSE)
+                INSERT INTO pedidos_mp (order_id, email_dentista, qtd_creditos, creditado, metodo_pagamento, valor_pago, parcelas)
+                VALUES (%s, %s, %s, FALSE, 'pix', %s, 1)
                 ON CONFLICT (order_id) DO NOTHING;
-            """, (order_id, email, qtd_creditos))
+            """, (order_id, email, qtd_creditos, str(pacote['valor'])))
             conn.commit()
             cur.close()
             conn.close()
         except Exception as db_pedido_err:
-            print(f"Aviso ao registrar pedido_mp: {db_pedido_err}")
+            print(f"Aviso ao registrar pedido_mp Pix: {db_pedido_err}")
 
         transactions = order_response.get("transactions", {})
         payments_list = transactions.get("payments", [])
@@ -596,7 +659,7 @@ def criar_pagamento():
             qr_data = payment_method.get("qr_code", "")
             qr_base64 = payment_method.get("qr_code_base64", "")
 
-        print(f"[ORDER OFICIAL CRIADA] Order ID: {order_id} | Payment ID: {payment_id} | Usuario: {email} | Creditos: {qtd_creditos}")
+        print(f"[ORDER PIX CRIADA] Order ID: {order_id} | Payment ID: {payment_id} | Usuario: {email} | Creditos: {qtd_creditos}")
 
         return jsonify({
             "success": True,
@@ -609,7 +672,164 @@ def criar_pagamento():
         }), 200
 
     except Exception as e:
-        print(f"Erro ao criar pagamento via Orders API oficial: {str(e)}")
+        print(f"Erro ao criar pagamento Pix via Orders API oficial: {str(e)}")
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/criar-pagamento-cartao', methods=['POST'])
+def criar_pagamento_cartao():
+    data = request.get_json(force=True, silent=True) or {}
+    email = data.get('api_key', '').strip().lower()
+    pacote_tipo = str(data.get('pacote', '30'))
+    card_token = data.get('card_token', '').strip()
+    payment_method_id = data.get('payment_method_id', '').strip().lower()
+    parcelas = int(data.get('installments', 1) or 1)
+    device_session_id = data.get('device_id', '').strip() or f"ds_device_{random.randint(100000, 999999)}"
+    cpf_pagador = data.get('cpf', '').strip()
+
+    if not email:
+        return jsonify({"success": False, "error": "Usuario nao identificado."}), 401
+
+    if not card_token:
+        return jsonify({"success": False, "error": "Token do cartao nao informado."}), 400
+
+    if parcelas < 1 or parcelas > 10:
+        parcelas = 1
+
+    pacote = TABELA_PACOTES.get(pacote_tipo, TABELA_PACOTES['30'])
+    qtd_creditos = pacote['creditos']
+    valor_base_cartao, opcoes = calcular_opcoes_cartao(pacote['valor'])
+    opcao_escolhida = next((o for o in opcoes if o["parcelas"] == parcelas), opcoes[0])
+    valor_order_str = f"{valor_base_cartao:.2f}"
+
+    payer_obj = obter_dados_pagador(email, cpf_pagador)
+
+    try:
+        order_url = "https://api.mercadopago.com/v1/orders"
+        idempotency_key = f"ds_cc_{random.randint(10000000, 99999999)}_{int(time.time())}"
+
+        headers = {
+            "Authorization": f"Bearer {mp_access_token}",
+            "Content-Type": "application/json",
+            "X-Idempotency-Key": idempotency_key,
+            "X-meli-session-id": device_session_id
+        }
+
+        safe_ext_ref = f"ds_cc_pkg{qtd_creditos}_{random.randint(100000, 999999)}"
+
+        payment_method_obj = {
+            "type": "credit_card",
+            "token": card_token,
+            "installments": parcelas,
+            "statement_descriptor": "DENTAL SMILE"
+        }
+        if payment_method_id:
+            payment_method_obj["id"] = payment_method_id
+
+        order_payload = {
+            "type": "online",
+            "processing_mode": "automatic",
+            "capture_mode": "automatic_async",
+            "external_reference": safe_ext_ref,
+            "total_amount": valor_order_str,
+            "payer": payer_obj,
+            "items": [
+                {
+                    "title": f"{pacote['titulo']} (Cartao)",
+                    "category_id": "services",
+                    "unit_price": valor_order_str,
+                    "quantity": 1
+                }
+            ],
+            "transactions": {
+                "payments": [
+                    {
+                        "amount": valor_order_str,
+                        "payment_method": payment_method_obj
+                    }
+                ]
+            }
+        }
+
+        resp = requests.post(order_url, json=order_payload, headers=headers, timeout=30)
+        order_response = resp.json()
+
+        if resp.status_code not in [200, 201]:
+            print(f"[ERRO ORDER CARTAO MP] Status {resp.status_code}: {order_response}")
+            msg_erro = "Pagamento nao autorizado pela operadora do cartao."
+            if isinstance(order_response, dict):
+                errors_list = order_response.get("errors", [])
+                if errors_list and isinstance(errors_list, list):
+                    msg_erro = errors_list[0].get("message", msg_erro)
+            return jsonify({"success": False, "error": msg_erro, "detalhes": order_response}), 400
+
+        order_id = str(order_response.get("id"))
+        order_status = str(order_response.get("status", "")).lower()
+        order_status_detail = str(order_response.get("status_detail", "")).lower()
+
+        payments_list = order_response.get("transactions", {}).get("payments", [])
+        payment_id = None
+        payment_status = ""
+        payment_status_detail = ""
+        if payments_list and isinstance(payments_list, list):
+            first_payment = payments_list[0]
+            payment_id = first_payment.get("id")
+            payment_status = str(first_payment.get("status", "")).lower()
+            payment_status_detail = str(first_payment.get("status_detail", "")).lower()
+
+        aprovado = (order_status in ["processed", "paid", "approved"]) or (payment_status in ["approved", "processed"])
+        novo_saldo = None
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO pedidos_mp (order_id, email_dentista, qtd_creditos, creditado, metodo_pagamento, valor_pago, parcelas)
+            VALUES (%s, %s, %s, %s, 'credit_card', %s, %s)
+            ON CONFLICT (order_id) DO NOTHING;
+        """, (order_id, email, qtd_creditos, aprovado, f"{opcao_escolhida['total_comprador']:.2f}", parcelas))
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        if aprovado:
+            res = creditar_usuario_por_email(email, qtd_creditos)
+            novo_saldo = res[0] if res else None
+            print(f"[CARTAO APROVADO NA HORA] Order: {order_id} | Usuario: {email} | +{qtd_creditos} CR | Saldo: {novo_saldo}")
+            return jsonify({
+                "success": True,
+                "aprovado": True,
+                "status": "approved",
+                "order_id": order_id,
+                "payment_id": payment_id,
+                "creditos": qtd_creditos,
+                "novo_saldo": novo_saldo,
+                "parcelas": parcelas,
+                "total_pago": opcao_escolhida["total_comprador"],
+                "message": f"Pagamento aprovado! +{qtd_creditos} creditos adicionados a sua conta."
+            }), 200
+
+        if order_status in ["action_required", "in_process", "pending"] or payment_status in ["in_process", "pending"]:
+            print(f"[CARTAO EM ANALISE] Order: {order_id} | status={order_status} | detail={payment_status_detail}")
+            return jsonify({
+                "success": True,
+                "aprovado": False,
+                "status": "pending",
+                "order_id": order_id,
+                "payment_id": payment_id,
+                "message": "Pagamento em analise pela operadora. Assim que aprovar, seus creditos serao liberados automaticamente!"
+            }), 200
+
+        print(f"[CARTAO RECUSADO] Order: {order_id} | status={order_status} | detail={payment_status_detail or order_status_detail}")
+        return jsonify({
+            "success": False,
+            "aprovado": False,
+            "status": "rejected",
+            "status_detail": payment_status_detail or order_status_detail,
+            "error": "Cartao recusado pela operadora. Verifique os dados ou tente outro cartao/Pix."
+        }), 400
+
+    except Exception as e:
+        print(f"Erro critico no pagamento com cartao: {str(e)}")
         traceback.print_exc()
         return jsonify({"success": False, "error": str(e)}), 500
 
@@ -815,7 +1035,6 @@ def process_smile():
         file_data = file_resp.json()
         input_image_url = file_data.get("urls", {}).get("get") or file_data.get("url")
 
-        # Reforco de tonalidade no prompt para garantir escada progressiva real (BL1 > BL2 > BL3 > BL4)
         shade_prompt_map = {
             'bl1': "ultra bright pure white Hollywood smile teeth, maximum brightness bleach shade BL1",
             'bl2': "bright clean natural white teeth, balanced luminous bleach shade BL2",
@@ -892,7 +1111,6 @@ def process_smile():
 
         ai_np = np.array(ai_crop_restaurado).astype(np.float32)
 
-        # Calibracao Progressiva BL1 -> BL2 -> BL3 -> BL4 (garante BL4 mais suave que BL3)
         hsv_ai = cv2.cvtColor(ai_np.astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
         tooth_mask_sup = ((hsv_ai[:, :, 2] > 115) & (hsv_ai[:, :, 1] < 105)).astype(np.float32)
         tooth_mask_sup_smooth = cv2.GaussianBlur(tooth_mask_sup, (7, 7), 0)
