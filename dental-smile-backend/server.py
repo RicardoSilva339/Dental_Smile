@@ -225,36 +225,41 @@ def creditar_usuario_por_email(email_dentista, qtd_creditos):
     conn.close()
     return res
 
-def obter_dados_pagador(email, cpf_pagador):
-    primeiro_nome = "APRO"
-    sobrenome = "Dentista"
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT nome FROM usuarios WHERE email = %s OR api_key = %s;", (email, email))
-        user_row = cur.fetchone()
-        if user_row and user_row[0] and user_row[0].strip():
-            partes_nome = user_row[0].strip().split(" ", 1)
-            primeiro_nome = partes_nome[0]
-            sobrenome = partes_nome[1] if len(partes_nome) > 1 else "Silva"
-        cur.close()
-        conn.close()
-    except Exception as db_err:
-        print(f"Aviso ao consultar nome do pagador: {db_err}")
-
+def obter_dados_pagador(email, cpf_pagador, incluir_nome=True, email_override=None):
+    email_payer = (email_override or email or "").strip().lower()
     cpf_limpo = "".join(filter(str.isdigit, cpf_pagador or ""))
     if len(cpf_limpo) != 11:
         cpf_limpo = "19119119100"
 
-    return {
-        "email": email,
-        "first_name": primeiro_nome,
-        "last_name": sobrenome,
+    payer = {
+        "email": email_payer,
         "identification": {
             "type": "CPF",
             "number": cpf_limpo
         }
     }
+
+    if incluir_nome:
+        primeiro_nome = "APRO"
+        sobrenome = "Dentista"
+        try:
+            conn = get_db_connection()
+            cur = conn.cursor()
+            cur.execute("SELECT nome FROM usuarios WHERE email = %s OR api_key = %s;", (email, email))
+            user_row = cur.fetchone()
+            if user_row and user_row[0] and user_row[0].strip():
+                partes_nome = user_row[0].strip().split(" ", 1)
+                primeiro_nome = partes_nome[0]
+                sobrenome = partes_nome[1] if len(partes_nome) > 1 else "Silva"
+            cur.close()
+            conn.close()
+        except Exception as db_err:
+            print(f"Aviso ao consultar nome do pagador: {db_err}")
+
+        payer["first_name"] = primeiro_nome
+        payer["last_name"] = sobrenome
+
+    return payer
 
 @app.route('/register', methods=['POST'])
 def register():
@@ -702,8 +707,6 @@ def criar_pagamento_cartao():
     opcao_escolhida = next((o for o in opcoes if o["parcelas"] == parcelas), opcoes[0])
     valor_order_str = f"{valor_base_cartao:.2f}"
 
-    payer_obj = obter_dados_pagador(email, cpf_pagador)
-
     try:
         order_url = "https://api.mercadopago.com/v1/orders"
         idempotency_key = f"ds_cc_{random.randint(10000000, 99999999)}_{int(time.time())}"
@@ -716,34 +719,31 @@ def criar_pagamento_cartao():
         }
 
         safe_ext_ref = f"ds_cc_pkg{qtd_creditos}_{random.randint(100000, 999999)}"
+        pm_id = payment_method_id or "master"
 
-        candidatos_id = []
-        if payment_method_id:
-            candidatos_id.append(payment_method_id)
-        if payment_method_id == "mastercard" and "master" not in candidatos_id:
-            candidatos_id.append("master")
-        elif payment_method_id == "master" and "mastercard" not in candidatos_id:
-            candidatos_id.append("mastercard")
-        if not candidatos_id:
-            candidatos_id = ["master", "mastercard", "visa"]
+        payment_method_obj = {
+            "id": pm_id,
+            "type": "credit_card",
+            "token": card_token,
+            "installments": parcelas,
+            "statement_descriptor": "DENTAL SMILE"
+        }
+
+        # Tentativas ajustando payer: primeiro sem first_name/last_name, depois com e-mail de teste alternativo
+        tentativas_payer = [
+            obter_dados_pagador(email, cpf_pagador, incluir_nome=False),
+            obter_dados_pagador(email, cpf_pagador, incluir_nome=False, email_override="comprador_teste@dentalsmile.ia.br")
+        ]
 
         resp = None
         order_response = {}
-        for idx_tentativa, pm_id in enumerate(candidatos_id):
-            payment_method_obj = {
-                "id": pm_id,
-                "type": "credit_card",
-                "token": card_token,
-                "installments": parcelas,
-                "statement_descriptor": "DENTAL SMILE"
-            }
-
+        for idx_p, payer_candidato in enumerate(tentativas_payer):
             order_payload = {
                 "type": "online",
                 "processing_mode": "automatic",
                 "external_reference": safe_ext_ref,
                 "total_amount": valor_order_str,
-                "payer": payer_obj,
+                "payer": payer_candidato,
                 "items": [
                     {
                         "title": f"{pacote['titulo']} (Cartao)",
@@ -763,16 +763,12 @@ def criar_pagamento_cartao():
             }
 
             headers_tentativa = dict(headers)
-            headers_tentativa["X-Idempotency-Key"] = f"{idempotency_key}_{idx_tentativa}"
+            headers_tentativa["X-Idempotency-Key"] = f"{idempotency_key}_p{idx_p}"
 
             resp = requests.post(order_url, json=order_payload, headers=headers_tentativa, timeout=30)
             order_response = resp.json()
 
-            if resp.status_code in [200, 201]:
-                break
-
-            erro_str = str(order_response)
-            if "payment_method.id" not in erro_str and "property_value" not in erro_str:
+            if resp.status_code in [200, 201] or resp.status_code != 422:
                 break
 
         if resp is None or resp.status_code not in [200, 201]:
