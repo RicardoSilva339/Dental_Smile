@@ -9,6 +9,10 @@ class ApiService {
   // 🌐 Domínio oficial próprio com SSL configurado
   static const String baseUrl = 'https://dentalsmile.ia.br';
 
+  // 🔑 COLE AQUI A PUBLIC KEY DE TESTE (APP_USR-5fcc604c-8c3b-47ee-90e3-0bfb8669...)
+  // (Depois do teste, voltar para Produção: 'APP_USR-bcce465a-85ea-4174-95e5-d6c6fcae721f')
+  static const String mpPublicKey = 'COLE_AQUI_SUA_PUBLIC_KEY_DE_TESTE';
+
   static Future<String> _getDeviceId() async {
     final DeviceInfoPlugin deviceInfo = DeviceInfoPlugin();
     try {
@@ -25,12 +29,11 @@ class ApiService {
     return 'unknown_device';
   }
 
-  // Freemium anônimo bloqueado: retorna 0 créditos até que o dentista cadastre e valide o e-mail
   static Future<dynamic> checkOrRegisterDevice() async {
     return {'success': true, 'creditos': 0, 'novo': false};
   }
 
-  // 1. Cadastro (dispara o código OTP de 6 dígitos para o e-mail)
+  // 1. Cadastro
   static Future<dynamic> register({
     required String nome,
     required String email,
@@ -59,7 +62,7 @@ class ApiService {
     }
   }
 
-  // 2. Validação do código OTP de 6 dígitos (ativa a conta e libera os 3 créditos)
+  // 2. Validação OTP
   static Future<dynamic> verifyEmail({
     required String email,
     required String codigo,
@@ -84,7 +87,7 @@ class ApiService {
     }
   }
 
-  // 3. Login (envia device_id para validar o limite de 1, 2 ou 3 aparelhos simultâneos)
+  // 3. Login
   static Future<dynamic> login({
     required String email,
     required String senha,
@@ -109,7 +112,7 @@ class ApiService {
     }
   }
 
-  // 4. Esqueci minha senha (envia código de 6 dígitos para redefinir)
+  // 4. Esqueci minha senha
   static Future<dynamic> forgotPassword({required String email}) async {
     try {
       final url = Uri.parse('$baseUrl/forgot-password');
@@ -125,7 +128,7 @@ class ApiService {
     }
   }
 
-  // 5. Redefinir senha (valida código de 6 dígitos e atualiza a senha)
+  // 5. Redefinir senha
   static Future<dynamic> resetPassword({
     required String email,
     required String codigo,
@@ -149,7 +152,7 @@ class ApiService {
     }
   }
 
-  // 6. Desconectar outros aparelhos vinculados à conta
+  // 6. Desconectar outros aparelhos
   static Future<dynamic> resetDevices({required String email}) async {
     try {
       final String deviceId = await _getDeviceId();
@@ -218,6 +221,7 @@ class ApiService {
     required String pacote,
   }) async {
     try {
+      final String deviceId = await _getDeviceId();
       final url = Uri.parse('$baseUrl/criar-pagamento');
       final response = await http.post(
         url,
@@ -225,12 +229,128 @@ class ApiService {
         body: jsonEncode({
           'api_key': apiKey,
           'pacote': pacote,
+          'device_id': deviceId,
         }),
       );
       return jsonDecode(response.body);
     } catch (e) {
       debugPrint("Erro ao criar pagamento Pix: $e");
       return {'success': false, 'error': 'Falha na conexão com o servidor: $e'};
+    }
+  }
+
+  // 💳 8. Simular Parcelas do Cartão (1x a 10x com repasse transparente)
+  static Future<dynamic> simularParcelasCartao({
+    required String pacote,
+  }) async {
+    try {
+      final url = Uri.parse('$baseUrl/simular-parcelas-cartao');
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'pacote': pacote}),
+      );
+      return jsonDecode(response.body);
+    } catch (e) {
+      debugPrint("Erro ao simular parcelas do cartão: $e");
+      return {'success': false, 'error': 'Falha ao consultar parcelas: $e'};
+    }
+  }
+
+  // Identifica a bandeira básica pelo número do cartão
+  static String detectarBandeiraCartao(String numeroLimpo) {
+    if (numeroLimpo.startsWith('4')) return 'visa';
+    if (RegExp(r'^(5[1-5]|2[2-7])').hasMatch(numeroLimpo)) return 'master';
+    if (RegExp(r'^(34|37)').hasMatch(numeroLimpo)) return 'amex';
+    if (RegExp(r'^(4011|4312|4389|4514|4576|5041|5066|5067|509|6277|6362|6363|650|6516|6550)').hasMatch(numeroLimpo)) {
+      return 'elo';
+    }
+    if (RegExp(r'^(606282|3841)').hasMatch(numeroLimpo)) return 'hipercard';
+    return 'visa';
+  }
+
+  // 🔒 9. Tokeniza os dados do cartão direto no servidor oficial do Mercado Pago
+  static Future<dynamic> gerarTokenCartaoMp({
+    required String cardNumber,
+    required String cardholderName,
+    required int expirationMonth,
+    required int expirationYear,
+    required String securityCode,
+    required String cpfTitular,
+  }) async {
+    try {
+      final numeroLimpo = cardNumber.replaceAll(RegExp(r'\D'), '');
+      final cpfLimpo = cpfTitular.replaceAll(RegExp(r'\D'), '');
+      final anoCompleto = expirationYear < 100 ? 2000 + expirationYear : expirationYear;
+
+      final url = Uri.parse('https://api.mercadopago.com/v1/card_tokens?public_key=$mpPublicKey');
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'card_number': numeroLimpo,
+          'security_code': securityCode.trim(),
+          'expiration_month': expirationMonth,
+          'expiration_year': anoCompleto,
+          'cardholder': {
+            'name': cardholderName.trim().toUpperCase(),
+            'identification': {
+              'type': 'CPF',
+              'number': cpfLimpo,
+            }
+          }
+        }),
+      );
+
+      final data = jsonDecode(response.body);
+      if ((response.statusCode == 200 || response.statusCode == 201) && data['id'] != null) {
+        return {
+          'success': true,
+          'card_token': data['id'],
+          'payment_method_id': detectarBandeiraCartao(numeroLimpo),
+        };
+      } else {
+        String erroMsg = 'Dados do cartão inválidos. Verifique número, validade e CVV.';
+        if (data is Map && data['cause'] is List && (data['cause'] as List).isNotEmpty) {
+          erroMsg = data['cause'][0]['description'] ?? erroMsg;
+        }
+        return {'success': false, 'error': erroMsg};
+      }
+    } catch (e) {
+      debugPrint("Erro ao tokenizar cartão no Mercado Pago: $e");
+      return {'success': false, 'error': 'Falha ao validar cartão junto ao Mercado Pago: $e'};
+    }
+  }
+
+  // 💳 10. Criar Pagamento com Cartão de Crédito via Orders API v1
+  static Future<dynamic> criarPagamentoCartao({
+    required String apiKey,
+    required String pacote,
+    required String cardToken,
+    required String paymentMethodId,
+    required int installments,
+    required String cpf,
+  }) async {
+    try {
+      final String deviceId = await _getDeviceId();
+      final url = Uri.parse('$baseUrl/criar-pagamento-cartao');
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'api_key': apiKey,
+          'pacote': pacote,
+          'card_token': cardToken,
+          'payment_method_id': paymentMethodId,
+          'installments': installments,
+          'cpf': cpf,
+          'device_id': deviceId,
+        }),
+      );
+      return jsonDecode(response.body);
+    } catch (e) {
+      debugPrint("Erro ao processar pagamento com cartão: $e");
+      return {'success': false, 'error': 'Falha na conexão com o servidor de pagamentos: $e'};
     }
   }
 

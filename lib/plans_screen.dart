@@ -835,7 +835,7 @@ class _PlansScreenState extends State<PlansScreen> {
           TextButton(
             onPressed: () {
               Navigator.pop(ctx);
-              _registrarHistoricoCompra(nomePlano, creditos, preco);
+              _registrarHistoricoCompra("$nomePlano (Pix)", creditos, preco);
               Navigator.pop(this.context, true);
             },
             child: const Text("Já Realizei o Pagamento", style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF5C6BC0))),
@@ -845,7 +845,291 @@ class _PlansScreenState extends State<PlansScreen> {
     );
   }
 
-  // 🚀 MÉTODO DE COMPRA ATUALIZADO COM O MERCADO PAGO
+  // 💳 MODAL DE CARTÃO DE CRÉDITO (1x a 10x com repasse transparente)
+  Future<void> _exibirModalCartaoCredito({
+    required int creditos,
+    required String nomePlano,
+    required String precoBasePix,
+  }) async {
+    final TextEditingController numeroCartaoCtrl = TextEditingController();
+    final TextEditingController nomeTitularCtrl = TextEditingController();
+    final TextEditingController validadeCtrl = TextEditingController();
+    final TextEditingController cvvCtrl = TextEditingController();
+    final TextEditingController cpfCtrl = TextEditingController();
+
+    List<dynamic> opcoesParcelas = [];
+    int parcelasSelecionadas = 1;
+    bool carregandoParcelas = true;
+    bool processandoPagamento = false;
+
+    // Busca as parcelas calculadas (1x a 10x) direto do servidor
+    final simRes = await ApiService.simularParcelasCartao(pacote: creditos.toString());
+    if (simRes['success'] == true && simRes['opcoes_parcelamento'] is List) {
+      opcoesParcelas = simRes['opcoes_parcelamento'];
+    }
+    carregandoParcelas = false;
+
+    if (!mounted) return;
+
+    await showDialog(
+      context: this.context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (modalContext, setModalState) {
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: Row(
+              children: [
+                const Icon(Icons.credit_card, color: Color(0xFF5C6BC0), size: 28),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    "Cartão - $nomePlano",
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+                  ),
+                ),
+              ],
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.shade50,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.amber.shade300),
+                    ),
+                    child: Text(
+                      "No Pix o valor é $precoBasePix (sem acréscimos). No cartão, selecione abaixo de 1x até 10x com os encargos da operadora já incluídos:",
+                      style: const TextStyle(fontSize: 11.5, color: Colors.black87),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  if (carregandoParcelas)
+                    const Center(child: CircularProgressIndicator())
+                  else if (opcoesParcelas.isNotEmpty) ...[
+                    const Text(
+                      "Parcelamento (1x a 10x):",
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5),
+                    ),
+                    const SizedBox(height: 6),
+                    DropdownButtonFormField<int>(
+                      value: parcelasSelecionadas,
+                      isExpanded: true,
+                      decoration: InputDecoration(
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      ),
+                      items: opcoesParcelas.map<DropdownMenuItem<int>>((op) {
+                        final int numParcelas = op['parcelas'] ?? 1;
+                        final String label = op['label'] ?? '${numParcelas}x';
+                        return DropdownMenuItem<int>(
+                          value: numParcelas,
+                          child: Text(label, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+                        );
+                      }).toList(),
+                      onChanged: processandoPagamento
+                          ? null
+                          : (val) {
+                        if (val != null) {
+                          setModalState(() => parcelasSelecionadas = val);
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+
+                  TextField(
+                    controller: numeroCartaoCtrl,
+                    keyboardType: TextInputType.number,
+                    maxLength: 19,
+                    decoration: InputDecoration(
+                      labelText: "Número do Cartão",
+                      hintText: "0000 0000 0000 0000",
+                      counterText: "",
+                      prefixIcon: const Icon(Icons.credit_card_outlined, size: 20),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      isDense: true,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+
+                  TextField(
+                    controller: nomeTitularCtrl,
+                    textCapitalization: TextCapitalization.characters,
+                    decoration: InputDecoration(
+                      labelText: "Nome Impresso no Cartão",
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      isDense: true,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: validadeCtrl,
+                          keyboardType: TextInputType.number,
+                          maxLength: 5,
+                          decoration: InputDecoration(
+                            labelText: "Validade (MM/AA)",
+                            hintText: "08/30",
+                            counterText: "",
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                            isDense: true,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: TextField(
+                          controller: cvvCtrl,
+                          keyboardType: TextInputType.number,
+                          maxLength: 4,
+                          obscureText: true,
+                          decoration: InputDecoration(
+                            labelText: "CVV",
+                            hintText: "123",
+                            counterText: "",
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                            isDense: true,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+
+                  TextField(
+                    controller: cpfCtrl,
+                    keyboardType: TextInputType.number,
+                    maxLength: 14,
+                    decoration: InputDecoration(
+                      labelText: "CPF do Titular do Cartão",
+                      hintText: "000.000.000-00",
+                      counterText: "",
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      isDense: true,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: processandoPagamento ? null : () => Navigator.pop(ctx),
+                child: const Text("Cancelar", style: TextStyle(color: Colors.grey)),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green.shade700,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+                onPressed: processandoPagamento
+                    ? null
+                    : () async {
+                  final numLimpo = numeroCartaoCtrl.text.replaceAll(RegExp(r'\D'), '');
+                  final titular = nomeTitularCtrl.text.trim();
+                  final validade = validadeCtrl.text.trim();
+                  final cvv = cvvCtrl.text.trim();
+                  final cpf = cpfCtrl.text.replaceAll(RegExp(r'\D'), '');
+
+                  if (numLimpo.length < 13 || titular.isEmpty || !validade.contains('/') || cvv.length < 3 || cpf.length != 11) {
+                    ScaffoldMessenger.of(this.context).showSnackBar(
+                      const SnackBar(
+                        content: Text("Preencha todos os dados do cartão e o CPF corretamente (MM/AA)."),
+                        backgroundColor: Colors.orange,
+                      ),
+                    );
+                    return;
+                  }
+
+                  final partesVal = validade.split('/');
+                  final int mes = int.tryParse(partesVal[0]) ?? 0;
+                  final int ano = int.tryParse(partesVal[1]) ?? 0;
+
+                  if (mes < 1 || mes > 12 || ano <= 0) {
+                    ScaffoldMessenger.of(this.context).showSnackBar(
+                      const SnackBar(content: Text("Validade inválida. Use o formato MM/AA.")),
+                    );
+                    return;
+                  }
+
+                  setModalState(() => processandoPagamento = true);
+
+                  // 1. Tokeniza o cartão direto no Mercado Pago
+                  final tokenRes = await ApiService.gerarTokenCartaoMp(
+                    cardNumber: numLimpo,
+                    cardholderName: titular,
+                    expirationMonth: mes,
+                    expirationYear: ano,
+                    securityCode: cvv,
+                    cpfTitular: cpf,
+                  );
+
+                  if (tokenRes['success'] != true) {
+                    if (modalContext.mounted) {
+                      setModalState(() => processandoPagamento = false);
+                    }
+                    _mostrarErro(tokenRes['error'] ?? "Falha ao validar cartão.");
+                    return;
+                  }
+
+                  // 2. Envia o token para o servidor processar a Order oficial
+                  final pagRes = await ApiService.criarPagamentoCartao(
+                    apiKey: _obterApiKeyAtual(),
+                    pacote: creditos.toString(),
+                    cardToken: tokenRes['card_token'],
+                    paymentMethodId: tokenRes['payment_method_id'] ?? 'visa',
+                    installments: parcelasSelecionadas,
+                    cpf: cpf,
+                  );
+
+                  if (modalContext.mounted) {
+                    setModalState(() => processandoPagamento = false);
+                  }
+
+                  if (pagRes['success'] == true) {
+                    final double totalPago = (pagRes['total_pago'] as num?)?.toDouble() ?? 0.0;
+                    final String precoFinalLabel = totalPago > 0
+                        ? "R\$ ${totalPago.toStringAsFixed(2).replaceAll('.', ',')} (${parcelasSelecionadas}x)"
+                        : precoBasePix;
+
+                    await _registrarHistoricoCompra("$nomePlano (Cartão)", creditos, precoFinalLabel);
+
+                    if (ctx.mounted) Navigator.pop(ctx);
+                    if (mounted) {
+                      ScaffoldMessenger.of(this.context).showSnackBar(
+                        SnackBar(
+                          content: Text(pagRes['message'] ?? "Pagamento aprovado! Créditos adicionados."),
+                          backgroundColor: Colors.green,
+                        ),
+                      );
+                      Navigator.pop(this.context, true);
+                    }
+                  } else {
+                    _mostrarErro(pagRes['error'] ?? "Pagamento recusado pela operadora.");
+                  }
+                },
+                child: processandoPagamento
+                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                    : const Text("Finalizar Pagamento", style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  // 🚀 MÉTODO DE COMPRA UNIFICADO (PIX OU CARTÃO DE CRÉDITO)
   Future<void> _comprarPlano(int creditos, String nomePlano, String preco, String detalhesDispositivos) async {
     if (!_usuarioEstaLogado()) {
       final autenticou = await _exibirDialogoAutenticacaoApenas();
@@ -854,7 +1138,8 @@ class _PlansScreenState extends State<PlansScreen> {
 
     if (!mounted) return;
 
-    final confirmarCompra = await showDialog<bool>(
+    // Retorna 'pix', 'cartao' ou null
+    final metodoEscolhido = await showDialog<String>(
       context: this.context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -872,22 +1157,19 @@ class _PlansScreenState extends State<PlansScreen> {
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              "Valor Total: $preco",
+              "Valor no Pix: $preco",
               style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF5C6BC0)),
             ),
-            const SizedBox(height: 12),
             const Text(
-              "Forma de Pagamento:",
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+              "Sem taxas adicionais no Pix • Cartão em até 10x",
+              style: TextStyle(fontSize: 12, color: Colors.green, fontWeight: FontWeight.w600),
             ),
-            const SizedBox(height: 4),
-            const Text("• Pix (Geração instantânea via Mercado Pago)", style: TextStyle(fontSize: 13, color: Colors.black87)),
             const SizedBox(height: 12),
             Container(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
                 color: Colors.indigo.shade50,
                 borderRadius: BorderRadius.circular(12),
@@ -895,43 +1177,71 @@ class _PlansScreenState extends State<PlansScreen> {
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.devices, color: Color(0xFF5C6BC0), size: 24),
-                  const SizedBox(width: 10),
+                  const Icon(Icons.devices, color: Color(0xFF5C6BC0), size: 22),
+                  const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       detalhesDispositivos,
-                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.indigo),
+                      style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Colors.indigo),
                     ),
                   ),
                 ],
               ),
             ),
+            const SizedBox(height: 16),
+            const Text(
+              "Escolha a forma de pagamento:",
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5),
+            ),
+            const SizedBox(height: 10),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF5C6BC0),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onPressed: () => Navigator.pop(ctx, 'pix'),
+              icon: const Icon(Icons.pix, size: 20),
+              label: Text("Pagar com Pix ($preco)", style: const TextStyle(fontWeight: FontWeight.bold)),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.indigo.shade800,
+                side: BorderSide(color: Colors.indigo.shade400, width: 1.5),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onPressed: () => Navigator.pop(ctx, 'cartao'),
+              icon: const Icon(Icons.credit_card, size: 20),
+              label: const Text("Cartão de Crédito (1x a 10x)", style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
           ],
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
+            onPressed: () => Navigator.pop(ctx, null),
             child: const Text("Cancelar", style: TextStyle(color: Colors.grey)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF5C6BC0),
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            ),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text("Gerar Pix", style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
     );
 
-    if (confirmarCompra != true) return;
-    if (!mounted) return;
+    if (metodoEscolhido == null || !mounted) return;
 
+    if (metodoEscolhido == 'cartao') {
+      await _exibirModalCartaoCredito(
+        creditos: creditos,
+        nomePlano: nomePlano,
+        precoBasePix: preco,
+      );
+      return;
+    }
+
+    // Fluxo Pix
     final apiKeyAtual = _obterApiKeyAtual();
 
-    // Mostra o loading enquanto o Flask gera o Pix no Mercado Pago
     showDialog(
       context: this.context,
       barrierDismissible: false,
@@ -948,20 +1258,18 @@ class _PlansScreenState extends State<PlansScreen> {
     );
 
     try {
-      // Chamada à API para criar o pagamento via Mercado Pago no backend
       final respostaPix = await ApiService.criarPagamentoPix(
         apiKey: apiKeyAtual,
         pacote: creditos.toString(),
       );
 
       if (!mounted) return;
-      Navigator.pop(this.context); // Fecha o loading
+      Navigator.pop(this.context);
 
       if (respostaPix['success'] == true) {
         final String qrCodeCopiaECola = respostaPix['qr_code'] ?? '';
         final int creditosGerados = respostaPix['creditos'] ?? creditos;
 
-        // Exibe o Modal do Pix para o usuário copiar e pagar
         _exibirModalPix(
           nomePlano: nomePlano,
           preco: preco,
@@ -1084,7 +1392,7 @@ class _PlansScreenState extends State<PlansScreen> {
                           ),
                           trailing: Text(
                             "${item['preco']}",
-                            style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green, fontSize: 14),
+                            style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green, fontSize: 13),
                           ),
                         ),
                       );
@@ -1187,7 +1495,7 @@ class _PlansScreenState extends State<PlansScreen> {
                 titulo: "Plano Inicial",
                 creditos: "10 Créditos",
                 preco: "R\$ 79,00",
-                detalhePreco: "R\$ 7,90 por simulação",
+                detalhePreco: "R\$ 7,90 por simulação (Pix ou Cartão até 10x)",
                 descricao: "Ideal para uso ocasional e testes em consultas diárias.",
                 detalhesDispositivos: "Acesso liberado em 1 dispositivo (Uso individual).",
                 corCard: Colors.white,
@@ -1196,31 +1504,31 @@ class _PlansScreenState extends State<PlansScreen> {
               ),
               const SizedBox(height: 16),
 
-              // 2. PLANO PROFISSIONAL (30 Créditos - R$ 197,00)
+              // 2. PLANO PROFISSIONAL (30 Créditos - R$ 199,00)
               _buildPlanCard(
                 titulo: "Plano Profissional",
                 creditos: "30 Créditos",
-                preco: "R\$ 197,00",
-                detalhePreco: "R\$ 6,56 por simulação (Economia de 17%)",
+                preco: "R\$ 199,00",
+                detalhePreco: "R\$ 6,63 por simulação (Economia de 16% • Pix ou até 10x)",
                 descricao: "O plano preferido dos dentistas para uso recorrente na clínica.",
                 detalhesDispositivos: "Benefício incluso: Acesso liberado para até 2 dispositivos simultâneos usando o mesmo e-mail!",
                 corCard: Colors.indigo.shade50,
                 isPopular: true,
-                onPressed: () => _comprarPlano(30, "Plano Profissional", "R\$ 197,00", "Benefício incluso: Acesso liberado para até 2 dispositivos simultâneos usando o mesmo e-mail!"),
+                onPressed: () => _comprarPlano(30, "Plano Profissional", "R\$ 199,00", "Benefício incluso: Acesso liberado para até 2 dispositivos simultâneos usando o mesmo e-mail!"),
               ),
               const SizedBox(height: 16),
 
-              // 3. PLANO MASTER (100 Créditos - R$ 569,00)
+              // 3. PLANO MASTER (100 Créditos - R$ 579,00)
               _buildPlanCard(
                 titulo: "Plano Master",
                 creditos: "100 Créditos",
-                preco: "R\$ 569,00",
-                detalhePreco: "R\$ 5,69 por simulação (Melhor custo-benefício)",
+                preco: "R\$ 579,00",
+                detalhePreco: "R\$ 5,79 por simulação (Melhor custo-benefício • Pix ou até 10x)",
                 descricao: "Para clínicas de alto fluxo com múltiplos profissionais.",
                 detalhesDispositivos: "Benefício incluso: Acesso liberado para até 3 dispositivos simultâneos usando o mesmo e-mail!",
                 corCard: Colors.white,
                 isPopular: false,
-                onPressed: () => _comprarPlano(100, "Plano Master", "R\$ 569,00", "Benefício incluso: Acesso liberado para até 3 dispositivos simultâneos usando o mesmo e-mail!"),
+                onPressed: () => _comprarPlano(100, "Plano Master", "R\$ 579,00", "Benefício incluso: Acesso liberado para até 3 dispositivos simultâneos usando o mesmo e-mail!"),
               ),
             ],
           ),
