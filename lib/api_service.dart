@@ -9,9 +9,9 @@ class ApiService {
   // 🌐 Domínio oficial próprio com SSL configurado
   static const String baseUrl = 'https://dentalsmile.ia.br';
 
-  // 🔑 COLE AQUI A PUBLIC KEY DE TESTE (APP_USR-5fcc604c-8c3b-47ee-90e3-0bfb8669...)
-  // (Depois do teste, voltar para Produção: 'APP_USR-bcce465a-85ea-4174-95e5-d6c6fcae721f')
-  static const String mpPublicKey = 'COLE_AQUI_SUA_PUBLIC_KEY_DE_TESTE';
+  // 🔑 Public Key de Teste do Mercado Pago[cite: 6]
+  // (Depois de validar o cartão, voltar para Produção: 'APP_USR-bcce465a-85ea-4174-95e5-d6c6fcae721f'[cite: 2])
+  static const String mpPublicKey = 'APP_USR-5fcc604c-8c3b-47ee-90e3-0bfb866915a3';
 
   static Future<String> _getDeviceId() async {
     final DeviceInfoPlugin deviceInfo = DeviceInfoPlugin();
