@@ -93,7 +93,7 @@ def init_db():
 
 init_db()
 
-print("Servidor iniciado com Virada de Ouro (Flux 2 Pro) + Mercado Pago Pix")
+print("Servidor iniciado com Virada de Ouro (Flux 2 Pro) + Escala BL1-BL4 Calibrada + Mercado Pago Pix")
 
 def enviar_email_codigo(destinatario, nome, codigo, assunto="Codigo de Verificacao - Dental Smile"):
     if not RESEND_API_KEY:
@@ -815,12 +815,21 @@ def process_smile():
         file_data = file_resp.json()
         input_image_url = file_data.get("urls", {}).get("get") or file_data.get("url")
 
-        print("Disparando Official Model Black Forest Labs Flux 2 Pro (Padrao Virada de Ouro)...")
+        # Reforco de tonalidade no prompt para garantir escada progressiva real (BL1 > BL2 > BL3 > BL4)
+        shade_prompt_map = {
+            'bl1': "ultra bright pure white Hollywood smile teeth, maximum brightness bleach shade BL1",
+            'bl2': "bright clean natural white teeth, balanced luminous bleach shade BL2",
+            'bl3': "natural warm off-white teeth, subtle realistic ivory shade BL3, not overly bright",
+            'bl4': "soft natural creamy ivory teeth, gentle understated tooth shade BL4, slightly darker and warmer than bleach white"
+        }
+        shade_instruction = shade_prompt_map.get(selected_color, shade_prompt_map['bl2'])
+
+        print(f"Disparando Flux 2 Pro (Padrao Virada de Ouro) | Escala selecionada: {selected_color.upper()}")
 
         prompt_text = (
             "photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1> "
-            "upper teeth only, (Beautiful natural teeth), aligned white teeth, "
-            "human like teeth, (no teeth gap), celebrity-like teeth, "
+            f"upper and lower teeth, (Beautiful natural teeth), {shade_instruction}, "
+            "aligned teeth, human like teeth, (no teeth gap), celebrity-like teeth, "
             "healthy teeth with a perfect smile, not big incisor, good proportion teeth, "
             "keep exact original skin texture without adding beard or facial hair"
         )
@@ -883,20 +892,20 @@ def process_smile():
 
         ai_np = np.array(ai_crop_restaurado).astype(np.float32)
 
-        # Calibracao Termica BL1-BL4 direta na arcada dentaria (sem recorte eliptico que corta os cantos)
+        # Calibracao Progressiva BL1 -> BL2 -> BL3 -> BL4 (garante BL4 mais suave que BL3)
         hsv_ai = cv2.cvtColor(ai_np.astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
-        tooth_mask_sup = ((hsv_ai[:, :, 2] > 110) & (hsv_ai[:, :, 1] < 115)).astype(np.float32)
+        tooth_mask_sup = ((hsv_ai[:, :, 2] > 115) & (hsv_ai[:, :, 1] < 105)).astype(np.float32)
         tooth_mask_sup_smooth = cv2.GaussianBlur(tooth_mask_sup, (7, 7), 0)
 
         r_gain, g_gain, b_gain = 1.00, 1.00, 1.00
         if selected_color == 'bl1':
-            r_gain, g_gain, b_gain = 1.01, 1.02, 1.03
+            r_gain, g_gain, b_gain = 1.02, 1.03, 1.04
         elif selected_color == 'bl2':
-            r_gain, g_gain, b_gain = 1.02, 1.01, 0.98
+            r_gain, g_gain, b_gain = 1.00, 1.00, 0.98
         elif selected_color == 'bl3':
-            r_gain, g_gain, b_gain = 1.04, 1.00, 0.92
+            r_gain, g_gain, b_gain = 0.98, 0.96, 0.89
         elif selected_color == 'bl4':
-            r_gain, g_gain, b_gain = 1.05, 0.99, 0.87
+            r_gain, g_gain, b_gain = 0.95, 0.92, 0.82
 
         ai_colorido_np = ai_np.copy()
         ai_colorido_np[:, :, 0] = np.clip(ai_np[:, :, 0] * (1.0 + (r_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
@@ -916,7 +925,7 @@ def process_smile():
         cur.close()
         conn.close()
 
-        print("Simulacao concluida com sucesso absoluto (Virada de Ouro + Mercado Pago 91pts)!")
+        print(f"Simulacao concluida com sucesso absoluto! Escala aplicada: {selected_color.upper()}")
 
         return jsonify({
             "success": True,
