@@ -29,6 +29,12 @@ else:
 
 sdk = mercadopago.SDK(mp_access_token)
 
+TABELA_PACOTES = {
+    '10': {'creditos': 10, 'valor': '1.00', 'titulo': 'Pacote 10 Creditos Dental Smile'},
+    '30': {'creditos': 30, 'valor': '1.00', 'titulo': 'Pacote 30 Creditos Dental Smile'},
+    '100': {'creditos': 100, 'valor': '1.00', 'titulo': 'Pacote 100 Creditos Dental Smile'}
+}
+
 def get_db_connection():
     return psycopg2.connect(DATABASE_URL, sslmode='require')
 
@@ -135,6 +141,32 @@ def validar_limite_dispositivo(cur, email, device_id, limite):
 
     cur.execute("INSERT INTO dispositivos_ativos (email_dentista, device_id) VALUES (%s, %s);", (email, device_id))
     return True, "OK"
+
+def creditar_usuario_por_email(email_dentista, qtd_creditos):
+    if not email_dentista or qtd_creditos <= 0:
+        return None
+
+    email_limpo = email_dentista.strip().lower()
+    novo_limite = 1
+    if qtd_creditos >= 100:
+        novo_limite = 3
+    elif qtd_creditos >= 30:
+        novo_limite = 2
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE usuarios
+        SET creditos = creditos + %s,
+            limite_dispositivos = GREATEST(COALESCE(limite_dispositivos, 1), %s)
+        WHERE email = %s OR api_key = %s
+        RETURNING creditos, limite_dispositivos;
+    """, (qtd_creditos, novo_limite, email_limpo, email_limpo))
+    res = cur.fetchone()
+    conn.commit()
+    cur.close()
+    conn.close()
+    return res
 
 @app.route('/register', methods=['POST'])
 def register():
@@ -426,26 +458,7 @@ def add_credits():
     if not api_key:
         return jsonify({"success": False, "error": "Usuario nao identificado."}), 400
 
-    novo_limite = 1
-    if quantidade >= 100:
-        novo_limite = 3
-    elif quantidade >= 30:
-        novo_limite = 2
-
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("""
-        UPDATE usuarios
-        SET creditos = creditos + %s,
-            limite_dispositivos = GREATEST(COALESCE(limite_dispositivos, 1), %s)
-        WHERE api_key = %s OR email = %s
-        RETURNING creditos, limite_dispositivos;
-    """, (quantidade, novo_limite, api_key, api_key))
-    res = cur.fetchone()
-
-    conn.commit()
-    cur.close()
-    conn.close()
+    res = creditar_usuario_por_email(api_key, quantidade)
 
     if res:
         return jsonify({"success": True, "novo_saldo": res[0], "limite_dispositivos": res[1]}), 200
@@ -455,20 +468,15 @@ def add_credits():
 def criar_pagamento():
     data = request.get_json(force=True, silent=True) or {}
     email = data.get('api_key', '').strip().lower()
-    pacote_tipo = data.get('pacote', '30')
+    pacote_tipo = str(data.get('pacote', '30'))
     device_session_id = data.get('device_id', '').strip() or f"ds_device_{random.randint(100000, 999999)}"
     cpf_pagador = data.get('cpf', '').strip()
 
     if not email:
         return jsonify({"success": False, "error": "Usuario nao identificado."}), 401
 
-    tabela_pacotes = {
-        '10': {'creditos': 10, 'valor': '1.00', 'titulo': 'Pacote 10 Creditos Dental Smile'},
-        '30': {'creditos': 30, 'valor': '1.00', 'titulo': 'Pacote 30 Creditos Dental Smile'},
-        '100': {'creditos': 100, 'valor': '1.00', 'titulo': 'Pacote 100 Creditos Dental Smile'}
-    }
-
-    pacote = tabela_pacotes.get(str(pacote_tipo), tabela_pacotes['30'])
+    pacote = TABELA_PACOTES.get(pacote_tipo, TABELA_PACOTES['30'])
+    qtd_creditos = pacote['creditos']
 
     primeiro_nome = "APRO"
     sobrenome = "Dentista"
@@ -499,7 +507,7 @@ def criar_pagamento():
             "X-meli-session-id": device_session_id
         }
 
-        safe_ext_ref = f"ds_ref_{random.randint(10000, 99999)}"
+        safe_ext_ref = f"ds_pkg_{qtd_creditos}_{email}_{random.randint(10000, 99999)}"
 
         cpf_limpo = "".join(filter(str.isdigit, cpf_pagador))
         if len(cpf_limpo) != 11:
@@ -563,7 +571,7 @@ def criar_pagamento():
             qr_data = payment_method.get("qr_code", "")
             qr_base64 = payment_method.get("qr_code_base64", "")
 
-        print(f"[ORDER OFICIAL CRIADA] Order ID: {order_id} | Payment ID: {payment_id} | Usuario: {email}")
+        print(f"[ORDER OFICIAL CRIADA] Order ID: {order_id} | Payment ID: {payment_id} | Usuario: {email} | Creditos: {qtd_creditos}")
 
         return jsonify({
             "success": True,
@@ -572,7 +580,7 @@ def criar_pagamento():
             "qr_code": qr_data,
             "qr_code_base64": qr_base64,
             "valor": float(pacote['valor']),
-            "creditos": pacote['creditos']
+            "creditos": qtd_creditos
         }), 200
 
     except Exception as e:
@@ -586,61 +594,110 @@ def webhook_mercadopago():
         return jsonify({"status": "verified"}), 200
 
     data = request.get_json(force=True, silent=True) or {}
-    payment_id = None
+    query_params = request.args.to_dict()
 
-    if data.get("type") == "order" or "order" in str(data.get("action", "")):
-        order_data = data.get("data", {})
-        payments_arr = order_data.get("transactions", {}).get("payments", [])
-        if payments_arr and isinstance(payments_arr, list):
-            payment_id = payments_arr[0].get("id")
+    evento_tipo = data.get("type") or query_params.get("type") or ""
+    data_obj = data.get("data", {}) if isinstance(data.get("data"), dict) else {}
+    recurso_id = data_obj.get("id") or data.get("id") or query_params.get("data.id") or ""
+    ext_ref_query = query_params.get("data.external_reference") or ""
 
-    if not payment_id:
-        payment_info = data.get("data", {})
-        payment_id = payment_info.get("id") or data.get("id")
-
-    if not payment_id and "resource" in data:
-        resource = str(data.get("resource", ""))
-        if "payments" in resource:
-            try:
-                payment_id = resource.split("/")[-1]
-            except Exception:
-                pass
-
-    if not payment_id:
-        return jsonify({"status": "ignored"}), 200
+    print(f"[WEBHOOK RECEBIDO] tipo={evento_tipo} | id={recurso_id} | ext_ref={ext_ref_query}")
 
     try:
+        headers_mp = {
+            "Authorization": f"Bearer {mp_access_token}",
+            "Content-Type": "application/json"
+        }
+
+        if evento_tipo == "order" or str(recurso_id).startswith("ORD"):
+            order_id = str(recurso_id)
+            resp_order = requests.get(f"https://api.mercadopago.com/v1/orders/{order_id}", headers=headers_mp, timeout=20)
+            if resp_order.status_code not in [200, 201]:
+                print(f"[WEBHOOK ORDER ERRO] Status {resp_order.status_code}: {resp_order.text}")
+                return jsonify({"status": "ignored"}), 200
+
+            order_info = resp_order.json()
+            order_status = str(order_info.get("status", "")).lower()
+            ext_ref = str(order_info.get("external_reference") or ext_ref_query or "")
+
+            payments_list = order_info.get("transactions", {}).get("payments", [])
+            payment_status = ""
+            if payments_list and isinstance(payments_list, list):
+                payment_status = str(payments_list[0].get("status", "")).lower()
+
+            aprovado = (order_status in ["processed", "paid", "approved"]) or (payment_status in ["approved", "processed"])
+            print(f"[WEBHOOK ORDER] order_id={order_id} | order_status={order_status} | payment_status={payment_status} | aprovado={aprovado}")
+
+            if aprovado:
+                email_dentista = None
+                qtd_creditos = 0
+
+                payer_info = order_info.get("payer", {})
+                if isinstance(payer_info, dict) and payer_info.get("email"):
+                    email_dentista = payer_info.get("email").strip().lower()
+
+                if ext_ref.startswith("ds_pkg_"):
+                    partes = ext_ref.split("_")
+                    if len(partes) >= 4:
+                        try:
+                            qtd_creditos = int(partes[2])
+                        except ValueError:
+                            qtd_creditos = 0
+                        if not email_dentista:
+                            email_dentista = partes[3].strip().lower()
+
+                if not qtd_creditos:
+                    items_info = order_info.get("items", [])
+                    if items_info and isinstance(items_info, list):
+                        titulo_item = str(items_info[0].get("title", ""))
+                        if "100" in titulo_item:
+                            qtd_creditos = 100
+                        elif "30" in titulo_item:
+                            qtd_creditos = 30
+                        elif "10" in titulo_item:
+                            qtd_creditos = 10
+
+                if email_dentista and qtd_creditos > 0:
+                    res = creditar_usuario_por_email(email_dentista, qtd_creditos)
+                    print(f"[CREDITOS ENTREGUES VIA ORDER] email={email_dentista} | +{qtd_creditos} | novo_saldo={res}")
+                else:
+                    print(f"[WEBHOOK ORDER SEM DADOS COMPLETOS] email={email_dentista} | creditos={qtd_creditos} | ext_ref={ext_ref}")
+
+            return jsonify({"status": "success"}), 200
+
+        payment_id = recurso_id
+        if not payment_id and "resource" in data:
+            resource = str(data.get("resource", ""))
+            if "payments" in resource:
+                payment_id = resource.split("/")[-1]
+
+        if not payment_id:
+            return jsonify({"status": "ignored"}), 200
+
         payment_result = sdk.payment().get(payment_id)
         payment_obj = payment_result.get("response", {})
 
-        status = payment_obj.get("status")
-        metadata = payment_obj.get("metadata", {})
+        status = str(payment_obj.get("status", "")).lower()
+        metadata = payment_obj.get("metadata", {}) if isinstance(payment_obj.get("metadata"), dict) else {}
+        ext_ref = str(payment_obj.get("external_reference") or ext_ref_query or "")
 
-        email_dentista = metadata.get("email_dentista")
-        qtd_creditos = int(metadata.get("qtd_creditos", 0))
+        email_dentista = metadata.get("email_dentista") or (payment_obj.get("payer") or {}).get("email")
+        qtd_creditos = int(metadata.get("qtd_creditos", 0) or 0)
+
+        if (not email_dentista or not qtd_creditos) and ext_ref.startswith("ds_pkg_"):
+            partes = ext_ref.split("_")
+            if len(partes) >= 4:
+                if not qtd_creditos:
+                    try:
+                        qtd_creditos = int(partes[2])
+                    except ValueError:
+                        qtd_creditos = 0
+                if not email_dentista:
+                    email_dentista = partes[3].strip().lower()
 
         if status == "approved" and email_dentista and qtd_creditos > 0:
-            conn = get_db_connection()
-            cur = conn.cursor()
-
-            novo_limite = 1
-            if qtd_creditos >= 100:
-                novo_limite = 3
-            elif qtd_creditos >= 30:
-                novo_limite = 2
-
-            cur.execute("""
-                UPDATE usuarios
-                SET creditos = creditos + %s,
-                    limite_dispositivos = GREATEST(COALESCE(limite_dispositivos, 1), %s)
-                WHERE email = %s
-                RETURNING creditos, limite_dispositivos;
-            """, (qtd_creditos, novo_limite, email_dentista))
-
-            res = cur.fetchone()
-            conn.commit()
-            cur.close()
-            conn.close()
+            res = creditar_usuario_por_email(email_dentista, qtd_creditos)
+            print(f"[CREDITOS ENTREGUES VIA PAYMENT] email={email_dentista} | +{qtd_creditos} | novo_saldo={res}")
 
         return jsonify({"status": "success"}), 200
 
@@ -802,26 +859,26 @@ def process_smile():
         ai_crop_restaurado = ai_image_raw.resize((512, 512), Image.Resampling.LANCZOS)
         ai_np = np.array(ai_crop_restaurado).astype(np.float32)
 
-        # Mascara espacial focada apenas na regiao da boca/sorriso (evita alterar pele, queixo, barba ou oculos)
+        # Mascara espacial compacta focada apenas nos dentes/sorriso (evita mancha no queixo e labios inferiores)
         h, w, _ = ai_np.shape
         mouth_roi_mask = np.zeros((h, w), dtype=np.float32)
         cv2.ellipse(
             mouth_roi_mask,
-            center=(int(w * 0.50), int(h * 0.54)),
-            axes=(int(w * 0.28), int(h * 0.14)),
+            center=(int(w * 0.50), int(h * 0.52)),
+            axes=(int(w * 0.22), int(h * 0.08)),
             angle=0,
             startAngle=0,
             endAngle=360,
             color=1.0,
             thickness=-1
         )
-        mouth_blend_mask = cv2.GaussianBlur(mouth_roi_mask, (45, 45), 0)
+        mouth_blend_mask = cv2.GaussianBlur(mouth_roi_mask, (25, 25), 0)
         mouth_blend_3ch = np.stack([mouth_blend_mask] * 3, axis=-1)
 
         # Restringe a correcao de cor BL1-BL4 estritamente aos dentes dentro da boca
         hsv_ai = cv2.cvtColor(ai_np.astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
         tooth_mask_sup = ((hsv_ai[:, :, 2] > 100) & (hsv_ai[:, :, 1] < 120)).astype(np.float32) * mouth_roi_mask
-        tooth_mask_sup_smooth = cv2.GaussianBlur(tooth_mask_sup, (7, 7), 0)
+        tooth_mask_sup_smooth = cv2.GaussianBlur(tooth_mask_sup, (5, 5), 0)
 
         r_gain, g_gain, b_gain = 1.00, 1.00, 1.00
         if selected_color == 'bl1':
@@ -838,7 +895,7 @@ def process_smile():
         ai_colorido_np[:, :, 1] = np.clip(ai_np[:, :, 1] * (1.0 + (g_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
         ai_colorido_np[:, :, 2] = np.clip(ai_np[:, :, 2] * (1.0 + (b_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
 
-        # Mescla a boca transformada com 100% do rosto, pele e iluminacao originais ao redor
+        # Mescla os dentes transformados com 100% do rosto, labios inferiores, queixo e iluminacao originais
         blended_np = (ai_colorido_np * mouth_blend_3ch) + (orig_np * (1.0 - mouth_blend_3ch))
         imagem_final_rgb = np.clip(blended_np, 0, 255).astype(np.uint8)
 
