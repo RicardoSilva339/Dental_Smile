@@ -137,7 +137,7 @@ def init_db():
 
 init_db()
 
-print("Servidor iniciado com Escala VITA Calibrada (BL1=Dente 1 | BL2=Dentes 3-5 | BL3=Dente 21 | BL4=Dente 27) + Mercado Pago Pix e Cartao")
+print("Servidor iniciado com Escala VITA Calibrada LAB/RGB (BL1=Dente 1 | BL2=Dentes 3-5 | BL3=Dente 21 | BL4=Dente 27) + Mercado Pago Pix e Cartao")
 
 def enviar_email_codigo(destinatario, nome, codigo, assunto="Codigo de Verificacao - Dental Smile"):
     if not RESEND_API_KEY:
@@ -262,10 +262,10 @@ def obter_dados_pagador(email, cpf_pagador, incluir_nome=True, email_override=No
 def aplicar_calibracao_escala(ai_np, selected_color):
     """
     Mapeamento exato na regua VITA Bleachedguide 3D-MASTER:
-    - BL1 - Ultra   -> Dente 1 (branco maximo luminoso)
-    - BL2 - Intenso -> Entre Dentes 3 e 5 (branco claro luminoso)
-    - BL3 - Natural -> Dente 21 (aprovado no DS-136)
-    - BL4 - Suave   -> Dente 27 (aprovado no DS-137)
+    - BL1 - Ultra   -> Dente 1 (neutralizacao LAB do amarelo + luminancia maxima pura)
+    - BL2 - Intenso -> Entre Dentes 3 e 5 (neutralizacao LAB suave + luminancia alta)
+    - BL3 - Natural -> Dente 21 (100% mantido do DS-136 aprovado)
+    - BL4 - Suave   -> Dente 27 (100% mantido do DS-137 aprovado)
     """
     cor = (selected_color or 'bl2').strip().lower()
 
@@ -278,17 +278,40 @@ def aplicar_calibracao_escala(ai_np, selected_color):
 
     tooth_mask_uniforme = cv2.GaussianBlur(cond_luma * cond_sat * cond_nao_labio, (7, 7), 0)
 
-    if cor == 'bl1':
-        # BL1 Ultra -> Dente 1 da regua VITA Bleachedguide
-        r_gain, g_gain, b_gain = 1.18, 1.18, 1.19
-    elif cor == 'bl2':
-        # BL2 Intenso -> Entre os Dentes 3 e 5 da regua VITA Bleachedguide
-        r_gain, g_gain, b_gain = 1.09, 1.09, 1.08
-    elif cor == 'bl3':
-        # BL3 Natural -> Dente 21 da regua VITA (aprovado no DS-136)
+    if cor in ['bl1', 'bl2']:
+        # Converte para CIELAB para neutralizar o pigmento amarelo (canal b*)
+        # e elevar a luminancia (canal L*) ate os dentes 1 (BL1) e 3-5 (BL2)
+        lab_img = cv2.cvtColor(ai_np.astype(np.uint8), cv2.COLOR_RGB2LAB).astype(np.float32)
+        L_orig = lab_img[:, :, 0]
+        a_orig = lab_img[:, :, 1]
+        b_orig = lab_img[:, :, 2]
+
+        if cor == 'bl1':
+            # BL1 Ultra -> Dente 1 da regua VITA Bleachedguide
+            l_boost = 34.0
+            a_target = 127.0
+            b_target = 126.5
+            forca_cor = 0.88
+        else:
+            # BL2 Intenso -> Entre os Dentes 3 e 5 da regua VITA Bleachedguide
+            l_boost = 22.0
+            a_target = 127.5
+            b_target = 130.0
+            forca_cor = 0.72
+
+        L_novo = np.clip(L_orig + l_boost * tooth_mask_uniforme, 0, 246)
+        a_novo = a_orig * (1.0 - forca_cor * tooth_mask_uniforme) + a_target * (forca_cor * tooth_mask_uniforme)
+        b_novo = b_orig * (1.0 - forca_cor * tooth_mask_uniforme) + b_target * (forca_cor * tooth_mask_uniforme)
+
+        lab_final = np.stack([L_novo, a_novo, b_novo], axis=-1).astype(np.uint8)
+        rgb_final = cv2.cvtColor(lab_final, cv2.COLOR_LAB2RGB)
+        return rgb_final.astype(np.uint8)
+
+    if cor == 'bl3':
+        # BL3 Natural -> Dente 21 da regua VITA (100% mantido do DS-136)
         r_gain, g_gain, b_gain = 0.935, 0.91, 0.845
     else:
-        # BL4 Suave -> Dente 27 da regua VITA (aprovado no DS-137)
+        # BL4 Suave -> Dente 27 da regua VITA (100% mantido do DS-137)
         r_gain, g_gain, b_gain = 0.92, 0.89, 0.82
 
     ai_colorido_np = ai_np.copy()
