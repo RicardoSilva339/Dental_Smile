@@ -137,7 +137,7 @@ def init_db():
 
 init_db()
 
-print("Servidor iniciado com Escala VITA Totalmente Uniforme (BL1=Dente 1 | BL2=Dentes 3-5 | BL3=Dente 21 | BL4=Dente 27) + Mercado Pago Pix e Cartao")
+print("Servidor iniciado com Escala VITA Cirurgica na Boca (BL1=Dente 1 | BL2=Dentes 3-5 | BL3=Dente 21 | BL4=Dente 27) + Mercado Pago Pix e Cartao")
 
 def enviar_email_codigo(destinatario, nome, codigo, assunto="Codigo de Verificacao - Dental Smile"):
     if not RESEND_API_KEY:
@@ -262,52 +262,55 @@ def obter_dados_pagador(email, cpf_pagador, incluir_nome=True, email_override=No
 def aplicar_calibracao_escala(ai_np, selected_color):
     """
     Mapeamento exato e 100% uniforme na regua VITA Bleachedguide 3D-MASTER:
-    - BL1 - Ultra   -> Dente 1 (cobre incisivos superiores, inferiores e laterais por igual)
-    - BL2 - Intenso -> Entre Dentes 3 e 5 (cobre toda a arcada por igual)
+    - BL1 - Ultra   -> Dente 1 (restrito exclusivamente a regiao da boca, cobre superiores e inferiores por igual)
+    - BL2 - Intenso -> Entre Dentes 3 e 5 (restrito exclusivamente a regiao da boca)
     - BL3 - Natural -> Dente 21 (100% mantido do DS-136 aprovado)
     - BL4 - Suave   -> Dente 27 (100% mantido do DS-137 aprovado)
     """
     cor = (selected_color or 'bl2').strip().lower()
 
-    hsv_ai = cv2.cvtColor(ai_np.astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
-    rg_diff = ai_np[:, :, 0] - ai_np[:, :, 1]
-
     if cor in ['bl1', 'bl2']:
-        # Saturação ampliada ate 165 para capturar 100% dos dentes inferiores centrais
-        # mantendo bloqueio estrito de labios/gengiva via rg_diff (vermelho)
-        cond_luma_full = np.clip((hsv_ai[:, :, 2] - 70.0) / 22.0, 0.0, 1.0)
-        cond_sat_full = np.clip((165.0 - hsv_ai[:, :, 1]) / 35.0, 0.0, 1.0)
-        cond_nao_labio_full = np.clip((34.0 - rg_diff) / 16.0, 0.0, 1.0)
-
-        tooth_mask_full = cv2.GaussianBlur(cond_luma_full * cond_sat_full * cond_nao_labio_full, (5, 5), 0)
+        h, w, _ = ai_np.shape
+        # Restringe estritamente a janela da boca (zero risco de atingir bochechas, nariz ou rosto)
+        roi_boca = np.zeros((h, w), dtype=np.float32)
+        roi_boca[int(h * 0.40):int(h * 0.76), int(w * 0.22):int(w * 0.78)] = 1.0
+        roi_boca = cv2.GaussianBlur(roi_boca, (25, 25), 0)
 
         lab_img = cv2.cvtColor(ai_np.astype(np.uint8), cv2.COLOR_RGB2LAB).astype(np.float32)
         L_orig = lab_img[:, :, 0]
         a_orig = lab_img[:, :, 1]
         b_orig = lab_img[:, :, 2]
 
+        # Dentro da boca: dentes tem L* > 95 (exclui fundo escuro da boca) e a* < 141 (exclui labios/gengiva vermelhos)
+        cond_luma_dente = np.clip((L_orig - 92.0) / 22.0, 0.0, 1.0)
+        cond_nao_labio_a = np.clip((142.0 - a_orig) / 6.0, 0.0, 1.0)
+
+        tooth_mask_boca = cv2.GaussianBlur(roi_boca * cond_luma_dente * cond_nao_labio_a, (5, 5), 0)
+
         if cor == 'bl1':
-            # BL1 Ultra -> Dente 1 da regua VITA Bleachedguide (branco maximo uniforme)
+            # BL1 Ultra -> Dente 1 da regua VITA Bleachedguide (branco maximo uniforme em toda a arcada)
             l_boost = 44.0
             a_target = 127.0
             b_target = 125.0
             forca_cor = 0.96
         else:
             # BL2 Intenso -> Entre os Dentes 3 e 5 da regua VITA Bleachedguide
-            l_boost = 32.0
+            l_boost = 30.0
             a_target = 127.5
             b_target = 127.5
-            forca_cor = 0.88
+            forca_cor = 0.86
 
-        L_novo = np.clip(L_orig + l_boost * tooth_mask_full, 0, 248)
-        a_novo = a_orig * (1.0 - forca_cor * tooth_mask_full) + a_target * (forca_cor * tooth_mask_full)
-        b_novo = b_orig * (1.0 - forca_cor * tooth_mask_full) + b_target * (forca_cor * tooth_mask_full)
+        L_novo = np.clip(L_orig + l_boost * tooth_mask_boca, 0, 248)
+        a_novo = a_orig * (1.0 - forca_cor * tooth_mask_boca) + a_target * (forca_cor * tooth_mask_boca)
+        b_novo = b_orig * (1.0 - forca_cor * tooth_mask_boca) + b_target * (forca_cor * tooth_mask_boca)
 
         lab_final = np.stack([L_novo, a_novo, b_novo], axis=-1).astype(np.uint8)
         rgb_final = cv2.cvtColor(lab_final, cv2.COLOR_LAB2RGB)
         return rgb_final.astype(np.uint8)
 
     # Mascara original mantida 100% intocada para BL3 e BL4
+    hsv_ai = cv2.cvtColor(ai_np.astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
+    rg_diff = ai_np[:, :, 0] - ai_np[:, :, 1]
     cond_luma = np.clip((hsv_ai[:, :, 2] - 105.0) / 35.0, 0.0, 1.0)
     cond_sat = np.clip((120.0 - hsv_ai[:, :, 1]) / 40.0, 0.0, 1.0)
     cond_nao_labio = np.clip((35.0 - rg_diff) / 20.0, 0.0, 1.0)
