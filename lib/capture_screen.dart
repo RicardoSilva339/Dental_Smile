@@ -177,7 +177,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
                         }
 
                         if (!mounted) return;
-                        _avancarParaAnalise(resultado.file);
+                        await _avancarParaAnalise(resultado.file);
                 } catch (e) {
                         debugPrint("Erro ao capturar imagem: $e");
                 } finally {
@@ -208,7 +208,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
                                         }
 
                                         if (!mounted) return;
-                                        _avancarParaAnalise(resultado.file);
+                                        await _avancarParaAnalise(resultado.file);
                                 } finally {
                                         if (mounted) setState(() => _isCapturing = false);
                                 }
@@ -301,10 +301,11 @@ class _CaptureScreenState extends State<CaptureScreen> {
                 }
         }
 
-        void _avancarParaAnalise(File imagemFinal) {
-                final simulationId = _gerarSimulationId();
+        Future<void> _avancarParaAnalise(File imagemFinal) async {
+                final simulationId = await _gerarSimulationId();
                 final userEmail = _obterEmailUsuarioAtual();
 
+                if (!mounted) return;
                 Navigator.pushNamed(
                         context,
                         '/analysis',
@@ -316,10 +317,13 @@ class _CaptureScreenState extends State<CaptureScreen> {
                 );
         }
 
-        String _gerarSimulationId() {
-                final now = DateTime.now();
-                final timestamp = now.millisecondsSinceEpoch.toString().substring(5);
-                return 'DS-$timestamp';
+        // 🔢 Gera ID sequencial DS-101+ usando o mesmo contador do CompareScreen
+        Future<String> _gerarSimulationId() async {
+                final boxUser = Hive.box('box_usuario');
+                final int ultimoId = (boxUser.get('ultimo_id_simulacao', defaultValue: 100) as int);
+                final int proximoId = ultimoId < 100 ? 101 : ultimoId + 1;
+                await boxUser.put('ultimo_id_simulacao', proximoId);
+                return 'DS-$proximoId';
         }
 
         String _obterEmailUsuarioAtual() {

@@ -66,6 +66,15 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
     return boxUser.get('email', defaultValue: '') as String;
   }
 
+  // 🔢 Gera ID sequencial DS-101+ usando o contador persistente em box_usuario
+  Future<String> _gerarProximoIdSimulacao() async {
+    final boxUser = Hive.box('box_usuario');
+    final int ultimoId = (boxUser.get('ultimo_id_simulacao', defaultValue: 100) as int);
+    final int proximoId = ultimoId < 100 ? 101 : ultimoId + 1;
+    await boxUser.put('ultimo_id_simulacao', proximoId);
+    return 'DS-$proximoId';
+  }
+
   Future<void> _carregarCreditos() async {
     if (!mounted) return;
     setState(() => _isLoadingCredits = true);
@@ -162,6 +171,10 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
       debugPrint("Falha na chamada do servidor: $e");
     }
 
+    final String idParaEnviar = (widget.simulationId != null && widget.simulationId!.isNotEmpty)
+        ? widget.simulationId!
+        : await _gerarProximoIdSimulacao();
+
     if (!mounted) return;
 
     processedImagePath ??= widget.image.path;
@@ -178,7 +191,7 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
         'color': _colors[_selectedColor] ?? _selectedColor,
         'shape': 'Natural',
         'size': 'Padrão',
-        'simulationId': widget.simulationId ?? 'DS-${DateTime.now().millisecondsSinceEpoch}',
+        'simulationId': idParaEnviar,
         'userEmail': apiKey,
       },
     );
