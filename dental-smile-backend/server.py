@@ -317,7 +317,7 @@ def aplicar_calibracao_escala(ai_np, selected_color):
         brilho_especular = 7.0
         teto_rgb = 246.0
     elif cor == 'bl3':
-        # BL3 Natural: branco natural marfim claro (b* elevado para evitar tom giz/acinzentado)
+        # BL3 Natural: branco natural marfim claro (aprovado no DS-129)
         L_base = np.clip(L_blur * 0.42 + 116.0, 152.0, 214.0)
         L_target = np.clip(L_base + L_detail * 1.25, 0, 224)
         b_target = np.clip(b_ch * 0.30 + 106.5, 143.0, 150.0)
@@ -325,13 +325,13 @@ def aplicar_calibracao_escala(ai_np, selected_color):
         brilho_especular = 6.0
         teto_rgb = 236.0
     else:
-        # BL4 Suave: marfim/creme suave natural, degrau claro abaixo do BL3
-        L_base = np.clip(L_blur * 0.40 + 108.0, 144.0, 202.0)
-        L_target = np.clip(L_base + L_detail * 1.25, 0, 212)
-        b_target = np.clip(b_ch * 0.30 + 115.5, 152.0, 160.0)
-        a_target = np.clip(a_ch * 0.50 + 65.4, 129.0, 132.5)
-        brilho_especular = 5.0
-        teto_rgb = 226.0
+        # BL4 Suave: branco natural limpo, um degrau sutil abaixo do BL3 (sem amarelar)
+        L_base = np.clip(L_blur * 0.42 + 110.0, 148.0, 206.0)
+        L_target = np.clip(L_base + L_detail * 1.25, 0, 216)
+        b_target = np.clip(b_ch * 0.30 + 108.0, 144.0, 151.0)
+        a_target = np.clip(a_ch * 0.50 + 64.9, 128.5, 131.5)
+        brilho_especular = 6.0
+        teto_rgb = 230.0
 
     lab[:, :, 0] = L * (1.0 - tooth_mask) + L_target * tooth_mask
     lab[:, :, 1] = a_ch * (1.0 - tooth_mask) + a_target * tooth_mask
