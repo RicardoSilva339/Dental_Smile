@@ -1053,8 +1053,9 @@ def process_smile():
 
         shade_prompt_map = {
             'bl1': (
-                "luminous bright white teeth with subtle natural enamel sheen, bleach shade BL1, "
-                "realistic tooth translucency and natural highlight, clean natural smile without chalky matte white"
+                "natural bright white teeth balanced midway between shade BL1 and BL2, "
+                "realistic natural tooth enamel with subtle glossy specular highlights and natural translucency, "
+                "authentic tooth grain and interdental shading, not chalky white, not flat matte white"
             ),
             'bl2': "bright clean natural white teeth, balanced luminous bleach shade BL2",
             'bl3': "natural warm off-white teeth, subtle realistic ivory shade BL3, not overly bright",
@@ -1136,7 +1137,8 @@ def process_smile():
 
         r_gain, g_gain, b_gain = 1.00, 1.00, 1.00
         if selected_color == 'bl1':
-            r_gain, g_gain, b_gain = 0.995, 0.995, 1.005
+            # Meio-termo entre BL1 e BL2: levemente mais suave que BL1 puro, mantendo luminosidade
+            r_gain, g_gain, b_gain = 0.992, 0.988, 0.978
         elif selected_color == 'bl2':
             r_gain, g_gain, b_gain = 1.00, 1.00, 0.98
         elif selected_color == 'bl3':
@@ -1150,16 +1152,19 @@ def process_smile():
         ai_colorido_np[:, :, 2] = np.clip(ai_np[:, :, 2] * (1.0 + (b_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
 
         if selected_color == 'bl1':
-            # Realca micro-contraste e brilho natural do esmalte sem estourar os claros
+            # Preserva micro-relevo do esmalte e adiciona brilho natural nos pontos mais claros dos dentes
             gray_ai = cv2.cvtColor(ai_colorido_np.astype(np.uint8), cv2.COLOR_RGB2GRAY).astype(np.float32)
             local_mean = cv2.GaussianBlur(gray_ai, (15, 15), 0)
-            micro_detail = np.clip((gray_ai - local_mean) * 0.25, -10.0, 10.0)
+            micro_detail = np.clip((gray_ai - local_mean) * 0.35, -12.0, 12.0)
+
+            # Brilho especular suave nos destaques naturais (sem estourar para 255)
+            highlight_mask = np.clip((hsv_ai[:, :, 2] - 185.0) / 70.0, 0.0, 1.0) * tooth_mask_sup_smooth
+            gloss_boost = highlight_mask * 14.0
+
             for c in range(3):
-                ai_colorido_np[:, :, c] = np.clip(
-                    ai_colorido_np[:, :, c] + micro_detail * tooth_mask_sup_smooth,
-                    0,
-                    255
-                )
+                canal_ajustado = ai_colorido_np[:, :, c] + (micro_detail * tooth_mask_sup_smooth) + gloss_boost
+                # Limita o topo em 246 para evitar estourar em branco chapado
+                ai_colorido_np[:, :, c] = np.clip(canal_ajustado, 0, 246)
 
         imagem_final_rgb = ai_colorido_np.astype(np.uint8)
 
