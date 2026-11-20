@@ -137,7 +137,7 @@ def init_db():
 
 init_db()
 
-print("Servidor iniciado com Flux 2 Pro (Sorriso Nota 12 + Escala LAB BL1-BL4) + Mercado Pago Pix e Cartao de Credito")
+print("Servidor iniciado com Virada de Ouro Flux 2 Pro (BL1-BL4) + Mercado Pago Pix e Cartao de Credito")
 
 def enviar_email_codigo(destinatario, nome, codigo, assunto="Codigo de Verificacao - Dental Smile"):
     if not RESEND_API_KEY:
@@ -258,87 +258,6 @@ def obter_dados_pagador(email, cpf_pagador, incluir_nome=True, email_override=No
         payer["last_name"] = sobrenome
 
     return payer
-
-def aplicar_escala_clareamento_boca(ai_rgb_np, selected_color):
-    """
-    Aplica a escala BL1..BL4 exclusivamente nos dentes dentro da regiao central do sorriso,
-    preservando integralmente a pele, barba, labios e oculos.
-    """
-    h, w, _ = ai_rgb_np.shape
-
-    # Janela focalizada na regiao do sorriso (evita afetar reflexo em oculos, testa ou pele)
-    y_grid, x_grid = np.ogrid[:h, :w]
-    cy, cx = h * 0.60, w * 0.50
-    ry, rx = h * 0.22, w * 0.28
-    dist_norm = ((y_grid - cy) / ry) ** 2 + ((x_grid - cx) / rx) ** 2
-    mouth_roi = np.clip(1.35 - dist_norm, 0.0, 1.0).astype(np.float32)
-    mouth_roi = cv2.GaussianBlur(mouth_roi, (25, 25), 0)
-
-    # Deteccao de pixels de dente (alta luminosidade, baixa saturacao e sem vermelho dominante de labio/gengiva)
-    hsv = cv2.cvtColor(ai_rgb_np.astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
-    r = ai_rgb_np[:, :, 0]
-    g = ai_rgb_np[:, :, 1]
-    b = ai_rgb_np[:, :, 2]
-
-    cond_luma = np.clip((hsv[:, :, 2] - 115.0) / 55.0, 0.0, 1.0)
-    cond_sat = np.clip((125.0 - hsv[:, :, 1]) / 55.0, 0.0, 1.0)
-    # Exclui labios e gengivas onde o canal R supera muito o canal G
-    rg_diff = r - g
-    cond_nao_labio = np.clip((38.0 - rg_diff) / 22.0, 0.0, 1.0)
-
-    tooth_mask = cond_luma * cond_sat * cond_nao_labio * mouth_roi
-    tooth_mask = cv2.GaussianBlur(tooth_mask, (7, 7), 0)
-
-    # Conversao para CIE LAB para controlar luminosidade (L) e temperatura (b*: amarelo <-> neutro/branco)
-    lab = cv2.cvtColor(ai_rgb_np.astype(np.uint8), cv2.COLOR_RGB2LAB).astype(np.float32)
-    L = lab[:, :, 0]
-    a_ch = lab[:, :, 1]
-    b_ch = lab[:, :, 2]
-
-    if selected_color == 'bl1':
-        # BL1 Ultra: meio-termo luminoso entre BL1 e BL2, remove amarelado e da brilho natural de esmalte
-        L_target = np.clip(L * 1.13 + 14.0, 0, 246)
-        b_target = np.clip(b_ch - 14.0, 118, 255)
-        a_target = np.clip(a_ch - 1.5, 0, 255)
-    elif selected_color == 'bl2':
-        # BL2 Intenso: branco bem claro e limpo, um degrau abaixo do BL1
-        L_target = np.clip(L * 1.09 + 9.0, 0, 240)
-        b_target = np.clip(b_ch - 10.0, 121, 255)
-        a_target = np.clip(a_ch - 1.0, 0, 255)
-    elif selected_color == 'bl3':
-        # BL3 Natural: branco natural equilibrado
-        L_target = np.clip(L * 1.04 + 4.0, 0, 232)
-        b_target = np.clip(b_ch - 5.0, 124, 255)
-        a_target = a_ch
-    else:
-        # BL4 Suave: marfim natural claro e acolhedor
-        L_target = np.clip(L * 1.01 + 1.0, 0, 226)
-        b_target = np.clip(b_ch - 1.5, 126, 255)
-        a_target = a_ch
-
-    lab[:, :, 0] = L * (1.0 - tooth_mask) + L_target * tooth_mask
-    lab[:, :, 1] = a_ch * (1.0 - tooth_mask) + a_target * tooth_mask
-    lab[:, :, 2] = b_ch * (1.0 - tooth_mask) + b_target * tooth_mask
-
-    res_rgb = cv2.cvtColor(np.clip(lab, 0, 255).astype(np.uint8), cv2.COLOR_LAB2RGB).astype(np.float32)
-
-    # Brilho especular suave de esmalte para BL1 e BL2 sem estourar branco chapado
-    if selected_color in ['bl1', 'bl2']:
-        gray = cv2.cvtColor(res_rgb.astype(np.uint8), cv2.COLOR_RGB2GRAY).astype(np.float32)
-        local_mean = cv2.GaussianBlur(gray, (13, 13), 0)
-        micro_relief = np.clip((gray - local_mean) * 0.30, -10.0, 10.0)
-        spec_strength = 12.0 if selected_color == 'bl1' else 7.0
-        specular = np.clip((gray - 185.0) / 70.0, 0.0, 1.0) * spec_strength
-        cap_max = 248.0 if selected_color == 'bl1' else 242.0
-
-        for c in range(3):
-            res_rgb[:, :, c] = np.clip(
-                res_rgb[:, :, c] + (micro_relief + specular) * tooth_mask,
-                0,
-                cap_max
-            )
-
-    return np.clip(res_rgb, 0, 255).astype(np.uint8)
 
 @app.route('/register', methods=['POST'])
 def register():
@@ -1049,53 +968,51 @@ def webhook_mercadopago():
 
 @app.route('/process-smile', methods=['POST'])
 def process_smile():
-    conn = None
-    cur = None
+    data = request.get_json(force=True, silent=True) or {}
+    api_key = data.get('api_key', '').strip().lower()
+    device_id = data.get('device_id', '').strip()
+
+    if not api_key:
+        return jsonify({"success": False, "error": "Faca login e valide seu e-mail para simular."}), 401
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT creditos, email_verificado, limite_dispositivos FROM usuarios WHERE api_key = %s OR email = %s;", (api_key, api_key))
+    user = cur.fetchone()
+
+    if not user:
+        cur.close()
+        conn.close()
+        return jsonify({"success": False, "error": "Conta nao encontrada."}), 404
+
+    creditos_atuais, email_verificado, limite_disp = user
+    limite_disp = limite_disp or 1
+
+    if not email_verificado:
+        cur.close()
+        conn.close()
+        return jsonify({"success": False, "error": "Valide seu e-mail antes de realizar simulacoes."}), 403
+
+    permitido, msg_disp = validar_limite_dispositivo(cur, api_key, device_id, limite_disp)
+    if not permitido:
+        cur.close()
+        conn.close()
+        return jsonify({"success": False, "error": msg_disp}), 403
+
+    if creditos_atuais <= 0:
+        cur.close()
+        conn.close()
+        return jsonify({"success": False, "error": "Creditos insuficientes."}), 403
+
+    image_b64 = data.get('image')
+    selected_color = data.get('color', 'bl2').lower()
+
+    if not image_b64:
+        cur.close()
+        conn.close()
+        return jsonify({"success": False, "error": "Nenhuma imagem enviada."}), 400
+
     try:
-        data = request.get_json(force=True, silent=True) or {}
-        api_key = data.get('api_key', '').strip().lower()
-        device_id = data.get('device_id', '').strip()
-
-        if not api_key:
-            return jsonify({"success": False, "error": "Faca login e valide seu e-mail para simular."}), 401
-
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT creditos, email_verificado, limite_dispositivos FROM usuarios WHERE api_key = %s OR email = %s;", (api_key, api_key))
-        user = cur.fetchone()
-
-        if not user:
-            cur.close()
-            conn.close()
-            return jsonify({"success": False, "error": "Conta nao encontrada."}), 404
-
-        creditos_atuais, email_verificado, limite_disp = user
-        limite_disp = limite_disp or 1
-
-        if not email_verificado:
-            cur.close()
-            conn.close()
-            return jsonify({"success": False, "error": "Valide seu e-mail antes de realizar simulacoes."}), 403
-
-        permitido, msg_disp = validar_limite_dispositivo(cur, api_key, device_id, limite_disp)
-        if not permitido:
-            cur.close()
-            conn.close()
-            return jsonify({"success": False, "error": msg_disp}), 403
-
-        if creditos_atuais <= 0:
-            cur.close()
-            conn.close()
-            return jsonify({"success": False, "error": "Creditos insuficientes."}), 403
-
-        image_b64 = data.get('image')
-        selected_color = data.get('color', 'bl2').lower()
-
-        if not image_b64:
-            cur.close()
-            conn.close()
-            return jsonify({"success": False, "error": "Nenhuma imagem enviada."}), 400
-
         if "," in image_b64:
             image_b64 = image_b64.split(",")[1]
 
@@ -1105,6 +1022,10 @@ def process_smile():
 
         rgb_image = orig_image.convert("RGB")
         img_512 = rgb_image.resize((512, 512), Image.Resampling.LANCZOS)
+
+        print("=" * 60)
+        print(f"[PYTHON REST] Imagem recebida | Cor selecionada: {selected_color.upper()}")
+        print("=" * 60)
 
         buffered_orig = io.BytesIO()
         img_512.save(buffered_orig, format="JPEG", quality=92)
@@ -1117,7 +1038,7 @@ def process_smile():
             "Content-Type": "application/json"
         }
 
-        print("Enviando imagem para o repositorio de arquivos do Replicate...")
+        print("[REPLICATE] Enviando imagem para o repositorio de arquivos...")
         file_resp = requests.post(
             "https://api.replicate.com/v1/files",
             headers={"Authorization": f"Bearer {replicate_token}"},
@@ -1131,15 +1052,13 @@ def process_smile():
         file_data = file_resp.json()
         input_image_url = file_data.get("urls", {}).get("get") or file_data.get("url")
 
-        print(f"Disparando Flux 2 Pro (Sorriso Nota 12 + Escala LAB) | Escala selecionada: {selected_color.upper()}")
+        print("[REPLICATE REST] Disparando Official Model Black Forest Labs Flux 2 Pro...")
 
-        # Prompt direto da virada de ouro para o LoRA reconstruir os dentes perfeitos (sem enfraquecer o branco)
         prompt_text = (
             "photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1> "
-            "upper and lower teeth, (Beautiful natural white teeth), aligned white porcelain veneers, "
+            "upper teeth only, (Beautiful natural teeth), aligned white teeth, "
             "human like teeth, (no teeth gap), celebrity-like teeth, "
-            "healthy white teeth with a perfect smile, not big incisor, good proportion teeth, "
-            "natural glossy tooth enamel, preserve exact face and skin"
+            "healthy teeth with a perfect smile, not big incisor, good proportion teeth"
         )
 
         payload = {
@@ -1148,8 +1067,8 @@ def process_smile():
                 "prompt": prompt_text,
                 "aspect_ratio": "1:1",
                 "output_format": "webp",
-                "output_quality": 90,
-                "resolution": "match_input_image",
+                "output_quality": 80,
+                "resolution": "1 MP",
                 "safety_tolerance": 2
             }
         }
@@ -1183,7 +1102,7 @@ def process_smile():
                     image_url = output[0]
                 else:
                     image_url = output
-                print("Simulacao Flux 2 Pro recebida com sucesso!")
+                print("[REPLICATE] Simulacao Flux 2 Pro recebida com sucesso!")
                 break
             elif status == "failed":
                 raise Exception(f"Processamento da IA falhou: {poll_data.get('error')}")
@@ -1200,8 +1119,27 @@ def process_smile():
 
         ai_np = np.array(ai_crop_restaurado).astype(np.float32)
 
-        # Aplica a graduacao clinica BL1..BL4 exclusivamente nos dentes da regiao do sorriso
-        imagem_final_rgb = aplicar_escala_clareamento_boca(ai_np, selected_color)
+        # Calibracao Termica BL1-BL4 (Virada de Ouro)
+        hsv_ai = cv2.cvtColor(ai_np.astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
+        tooth_mask_sup = ((hsv_ai[:, :, 2] > 110) & (hsv_ai[:, :, 1] < 115)).astype(np.float32)
+        tooth_mask_sup_smooth = cv2.GaussianBlur(tooth_mask_sup, (7, 7), 0)
+
+        r_gain, g_gain, b_gain = 1.00, 1.00, 1.00
+        if selected_color == 'bl1':
+            r_gain, g_gain, b_gain = 1.02, 1.01, 0.96
+        elif selected_color == 'bl2':
+            r_gain, g_gain, b_gain = 1.03, 1.01, 0.93
+        elif selected_color == 'bl3':
+            r_gain, g_gain, b_gain = 1.04, 1.00, 0.89
+        elif selected_color == 'bl4':
+            r_gain, g_gain, b_gain = 1.05, 0.99, 0.85
+
+        ai_colorido_np = ai_np.copy()
+        ai_colorido_np[:, :, 0] = np.clip(ai_np[:, :, 0] * (1.0 + (r_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
+        ai_colorido_np[:, :, 1] = np.clip(ai_np[:, :, 1] * (1.0 + (g_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
+        ai_colorido_np[:, :, 2] = np.clip(ai_np[:, :, 2] * (1.0 + (b_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
+
+        imagem_final_rgb = ai_colorido_np.astype(np.uint8)
 
         final_bgr = cv2.cvtColor(imagem_final_rgb, cv2.COLOR_RGB2BGR)
         _, buffer = cv2.imencode('.jpg', final_bgr, [cv2.IMWRITE_JPEG_QUALITY, 95])
@@ -1214,7 +1152,9 @@ def process_smile():
         cur.close()
         conn.close()
 
-        print(f"Simulacao concluida com sucesso absoluto! Escala aplicada: {selected_color.upper()}")
+        print("=" * 60)
+        print("[PYTHON REST] Simulacao concluida com sucesso absoluto (Flux 2 Pro)!")
+        print("=" * 60)
 
         return jsonify({
             "success": True,
@@ -1224,16 +1164,10 @@ def process_smile():
         }), 200
 
     except Exception as e:
-        if cur:
-            try:
-                cur.close()
-            except:
-                pass
-        if conn:
-            try:
-                conn.close()
-            except:
-                pass
+        if 'cur' in locals() and cur:
+            cur.close()
+        if 'conn' in locals() and conn:
+            conn.close()
         print(f"Erro critico no backend: {str(e)}")
         traceback.print_exc()
         return jsonify({"success": False, "error": str(e)}), 500
