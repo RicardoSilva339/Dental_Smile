@@ -1053,9 +1053,8 @@ def process_smile():
 
         shade_prompt_map = {
             'bl1': (
-                "natural bright white teeth balanced midway between shade BL1 and BL2, "
-                "realistic natural tooth enamel with subtle glossy specular highlights and natural translucency, "
-                "authentic tooth grain and interdental shading, not chalky white, not flat matte white"
+                "bright natural tooth shade between BL1 and BL2, realistic tooth enamel "
+                "with subtle glossy highlights and natural translucency, not flat chalky white"
             ),
             'bl2': (
                 "natural bright bleach shade BL2 teeth, slightly softer and warmer than BL1, "
@@ -1066,14 +1065,14 @@ def process_smile():
         }
         shade_instruction = shade_prompt_map.get(selected_color, shade_prompt_map['bl2'])
 
-        print(f"Disparando Flux 2 Pro (Padrao Virada de Ouro) | Escala selecionada: {selected_color.upper()}")
+        print(f"Disparando Flux 2 Pro (Virada de Ouro + Calibracao BL1-BL4) | Escala selecionada: {selected_color.upper()}")
 
+        # Prompt enxuto focado na dentição para não alterar o rosto nem acentuar pelos/barba
         prompt_text = (
             "photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1> "
-            f"upper and lower teeth, (Beautiful natural teeth), {shade_instruction}, "
-            "aligned teeth, human like teeth, (no teeth gap), celebrity-like teeth, "
-            "healthy teeth with a perfect smile, not big incisor, good proportion teeth, "
-            "smooth even skin tone across cheeks and chin, natural unshaven look matching original photo"
+            f"upper teeth only, (Beautiful natural teeth), {shade_instruction}, "
+            "aligned white teeth, human like teeth, (no teeth gap), celebrity-like teeth, "
+            "healthy teeth with a perfect smile, not big incisor, good proportion teeth"
         )
 
         payload = {
@@ -1135,20 +1134,20 @@ def process_smile():
         ai_np = np.array(ai_crop_restaurado).astype(np.float32)
 
         hsv_ai = cv2.cvtColor(ai_np.astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
-        tooth_mask_sup = ((hsv_ai[:, :, 2] > 115) & (hsv_ai[:, :, 1] < 105)).astype(np.float32)
+        tooth_mask_sup = ((hsv_ai[:, :, 2] > 110) & (hsv_ai[:, :, 1] < 115)).astype(np.float32)
         tooth_mask_sup_smooth = cv2.GaussianBlur(tooth_mask_sup, (7, 7), 0)
 
+        # Ganhos calibrados preservando o rosto e evitando escurecer a pele ao redor
         r_gain, g_gain, b_gain = 1.00, 1.00, 1.00
         if selected_color == 'bl1':
-            # Meio-termo entre BL1 e BL2: levemente mais suave que BL1 puro, mantendo luminosidade
-            r_gain, g_gain, b_gain = 0.992, 0.988, 0.978
+            # Meio-termo natural entre BL1 e BL2, com brilho de esmalte e sem estourar
+            r_gain, g_gain, b_gain = 1.005, 1.002, 0.975
         elif selected_color == 'bl2':
-            # Reducao percentual calibrada para diferenciar BL2 do BL1 sem branco estourado
-            r_gain, g_gain, b_gain = 0.980, 0.968, 0.945
+            r_gain, g_gain, b_gain = 1.015, 1.005, 0.945
         elif selected_color == 'bl3':
-            r_gain, g_gain, b_gain = 0.98, 0.96, 0.89
+            r_gain, g_gain, b_gain = 1.025, 0.995, 0.895
         elif selected_color == 'bl4':
-            r_gain, g_gain, b_gain = 0.95, 0.92, 0.82
+            r_gain, g_gain, b_gain = 1.020, 0.985, 0.865
 
         ai_colorido_np = ai_np.copy()
         ai_colorido_np[:, :, 0] = np.clip(ai_np[:, :, 0] * (1.0 + (r_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
@@ -1156,22 +1155,19 @@ def process_smile():
         ai_colorido_np[:, :, 2] = np.clip(ai_np[:, :, 2] * (1.0 + (b_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
 
         if selected_color == 'bl1':
-            # Preserva micro-relevo do esmalte e adiciona brilho natural nos pontos mais claros dos dentes
+            # Preserva micro-relevo do esmalte e adiciona brilho especular moderado sem branco opaco
             gray_ai = cv2.cvtColor(ai_colorido_np.astype(np.uint8), cv2.COLOR_RGB2GRAY).astype(np.float32)
             local_mean = cv2.GaussianBlur(gray_ai, (15, 15), 0)
             micro_detail = np.clip((gray_ai - local_mean) * 0.35, -12.0, 12.0)
 
-            # Brilho especular suave nos destaques naturais (sem estourar para 255)
-            highlight_mask = np.clip((hsv_ai[:, :, 2] - 185.0) / 70.0, 0.0, 1.0) * tooth_mask_sup_smooth
-            gloss_boost = highlight_mask * 14.0
+            highlight_mask = np.clip((hsv_ai[:, :, 2] - 180.0) / 75.0, 0.0, 1.0) * tooth_mask_sup_smooth
+            gloss_boost = highlight_mask * 16.0
 
             for c in range(3):
                 canal_ajustado = ai_colorido_np[:, :, c] + (micro_detail * tooth_mask_sup_smooth) + gloss_boost
-                # Limita o topo em 246 para evitar estourar em branco chapado
-                ai_colorido_np[:, :, c] = np.clip(canal_ajustado, 0, 246)
+                ai_colorido_np[:, :, c] = np.clip(canal_ajustado, 0, 242)
         elif selected_color == 'bl2':
-            # Evita que os pontos mais claros do BL2 encostem no branco puro do BL1
-            max_cap_bl2 = 238.0
+            max_cap_bl2 = 236.0
             for c in range(3):
                 canal = ai_colorido_np[:, :, c]
                 canal_limitado = np.minimum(canal, max_cap_bl2)
@@ -1180,22 +1176,6 @@ def process_smile():
                     0,
                     255
                 )
-
-        # Suaviza a micro-textura de pelos/granulação na pele fora da região dos dentes
-        skin_mask = np.clip(1.0 - tooth_mask_sup_smooth, 0.0, 1.0)
-        pele_suavizada_bgr = cv2.bilateralFilter(
-            cv2.cvtColor(ai_colorido_np.astype(np.uint8), cv2.COLOR_RGB2BGR),
-            d=7,
-            sigmaColor=22,
-            sigmaSpace=22
-        )
-        pele_suavizada_rgb = cv2.cvtColor(pele_suavizada_bgr, cv2.COLOR_BGR2RGB).astype(np.float32)
-        for c in range(3):
-            ai_colorido_np[:, :, c] = np.clip(
-                ai_colorido_np[:, :, c] * (1.0 - skin_mask * 0.65) + pele_suavizada_rgb[:, :, c] * (skin_mask * 0.65),
-                0,
-                255
-            )
 
         imagem_final_rgb = ai_colorido_np.astype(np.uint8)
 
