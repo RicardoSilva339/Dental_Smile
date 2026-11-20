@@ -1073,7 +1073,7 @@ def process_smile():
             f"upper and lower teeth, (Beautiful natural teeth), {shade_instruction}, "
             "aligned teeth, human like teeth, (no teeth gap), celebrity-like teeth, "
             "healthy teeth with a perfect smile, not big incisor, good proportion teeth, "
-            "keep exact original skin texture without adding beard or facial hair"
+            "clean shaven smooth skin, preserve exact original skin and jawline from input photo"
         )
 
         payload = {
