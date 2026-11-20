@@ -137,7 +137,7 @@ def init_db():
 
 init_db()
 
-print("Servidor iniciado com Virada de Ouro Flux 2 Pro (BL1-BL4) + Mercado Pago Pix e Cartao de Credito")
+print("Servidor iniciado com Virada de Ouro Flux 2 Pro (BL1 Intocado + BL2/BL3/BL4 Calibrados) + Mercado Pago Pix e Cartao")
 
 def enviar_email_codigo(destinatario, nome, codigo, assunto="Codigo de Verificacao - Dental Smile"):
     if not RESEND_API_KEY:
@@ -258,6 +258,86 @@ def obter_dados_pagador(email, cpf_pagador, incluir_nome=True, email_override=No
         payer["last_name"] = sobrenome
 
     return payer
+
+def aplicar_calibracao_escala(ai_np, selected_color):
+    """
+    - BL1: Mantem 100% da calibracao original aprovada na virada de ouro.
+    - BL2, BL3 e BL4: Aplica graduacao CIE LAB focalizada exclusivamente na regiao do sorriso,
+      garantindo branco brilhante uniforme no BL2 e degraus naturais visiveis no BL3 e BL4.
+    """
+    if selected_color == 'bl1':
+        hsv_ai = cv2.cvtColor(ai_np.astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
+        tooth_mask_sup = ((hsv_ai[:, :, 2] > 110) & (hsv_ai[:, :, 1] < 115)).astype(np.float32)
+        tooth_mask_sup_smooth = cv2.GaussianBlur(tooth_mask_sup, (7, 7), 0)
+
+        r_gain, g_gain, b_gain = 1.02, 1.01, 0.96
+        ai_colorido_np = ai_np.copy()
+        ai_colorido_np[:, :, 0] = np.clip(ai_np[:, :, 0] * (1.0 + (r_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
+        ai_colorido_np[:, :, 1] = np.clip(ai_np[:, :, 1] * (1.0 + (g_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
+        ai_colorido_np[:, :, 2] = np.clip(ai_np[:, :, 2] * (1.0 + (b_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
+        return ai_colorido_np.astype(np.uint8)
+
+    h, w, _ = ai_np.shape
+    y_grid, x_grid = np.ogrid[:h, :w]
+    cy, cx = h * 0.60, w * 0.50
+    ry, rx = h * 0.22, w * 0.28
+    dist_norm = ((y_grid - cy) / ry) ** 2 + ((x_grid - cx) / rx) ** 2
+    mouth_roi = np.clip(1.35 - dist_norm, 0.0, 1.0).astype(np.float32)
+    mouth_roi = cv2.GaussianBlur(mouth_roi, (25, 25), 0)
+
+    hsv = cv2.cvtColor(ai_np.astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
+    r = ai_np[:, :, 0]
+    g = ai_np[:, :, 1]
+
+    # Captura tanto os dentes superiores quanto os inferiores dentro da boca sem pegar labios/gengiva
+    cond_luma = np.clip((hsv[:, :, 2] - 102.0) / 48.0, 0.0, 1.0)
+    cond_sat = np.clip((132.0 - hsv[:, :, 1]) / 52.0, 0.0, 1.0)
+    rg_diff = r - g
+    cond_nao_labio = np.clip((38.0 - rg_diff) / 22.0, 0.0, 1.0)
+
+    tooth_mask = cond_luma * cond_sat * cond_nao_labio * mouth_roi
+    tooth_mask = cv2.GaussianBlur(tooth_mask, (7, 7), 0)
+
+    lab = cv2.cvtColor(ai_np.astype(np.uint8), cv2.COLOR_RGB2LAB).astype(np.float32)
+    L = lab[:, :, 0]
+    a_ch = lab[:, :, 1]
+    b_ch = lab[:, :, 2]
+
+    if selected_color == 'bl2':
+        # BL2 Intenso: branco bem claro, uniforme (inclusive inferiores) e com brilho de esmalte
+        L_target = np.clip(L * 1.05 + 7.0, 0, 245)
+        b_target = np.clip(b_ch * 0.88 + 14.5, 125, 255)
+        a_target = np.clip(a_ch - 0.8, 0, 255)
+    elif selected_color == 'bl3':
+        # BL3 Natural: reduz luminosidade estourada e traz tom natural marfim claro equilibrado
+        L_target = np.clip(L * 0.91 + 4.0, 0, 224)
+        b_target = np.clip(b_ch + 8.5, 0, 152)
+        a_target = np.clip(a_ch + 0.8, 0, 255)
+    else:
+        # BL4 Suave: um degrau mais suave e acolhedor que o BL3 (creme/marfim discreto)
+        L_target = np.clip(L * 0.85 + 3.0, 0, 212)
+        b_target = np.clip(b_ch + 14.5, 0, 160)
+        a_target = np.clip(a_ch + 1.5, 0, 255)
+
+    lab[:, :, 0] = L * (1.0 - tooth_mask) + L_target * tooth_mask
+    lab[:, :, 1] = a_ch * (1.0 - tooth_mask) + a_target * tooth_mask
+    lab[:, :, 2] = b_ch * (1.0 - tooth_mask) + b_target * tooth_mask
+
+    res_rgb = cv2.cvtColor(np.clip(lab, 0, 255).astype(np.uint8), cv2.COLOR_LAB2RGB).astype(np.float32)
+
+    if selected_color == 'bl2':
+        gray = cv2.cvtColor(res_rgb.astype(np.uint8), cv2.COLOR_RGB2GRAY).astype(np.float32)
+        local_mean = cv2.GaussianBlur(gray, (13, 13), 0)
+        micro_relief = np.clip((gray - local_mean) * 0.25, -8.0, 8.0)
+        specular = np.clip((gray - 180.0) / 75.0, 0.0, 1.0) * 11.0
+        for c in range(3):
+            res_rgb[:, :, c] = np.clip(
+                res_rgb[:, :, c] + (micro_relief + specular) * tooth_mask,
+                0,
+                250.0
+            )
+
+    return np.clip(res_rgb, 0, 255).astype(np.uint8)
 
 @app.route('/register', methods=['POST'])
 def register():
@@ -1119,27 +1199,7 @@ def process_smile():
 
         ai_np = np.array(ai_crop_restaurado).astype(np.float32)
 
-        # Calibracao Termica BL1-BL4 (Virada de Ouro)
-        hsv_ai = cv2.cvtColor(ai_np.astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
-        tooth_mask_sup = ((hsv_ai[:, :, 2] > 110) & (hsv_ai[:, :, 1] < 115)).astype(np.float32)
-        tooth_mask_sup_smooth = cv2.GaussianBlur(tooth_mask_sup, (7, 7), 0)
-
-        r_gain, g_gain, b_gain = 1.00, 1.00, 1.00
-        if selected_color == 'bl1':
-            r_gain, g_gain, b_gain = 1.02, 1.01, 0.96
-        elif selected_color == 'bl2':
-            r_gain, g_gain, b_gain = 1.03, 1.01, 0.93
-        elif selected_color == 'bl3':
-            r_gain, g_gain, b_gain = 1.04, 1.00, 0.89
-        elif selected_color == 'bl4':
-            r_gain, g_gain, b_gain = 1.05, 0.99, 0.85
-
-        ai_colorido_np = ai_np.copy()
-        ai_colorido_np[:, :, 0] = np.clip(ai_np[:, :, 0] * (1.0 + (r_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
-        ai_colorido_np[:, :, 1] = np.clip(ai_np[:, :, 1] * (1.0 + (g_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
-        ai_colorido_np[:, :, 2] = np.clip(ai_np[:, :, 2] * (1.0 + (b_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
-
-        imagem_final_rgb = ai_colorido_np.astype(np.uint8)
+        imagem_final_rgb = aplicar_calibracao_escala(ai_np, selected_color)
 
         final_bgr = cv2.cvtColor(imagem_final_rgb, cv2.COLOR_RGB2BGR)
         _, buffer = cv2.imencode('.jpg', final_bgr, [cv2.IMWRITE_JPEG_QUALITY, 95])
@@ -1153,7 +1213,7 @@ def process_smile():
         conn.close()
 
         print("=" * 60)
-        print("[PYTHON REST] Simulacao concluida com sucesso absoluto (Flux 2 Pro)!")
+        print(f"[PYTHON REST] Simulacao concluida com sucesso absoluto (Escala {selected_color.upper()})!")
         print("=" * 60)
 
         return jsonify({
