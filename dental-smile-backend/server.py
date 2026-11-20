@@ -137,7 +137,7 @@ def init_db():
 
 init_db()
 
-print("Servidor iniciado com Virada de Ouro Flux 2 Pro (BL1 Intocado + Marfim Realista BL2/BL3/BL4) + Mercado Pago Pix e Cartao")
+print("Servidor iniciado com Virada de Ouro Flux 2 Pro (BL1 Intocado + Escala Uniforme BL2/BL3/BL4) + Mercado Pago Pix e Cartao")
 
 def enviar_email_codigo(destinatario, nome, codigo, assunto="Codigo de Verificacao - Dental Smile"):
     if not RESEND_API_KEY:
@@ -262,8 +262,9 @@ def obter_dados_pagador(email, cpf_pagador, incluir_nome=True, email_override=No
 def aplicar_calibracao_escala(ai_np, selected_color):
     """
     - BL1: Mantem 100% da calibracao original aprovada no DS-116.
-    - BL2, BL3 e BL4: Calibracao progressiva no espaco CIE LAB com aquecimento marfim real (b*)
-      e preservacao de brilho especular do esmalte para evitar aspecto fosco/cinza.
+    - BL2, BL3 e BL4: Aplica calibracao uniforme em toda a arcada dentaria
+      (sem mascara oval central), eliminando qualquer diferenca de cor entre
+      os incisivos centrais e os dentes laterais.
     """
     cor = (selected_color or 'bl2').strip().lower()
 
@@ -279,73 +280,31 @@ def aplicar_calibracao_escala(ai_np, selected_color):
         ai_colorido_np[:, :, 2] = np.clip(ai_np[:, :, 2] * (1.0 + (b_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
         return ai_colorido_np.astype(np.uint8)
 
-    h, w, _ = ai_np.shape
-    y_grid, x_grid = np.ogrid[:h, :w]
-    cy, cx = h * 0.60, w * 0.50
-    ry, rx = h * 0.22, w * 0.28
-    dist_norm = ((y_grid - cy) / ry) ** 2 + ((x_grid - cx) / rx) ** 2
-    mouth_roi = np.clip(1.35 - dist_norm, 0.0, 1.0).astype(np.float32)
-    mouth_roi = cv2.GaussianBlur(mouth_roi, (25, 25), 0)
+    # Mascara uniforme em toda a arcada (exclui labios/gengiva pela diferenca R - G)
+    hsv_ai = cv2.cvtColor(ai_np.astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
+    rg_diff = ai_np[:, :, 0] - ai_np[:, :, 1]
+    cond_luma = np.clip((hsv_ai[:, :, 2] - 105.0) / 35.0, 0.0, 1.0)
+    cond_sat = np.clip((120.0 - hsv_ai[:, :, 1]) / 40.0, 0.0, 1.0)
+    cond_nao_labio = np.clip((35.0 - rg_diff) / 20.0, 0.0, 1.0)
 
-    hsv = cv2.cvtColor(ai_np.astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
-    r = ai_np[:, :, 0]
-    g = ai_np[:, :, 1]
-
-    cond_luma = np.clip((hsv[:, :, 2] - 102.0) / 48.0, 0.0, 1.0)
-    cond_sat = np.clip((132.0 - hsv[:, :, 1]) / 52.0, 0.0, 1.0)
-    rg_diff = r - g
-    cond_nao_labio = np.clip((38.0 - rg_diff) / 22.0, 0.0, 1.0)
-
-    tooth_mask = cond_luma * cond_sat * cond_nao_labio * mouth_roi
-    tooth_mask = cv2.GaussianBlur(tooth_mask, (7, 7), 0)
-
-    lab = cv2.cvtColor(ai_np.astype(np.uint8), cv2.COLOR_RGB2LAB).astype(np.float32)
-    L = lab[:, :, 0]
-    a_ch = lab[:, :, 1]
-    b_ch = lab[:, :, 2]
-
-    # Preserva o micro-relevo e brilho natural do esmalte
-    L_blur = cv2.GaussianBlur(L, (15, 15), 0)
-    L_detail = L - L_blur
+    tooth_mask_uniforme = cv2.GaussianBlur(cond_luma * cond_sat * cond_nao_labio, (7, 7), 0)
 
     if cor == 'bl2':
-        # BL2 Intenso: branco luminoso e limpo, um degrau abaixo do BL1
-        L_base = np.clip(L_blur * 0.45 + 126.0, 158.0, 230.0)
-        L_target = np.clip(L_base + L_detail * 1.15, 0, 240)
-        b_target = np.clip(b_ch * 0.35 + 91.0, 134.0, 139.0)
-        a_target = np.clip(a_ch * 0.50 + 64.2, 127.5, 130.0)
-        brilho_especular = 7.0
-        teto_rgb = 246.0
+        # BL2 Intenso: branco luminoso uniforme em toda a arcada
+        r_gain, g_gain, b_gain = 0.98, 0.97, 0.93
     elif cor == 'bl3':
-        # BL3 Natural: branco natural marfim claro (aprovado no DS-129)
-        L_base = np.clip(L_blur * 0.42 + 116.0, 152.0, 214.0)
-        L_target = np.clip(L_base + L_detail * 1.25, 0, 224)
-        b_target = np.clip(b_ch * 0.30 + 106.5, 143.0, 150.0)
-        a_target = np.clip(a_ch * 0.50 + 64.8, 128.5, 131.5)
-        brilho_especular = 6.0
-        teto_rgb = 236.0
+        # BL3 Natural: branco marfim natural uniforme em toda a arcada
+        r_gain, g_gain, b_gain = 0.95, 0.93, 0.87
     else:
-        # BL4 Suave: branco natural limpo, um degrau sutil abaixo do BL3 (sem amarelar)
-        L_base = np.clip(L_blur * 0.42 + 110.0, 148.0, 206.0)
-        L_target = np.clip(L_base + L_detail * 1.25, 0, 216)
-        b_target = np.clip(b_ch * 0.30 + 108.0, 144.0, 151.0)
-        a_target = np.clip(a_ch * 0.50 + 64.9, 128.5, 131.5)
-        brilho_especular = 6.0
-        teto_rgb = 230.0
+        # BL4 Suave: marfim suave uniforme em toda a arcada (zero mancha central)
+        r_gain, g_gain, b_gain = 0.92, 0.89, 0.82
 
-    lab[:, :, 0] = L * (1.0 - tooth_mask) + L_target * tooth_mask
-    lab[:, :, 1] = a_ch * (1.0 - tooth_mask) + a_target * tooth_mask
-    lab[:, :, 2] = b_ch * (1.0 - tooth_mask) + b_target * tooth_mask
+    ai_colorido_np = ai_np.copy()
+    ai_colorido_np[:, :, 0] = np.clip(ai_np[:, :, 0] * (1.0 + (r_gain - 1.0) * tooth_mask_uniforme), 0, 255)
+    ai_colorido_np[:, :, 1] = np.clip(ai_np[:, :, 1] * (1.0 + (g_gain - 1.0) * tooth_mask_uniforme), 0, 255)
+    ai_colorido_np[:, :, 2] = np.clip(ai_np[:, :, 2] * (1.0 + (b_gain - 1.0) * tooth_mask_uniforme), 0, 255)
 
-    res_rgb = cv2.cvtColor(np.clip(lab, 0, 255).astype(np.uint8), cv2.COLOR_LAB2RGB).astype(np.float32)
-
-    # Realca o reflexo natural do esmalte para nao parecer fosco
-    gray = cv2.cvtColor(res_rgb.astype(np.uint8), cv2.COLOR_RGB2GRAY).astype(np.float32)
-    specular = np.clip((gray - 178.0) / 77.0, 0.0, 1.0) * brilho_especular
-    for c in range(3):
-        res_rgb[:, :, c] = np.clip(res_rgb[:, :, c] + specular * tooth_mask, 0, teto_rgb)
-
-    return np.clip(res_rgb, 0, 255).astype(np.uint8)
+    return ai_colorido_np.astype(np.uint8)
 
 @app.route('/register', methods=['POST'])
 def register():
