@@ -53,7 +53,6 @@ TABELA_JUROS_PARCELAS_MP = {
 
 def calcular_opcoes_cartao(valor_base_pix):
     valor_liquido_desejado = float(valor_base_pix)
-    # Repassa a tarifa fixa de 4.98% para o valor base do cartao
     valor_base_cartao = round(valor_liquido_desejado / (1.0 - TAXA_BASE_CARTAO), 2)
     opcoes = []
     for parcelas in range(1, 11):
@@ -1053,8 +1052,8 @@ def process_smile():
 
         shade_prompt_map = {
             'bl1': (
-                "bright natural tooth shade between BL1 and BL2, realistic tooth enamel "
-                "with subtle glossy highlights and natural translucency, not flat chalky white"
+                "bright natural white teeth balanced between BL1 and BL2, clear luminous tooth shade "
+                "with realistic glossy enamel highlights and natural translucency, not yellowish, not flat chalky white"
             ),
             'bl2': (
                 "natural bright bleach shade BL2 teeth, slightly softer and warmer than BL1, "
@@ -1067,7 +1066,6 @@ def process_smile():
 
         print(f"Disparando Flux 2 Pro (Virada de Ouro + Calibracao BL1-BL4) | Escala selecionada: {selected_color.upper()}")
 
-        # Prompt enxuto focado na dentição para não alterar o rosto nem acentuar pelos/barba
         prompt_text = (
             "photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1> "
             f"upper teeth only, (Beautiful natural teeth), {shade_instruction}, "
@@ -1134,14 +1132,17 @@ def process_smile():
         ai_np = np.array(ai_crop_restaurado).astype(np.float32)
 
         hsv_ai = cv2.cvtColor(ai_np.astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
-        tooth_mask_sup = ((hsv_ai[:, :, 2] > 110) & (hsv_ai[:, :, 1] < 115)).astype(np.float32)
+        if selected_color == 'bl1':
+            # Mascara mais abrangente para captar os dentes mesmo com iluminacao quente
+            tooth_mask_sup = ((hsv_ai[:, :, 2] > 95) & (hsv_ai[:, :, 1] < 135)).astype(np.float32)
+        else:
+            tooth_mask_sup = ((hsv_ai[:, :, 2] > 110) & (hsv_ai[:, :, 1] < 115)).astype(np.float32)
         tooth_mask_sup_smooth = cv2.GaussianBlur(tooth_mask_sup, (7, 7), 0)
 
-        # Ganhos calibrados preservando o rosto e evitando escurecer a pele ao redor
         r_gain, g_gain, b_gain = 1.00, 1.00, 1.00
         if selected_color == 'bl1':
-            # Meio-termo natural entre BL1 e BL2, com brilho de esmalte e sem estourar
-            r_gain, g_gain, b_gain = 1.005, 1.002, 0.975
+            # Meio-termo entre BL1 e BL2: branco luminoso e natural com brilho, sem aspecto amarelado nem chapado
+            r_gain, g_gain, b_gain = 1.030, 1.032, 1.038
         elif selected_color == 'bl2':
             r_gain, g_gain, b_gain = 1.015, 1.005, 0.945
         elif selected_color == 'bl3':
@@ -1155,17 +1156,18 @@ def process_smile():
         ai_colorido_np[:, :, 2] = np.clip(ai_np[:, :, 2] * (1.0 + (b_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
 
         if selected_color == 'bl1':
-            # Preserva micro-relevo do esmalte e adiciona brilho especular moderado sem branco opaco
+            # Preserva micro-relevo do esmalte e adiciona brilho natural nos destaques dos dentes
             gray_ai = cv2.cvtColor(ai_colorido_np.astype(np.uint8), cv2.COLOR_RGB2GRAY).astype(np.float32)
             local_mean = cv2.GaussianBlur(gray_ai, (15, 15), 0)
-            micro_detail = np.clip((gray_ai - local_mean) * 0.35, -12.0, 12.0)
+            micro_detail = np.clip((gray_ai - local_mean) * 0.30, -10.0, 10.0)
 
-            highlight_mask = np.clip((hsv_ai[:, :, 2] - 180.0) / 75.0, 0.0, 1.0) * tooth_mask_sup_smooth
-            gloss_boost = highlight_mask * 16.0
+            highlight_mask = np.clip((hsv_ai[:, :, 2] - 165.0) / 85.0, 0.0, 1.0) * tooth_mask_sup_smooth
+            gloss_boost = highlight_mask * 18.0
 
             for c in range(3):
                 canal_ajustado = ai_colorido_np[:, :, c] + (micro_detail * tooth_mask_sup_smooth) + gloss_boost
-                ai_colorido_np[:, :, c] = np.clip(canal_ajustado, 0, 242)
+                # Limita o topo em 248 para manter brilho luminoso sem estourar branco opaco chapado
+                ai_colorido_np[:, :, c] = np.clip(canal_ajustado, 0, 248)
         elif selected_color == 'bl2':
             max_cap_bl2 = 236.0
             for c in range(3):
