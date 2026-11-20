@@ -137,7 +137,7 @@ def init_db():
 
 init_db()
 
-print("Servidor iniciado com Escala VITA Uniforme Total (BL1=Dente 1 | BL2=Dentes 3-5 | BL3=Dente 21 | BL4=Dente 27) + Mercado Pago Pix e Cartao")
+print("Servidor iniciado com Escala VITA Totalmente Uniforme (BL1=Dente 1 | BL2=Dentes 3-5 | BL3=Dente 21 | BL4=Dente 27) + Mercado Pago Pix e Cartao")
 
 def enviar_email_codigo(destinatario, nome, codigo, assunto="Codigo de Verificacao - Dental Smile"):
     if not RESEND_API_KEY:
@@ -261,8 +261,8 @@ def obter_dados_pagador(email, cpf_pagador, incluir_nome=True, email_override=No
 
 def aplicar_calibracao_escala(ai_np, selected_color):
     """
-    Mapeamento exato e uniforme na regua VITA Bleachedguide 3D-MASTER:
-    - BL1 - Ultra   -> Dente 1 (cobre arcada superior, inferior e laterais por igual)
+    Mapeamento exato e 100% uniforme na regua VITA Bleachedguide 3D-MASTER:
+    - BL1 - Ultra   -> Dente 1 (cobre incisivos superiores, inferiores e laterais por igual)
     - BL2 - Intenso -> Entre Dentes 3 e 5 (cobre toda a arcada por igual)
     - BL3 - Natural -> Dente 21 (100% mantido do DS-136 aprovado)
     - BL4 - Suave   -> Dente 27 (100% mantido do DS-137 aprovado)
@@ -273,11 +273,11 @@ def aplicar_calibracao_escala(ai_np, selected_color):
     rg_diff = ai_np[:, :, 0] - ai_np[:, :, 1]
 
     if cor in ['bl1', 'bl2']:
-        # Patamar de luminancia ampliado (75..100) para incluir dentes inferiores e laterais em leve sombra
-        # mantendo exclusao rigorosa de labios/gengiva (rg_diff) e cavidade bucal escura (V < 75)
-        cond_luma_full = np.clip((hsv_ai[:, :, 2] - 75.0) / 25.0, 0.0, 1.0)
-        cond_sat_full = np.clip((130.0 - hsv_ai[:, :, 1]) / 35.0, 0.0, 1.0)
-        cond_nao_labio_full = np.clip((33.0 - rg_diff) / 18.0, 0.0, 1.0)
+        # Saturação ampliada ate 165 para capturar 100% dos dentes inferiores centrais
+        # mantendo bloqueio estrito de labios/gengiva via rg_diff (vermelho)
+        cond_luma_full = np.clip((hsv_ai[:, :, 2] - 70.0) / 22.0, 0.0, 1.0)
+        cond_sat_full = np.clip((165.0 - hsv_ai[:, :, 1]) / 35.0, 0.0, 1.0)
+        cond_nao_labio_full = np.clip((34.0 - rg_diff) / 16.0, 0.0, 1.0)
 
         tooth_mask_full = cv2.GaussianBlur(cond_luma_full * cond_sat_full * cond_nao_labio_full, (5, 5), 0)
 
@@ -287,19 +287,19 @@ def aplicar_calibracao_escala(ai_np, selected_color):
         b_orig = lab_img[:, :, 2]
 
         if cor == 'bl1':
-            # BL1 Ultra -> Dente 1 da regua VITA Bleachedguide (uniforme em toda a arcada)
-            l_boost = 35.0
+            # BL1 Ultra -> Dente 1 da regua VITA Bleachedguide (branco maximo uniforme)
+            l_boost = 44.0
             a_target = 127.0
-            b_target = 126.5
-            forca_cor = 0.90
+            b_target = 125.0
+            forca_cor = 0.96
         else:
             # BL2 Intenso -> Entre os Dentes 3 e 5 da regua VITA Bleachedguide
-            l_boost = 22.0
+            l_boost = 32.0
             a_target = 127.5
-            b_target = 130.0
-            forca_cor = 0.74
+            b_target = 127.5
+            forca_cor = 0.88
 
-        L_novo = np.clip(L_orig + l_boost * tooth_mask_full, 0, 246)
+        L_novo = np.clip(L_orig + l_boost * tooth_mask_full, 0, 248)
         a_novo = a_orig * (1.0 - forca_cor * tooth_mask_full) + a_target * (forca_cor * tooth_mask_full)
         b_novo = b_orig * (1.0 - forca_cor * tooth_mask_full) + b_target * (forca_cor * tooth_mask_full)
 
