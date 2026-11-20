@@ -137,7 +137,7 @@ def init_db():
 
 init_db()
 
-print("Servidor iniciado com Virada de Ouro Flux 2 Pro (BL1 Intocado + Escala Uniforme BL2/BL3/BL4) + Mercado Pago Pix e Cartao")
+print("Servidor iniciado com Virada de Ouro Flux 2 Pro (Preservacao Facial + Escala VITA BL1/BL2/BL3/BL4) + Mercado Pago Pix e Cartao")
 
 def enviar_email_codigo(destinatario, nome, codigo, assunto="Codigo de Verificacao - Dental Smile"):
     if not RESEND_API_KEY:
@@ -261,10 +261,11 @@ def obter_dados_pagador(email, cpf_pagador, incluir_nome=True, email_override=No
 
 def aplicar_calibracao_escala(ai_np, selected_color):
     """
-    - BL1: Mantem 100% da calibracao original aprovada no DS-116.
-    - BL2, BL3 e BL4: Aplica calibracao uniforme em toda a arcada dentaria
-      (sem mascara oval central), eliminando qualquer diferenca de cor entre
-      os incisivos centrais e os dentes laterais.
+    Escala VITA Bleachedguide 3D-MASTER calibrada uniformemente em toda a arcada:
+    - BL1 (Dente 1): Mantem 100% da calibracao original aprovada no DS-116 / DS-133.
+    - BL2 (Dente 3): Branco intenso luminoso aprovado no DS-134.
+    - BL3 (Dente 5): Branco natural marfim claro (ponto exato entre BL2 e BL4).
+    - BL4 (Dente 7): Branco perola/marfim suave aprovado no DS-132.
     """
     cor = (selected_color or 'bl2').strip().lower()
 
@@ -290,13 +291,13 @@ def aplicar_calibracao_escala(ai_np, selected_color):
     tooth_mask_uniforme = cv2.GaussianBlur(cond_luma * cond_sat * cond_nao_labio, (7, 7), 0)
 
     if cor == 'bl2':
-        # BL2 Intenso: branco luminoso uniforme em toda a arcada
+        # BL2 Intenso (Dente 3 VITA): aprovado no DS-134
         r_gain, g_gain, b_gain = 0.98, 0.97, 0.93
     elif cor == 'bl3':
-        # BL3 Natural: branco marfim natural uniforme em toda a arcada
-        r_gain, g_gain, b_gain = 0.95, 0.93, 0.87
+        # BL3 Natural (Dente 5 VITA): exatamente entre BL2 e BL4
+        r_gain, g_gain, b_gain = 0.935, 0.91, 0.845
     else:
-        # BL4 Suave: marfim suave uniforme em toda a arcada (zero mancha central)
+        # BL4 Suave (Dente 7 VITA): aprovado no DS-132
         r_gain, g_gain, b_gain = 0.92, 0.89, 0.82
 
     ai_colorido_np = ai_np.copy()
@@ -1102,19 +1103,19 @@ def process_smile():
         print("[REPLICATE REST] Disparando Official Model Black Forest Labs Flux 2 Pro...")
 
         prompt_text = (
-            "photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1> "
-            "upper teeth only, (Beautiful natural teeth), aligned white teeth, "
-            "human like teeth, (no teeth gap), celebrity-like teeth, "
-            "healthy teeth with a perfect smile, not big incisor, good proportion teeth"
+            "Keep the exact same person, face identity, skin texture, facial hair, lips, nose, glasses, "
+            "and lighting completely unchanged. Only refine the teeth inside the mouth to look like "
+            "aligned, healthy, natural human teeth with good proportions and no gaps, preserving the natural smile."
         )
 
         payload = {
             "input": {
                 "input_images": [input_image_url],
                 "prompt": prompt_text,
+                "seed": 42,
                 "aspect_ratio": "1:1",
                 "output_format": "webp",
-                "output_quality": 80,
+                "output_quality": 85,
                 "resolution": "1 MP",
                 "safety_tolerance": 2
             }
