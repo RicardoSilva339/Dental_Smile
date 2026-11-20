@@ -24,11 +24,13 @@ class _CompareScreenState extends State<CompareScreen> {
   String? _selectedColor;
   String? _selectedShape;
   String? _simulationId;
+  String? _simulationDate; // Guarda o timestamp exato (ISO8601 ou data) da simulacao
   String? _userEmail;
 
   bool _isInit = true;
-  bool _gerandoId = false;
+  bool _idInicializado = false;
 
+  // Incrementa estritamente de 1 em 1 (ex.: 110, 111, 112, 113, 114)
   Future<String> _gerarProximoIdSimulacao() async {
     final boxUser = Hive.box('box_usuario');
     final int ultimoId = (boxUser.get('ultimo_id_simulacao', defaultValue: 100) as int);
@@ -37,17 +39,14 @@ class _CompareScreenState extends State<CompareScreen> {
     return 'DS-$proximoId';
   }
 
-  Future<void> _prepararNovoId() async {
-    if (_gerandoId) return;
-    _gerandoId = true;
+  Future<void> _prepararNovoIdUnico() async {
+    if (_idInicializado) return;
+    _idInicializado = true;
     final novoId = await _gerarProximoIdSimulacao();
     if (mounted) {
       setState(() {
         _simulationId = novoId;
-        _gerandoId = false;
       });
-    } else {
-      _gerandoId = false;
     }
   }
 
@@ -66,6 +65,12 @@ class _CompareScreenState extends State<CompareScreen> {
         _selectedShape = args['shape'] ?? 'Natural';
         idRecebido = args['simulationId'] as String?;
 
+        // Recupera a data/hora original salva no historico, se existir
+        final rawDate = args['date'] ?? args['createdAt'] ?? args['dataHora'];
+        if (rawDate != null && rawDate.toString().trim().isNotEmpty) {
+          _simulationDate = rawDate.toString().trim();
+        }
+
         _userEmail = args['userEmail'];
 
         final existingNotes = args['notes'] ?? args['note'];
@@ -74,10 +79,15 @@ class _CompareScreenState extends State<CompareScreen> {
         }
       }
 
-      if (idRecebido != null && idRecebido.isNotEmpty) {
-        _simulationId = idRecebido;
+      if (idRecebido != null && idRecebido.trim().isNotEmpty) {
+        _simulationId = idRecebido.trim();
+        _idInicializado = true;
       } else {
-        _prepararNovoId();
+        _prepararNovoIdUnico();
+      }
+
+      if (_simulationDate == null || _simulationDate!.isEmpty) {
+        _simulationDate = DateTime.now().toIso8601String();
       }
 
       if (_userEmail == null || _userEmail!.isEmpty) {
@@ -95,7 +105,28 @@ class _CompareScreenState extends State<CompareScreen> {
     super.dispose();
   }
 
-  // 🏷️ Converte o código Bleach no nome profissional correspondente
+  // Formata a data/hora da simulacao (nunca usa DateTime.now() ao gerar PDF de item salvo)
+  String _formatarDataHoraSimulacao(String? dataIsoOuTexto) {
+    if (dataIsoOuTexto != null && dataIsoOuTexto.trim().isNotEmpty) {
+      final texto = dataIsoOuTexto.trim();
+      final parsed = DateTime.tryParse(texto);
+      if (parsed != null) {
+        final local = parsed.toLocal();
+        final dia = local.day.toString().padLeft(2, '0');
+        final mes = local.month.toString().padLeft(2, '0');
+        final ano = local.year.toString();
+        final hora = local.hour.toString().padLeft(2, '0');
+        final min = local.minute.toString().padLeft(2, '0');
+        return '$dia/$mes/$ano às $hora:$min';
+      }
+      return texto;
+    }
+
+    final now = DateTime.now();
+    return "${now.day.toString().padLeft(2, '0')}/${now.month.toString().padLeft(2, '0')}/${now.year} às ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}";
+  }
+
+  // Converte o codigo Bleach no nome profissional correspondente
   String _obterNomeEscalaBleach(String? corCodigo) {
     if (corCodigo == null) return 'Natural';
     final codigo = corCodigo.toUpperCase().trim();
@@ -103,7 +134,7 @@ class _CompareScreenState extends State<CompareScreen> {
     if (codigo.contains('BL2') || codigo.contains('INTENSO')) return 'BL2 - Intenso';
     if (codigo.contains('BL3') || codigo.contains('NATURAL')) return 'BL3 - Natural';
     if (codigo.contains('BL4') || codigo.contains('SUAVE')) return 'BL4 - Suave';
-    return corCodigo; // Retorna o original se não coincidir
+    return corCodigo;
   }
 
   Future<pw.MemoryImage?> _carregarImagemSegura(String? path) async {
@@ -120,12 +151,16 @@ class _CompareScreenState extends State<CompareScreen> {
     return null;
   }
 
-  // 📂 Copia a imagem para o diretório permanente do app para evitar que o cache apague
+  // Copia a imagem para o diretorio permanente do app para evitar que o cache apague
   Future<String?> _salvarImagemPermanente(String? caminhoTemporario, String prefixoId) async {
     if (caminhoTemporario == null || caminhoTemporario.isEmpty) return null;
     try {
       final arquivoTemp = File(caminhoTemporario);
       if (!arquivoTemp.existsSync()) return caminhoTemporario;
+
+      if (caminhoTemporario.contains('DentalSmileHistorico')) {
+        return caminhoTemporario;
+      }
 
       final diretorioApp = await getApplicationDocumentsDirectory();
       final caminhoAppPath = diretorioApp.path;
@@ -161,6 +196,7 @@ class _CompareScreenState extends State<CompareScreen> {
     String? shape,
     String? note,
     String? simulationId,
+    String? simulationDate,
   }) async {
     final pdf = pw.Document();
 
@@ -168,9 +204,7 @@ class _CompareScreenState extends State<CompareScreen> {
     final afterImage = await _carregarImagemSegura(adjustedPath);
 
     final corFormatada = _obterNomeEscalaBleach(color);
-
-    final now = DateTime.now();
-    final dataHoraFormatada = "${now.day.toString().padLeft(2, '0')}/${now.month.toString().padLeft(2, '0')}/${now.year} às ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}";
+    final dataHoraFormatada = _formatarDataHoraSimulacao(simulationDate ?? _simulationDate);
 
     pdf.addPage(
       pw.Page(
@@ -293,12 +327,17 @@ class _CompareScreenState extends State<CompareScreen> {
 
     _simulationId = idSimulacao;
 
+    final dataHoraRegistro = (_simulationDate != null && _simulationDate!.isNotEmpty)
+        ? _simulationDate!
+        : DateTime.now().toIso8601String();
+    _simulationDate = dataHoraRegistro;
+
     final caminhoOriginalPerm = await _salvarImagemPermanente(_originalPath, '${idSimulacao}_orig');
     final caminhoProcessadoPerm = await _salvarImagemPermanente(_processedPath, '${idSimulacao}_proc');
 
     final simulationData = {
       'simulationId': idSimulacao,
-      'date': DateTime.now().toIso8601String(),
+      'date': dataHoraRegistro,
       'originalPath': caminhoOriginalPerm,
       'processedPath': caminhoProcessadoPerm,
       'color': _selectedColor,
@@ -306,7 +345,22 @@ class _CompareScreenState extends State<CompareScreen> {
       'notes': noteText,
       'userEmail': emailDono,
     };
-    await box.add(simulationData);
+
+    // Se ja existe um registro com esse mesmo simulationId no Hive, atualiza em vez de duplicar
+    int? indiceExistente;
+    for (int i = 0; i < box.length; i++) {
+      final item = box.getAt(i);
+      if (item is Map && item['simulationId']?.toString() == idSimulacao) {
+        indiceExistente = i;
+        break;
+      }
+    }
+
+    if (indiceExistente != null) {
+      await box.putAt(indiceExistente, simulationData);
+    } else {
+      await box.add(simulationData);
+    }
   }
 
   void _abrirPreviewPdf() async {
@@ -336,6 +390,7 @@ class _CompareScreenState extends State<CompareScreen> {
                 shape: _selectedShape,
                 note: noteText,
                 simulationId: _simulationId,
+                simulationDate: _simulationDate,
               );
               return doc.save();
             },
