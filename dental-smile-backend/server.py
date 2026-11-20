@@ -137,7 +137,7 @@ def init_db():
 
 init_db()
 
-print("Servidor iniciado com Escala VITA Cirurgica na Boca (BL1=Dente 1 | BL2=Dentes 3-5 | BL3=Dente 21 | BL4=Dente 27) + Mercado Pago Pix e Cartao")
+print("Servidor iniciado com Escala VITA Isolada na Arcada (BL1=Dente 1 | BL2=Dentes 3-5 | BL3=Dente 21 | BL4=Dente 27) + Mercado Pago Pix e Cartao")
 
 def enviar_email_codigo(destinatario, nome, codigo, assunto="Codigo de Verificacao - Dental Smile"):
     if not RESEND_API_KEY:
@@ -261,9 +261,9 @@ def obter_dados_pagador(email, cpf_pagador, incluir_nome=True, email_override=No
 
 def aplicar_calibracao_escala(ai_np, selected_color):
     """
-    Mapeamento exato e 100% uniforme na regua VITA Bleachedguide 3D-MASTER:
-    - BL1 - Ultra   -> Dente 1 (restrito exclusivamente a regiao da boca, cobre superiores e inferiores por igual)
-    - BL2 - Intenso -> Entre Dentes 3 e 5 (restrito exclusivamente a regiao da boca)
+    Mapeamento exato e 100% isolado nos dentes na regua VITA Bleachedguide 3D-MASTER:
+    - BL1 - Ultra   -> Dente 1 (exatamente a cor aprovada no DS-143, sem tocar na pele externa)
+    - BL2 - Intenso -> Entre Dentes 3 e 5 (isolado estritamente nos dentes)
     - BL3 - Natural -> Dente 21 (100% mantido do DS-136 aprovado)
     - BL4 - Suave   -> Dente 27 (100% mantido do DS-137 aprovado)
     """
@@ -271,24 +271,42 @@ def aplicar_calibracao_escala(ai_np, selected_color):
 
     if cor in ['bl1', 'bl2']:
         h, w, _ = ai_np.shape
-        # Restringe estritamente a janela da boca (zero risco de atingir bochechas, nariz ou rosto)
-        roi_boca = np.zeros((h, w), dtype=np.float32)
-        roi_boca[int(h * 0.40):int(h * 0.76), int(w * 0.22):int(w * 0.78)] = 1.0
-        roi_boca = cv2.GaussianBlur(roi_boca, (25, 25), 0)
+        y1, y2 = int(h * 0.42), int(h * 0.72)
+        x1, x2 = int(w * 0.24), int(w * 0.76)
 
         lab_img = cv2.cvtColor(ai_np.astype(np.uint8), cv2.COLOR_RGB2LAB).astype(np.float32)
         L_orig = lab_img[:, :, 0]
         a_orig = lab_img[:, :, 1]
         b_orig = lab_img[:, :, 2]
 
-        # Dentro da boca: dentes tem L* > 95 (exclui fundo escuro da boca) e a* < 141 (exclui labios/gengiva vermelhos)
+        # Candidatos a dente dentro da janela da boca
         cond_luma_dente = np.clip((L_orig - 92.0) / 22.0, 0.0, 1.0)
         cond_nao_labio_a = np.clip((142.0 - a_orig) / 6.0, 0.0, 1.0)
+        raw_mask = cond_luma_dente * cond_nao_labio_a
 
-        tooth_mask_boca = cv2.GaussianBlur(roi_boca * cond_luma_dente * cond_nao_labio_a, (5, 5), 0)
+        # Isola apenas os componentes dentro do anel dos labios (descarta qualquer pixel que toque a borda da janela = pele/barba/bochecha)
+        sub_bin = (raw_mask[y1:y2, x1:x2] > 0.35).astype(np.uint8)
+        num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(sub_bin, connectivity=8)
+        sub_h, sub_w = sub_bin.shape
+        clean_sub = np.zeros_like(sub_bin, dtype=np.float32)
+
+        for lbl in range(1, num_labels):
+            bx, by, bw, bh, area = stats[lbl]
+            # Se encosta na borda da caixa da boca, e pele externa (queixo/bochecha/bigode) -> descarta!
+            if bx <= 1 or by <= 1 or (bx + bw) >= (sub_w - 1) or (by + bh) >= (sub_h - 1):
+                continue
+            if area >= 25:
+                clean_sub[labels == lbl] = 1.0
+
+        # Dilata 2px para cobrir suavemente as bordas entre os dentes sem sair dos labios
+        clean_sub = cv2.dilate(clean_sub, np.ones((3, 3), np.uint8), iterations=1)
+
+        inside_mouth_mask = np.zeros((h, w), dtype=np.float32)
+        inside_mouth_mask[y1:y2, x1:x2] = clean_sub
+        tooth_mask_boca = cv2.GaussianBlur(inside_mouth_mask * raw_mask, (5, 5), 0)
 
         if cor == 'bl1':
-            # BL1 Ultra -> Dente 1 da regua VITA Bleachedguide (branco maximo uniforme em toda a arcada)
+            # BL1 Ultra -> Dente 1 da regua VITA Bleachedguide (identico ao branco aprovado no DS-143)
             l_boost = 44.0
             a_target = 127.0
             b_target = 125.0
