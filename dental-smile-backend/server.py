@@ -137,7 +137,7 @@ def init_db():
 
 init_db()
 
-print("Servidor iniciado com Virada de Ouro Flux 2 Pro (BL1 Intocado + Escala Absoluta BL2/BL3/BL4) + Mercado Pago Pix e Cartao")
+print("Servidor iniciado com Virada de Ouro Flux 2 Pro (BL1 Intocado + Marfim Realista BL2/BL3/BL4) + Mercado Pago Pix e Cartao")
 
 def enviar_email_codigo(destinatario, nome, codigo, assunto="Codigo de Verificacao - Dental Smile"):
     if not RESEND_API_KEY:
@@ -262,9 +262,8 @@ def obter_dados_pagador(email, cpf_pagador, incluir_nome=True, email_override=No
 def aplicar_calibracao_escala(ai_np, selected_color):
     """
     - BL1: Mantem 100% da calibracao original aprovada no DS-116.
-    - BL2, BL3 e BL4: Ancora o alvo de luminosidade (L) e temperatura (b*) no espaco LAB
-      dentro da mascara dos dentes, garantindo progressao deterministica independente da
-      variacao de brilho bruto devolvida pelo Flux 2 Pro.
+    - BL2, BL3 e BL4: Calibracao progressiva no espaco CIE LAB com aquecimento marfim real (b*)
+      e preservacao de brilho especular do esmalte para evitar aspecto fosco/cinza.
     """
     cor = (selected_color or 'bl2').strip().lower()
 
@@ -305,28 +304,34 @@ def aplicar_calibracao_escala(ai_np, selected_color):
     a_ch = lab[:, :, 1]
     b_ch = lab[:, :, 2]
 
-    # Preserva o micro-relevo/sombreamento entre dentes (variacao local de L)
+    # Preserva o micro-relevo e brilho natural do esmalte
     L_blur = cv2.GaussianBlur(L, (15, 15), 0)
     L_detail = L - L_blur
 
     if cor == 'bl2':
-        # BL2 Intenso: branco bem claro e luminoso, um degrau abaixo do BL1
-        L_base = np.clip(L_blur * 0.45 + 128.0, 155.0, 232.0)
-        L_target = np.clip(L_base + L_detail * 0.95, 0, 240)
-        b_target = np.clip(b_ch * 0.50 + 66.0, 127.0, 134.0)
-        a_target = np.clip(a_ch * 0.70 + 38.4, 126.0, 130.0)
+        # BL2 Intenso: branco luminoso e limpo, um degrau abaixo do BL1
+        L_base = np.clip(L_blur * 0.45 + 126.0, 158.0, 230.0)
+        L_target = np.clip(L_base + L_detail * 1.15, 0, 240)
+        b_target = np.clip(b_ch * 0.35 + 91.0, 134.0, 139.0)
+        a_target = np.clip(a_ch * 0.50 + 64.2, 127.5, 130.0)
+        brilho_especular = 7.0
+        teto_rgb = 246.0
     elif cor == 'bl3':
-        # BL3 Natural: branco natural marfim claro (tira o branco estourado da IA)
-        L_base = np.clip(L_blur * 0.45 + 112.0, 145.0, 214.0)
-        L_target = np.clip(L_base + L_detail * 0.95, 0, 222)
-        b_target = np.clip(b_ch * 0.50 + 71.5, 133.0, 141.0)
-        a_target = np.clip(a_ch * 0.70 + 38.8, 127.0, 131.5)
+        # BL3 Natural: branco natural marfim claro (b* elevado para evitar tom giz/acinzentado)
+        L_base = np.clip(L_blur * 0.42 + 116.0, 152.0, 214.0)
+        L_target = np.clip(L_base + L_detail * 1.25, 0, 224)
+        b_target = np.clip(b_ch * 0.30 + 106.5, 143.0, 150.0)
+        a_target = np.clip(a_ch * 0.50 + 64.8, 128.5, 131.5)
+        brilho_especular = 6.0
+        teto_rgb = 236.0
     else:
-        # BL4 Suave: marfim/creme suave e natural, claramente abaixo do BL3
-        L_base = np.clip(L_blur * 0.45 + 100.0, 138.0, 200.0)
-        L_target = np.clip(L_base + L_detail * 0.95, 0, 208)
-        b_target = np.clip(b_ch * 0.50 + 76.5, 139.0, 148.0)
-        a_target = np.clip(a_ch * 0.70 + 39.2, 128.0, 133.0)
+        # BL4 Suave: marfim/creme suave natural, degrau claro abaixo do BL3
+        L_base = np.clip(L_blur * 0.40 + 108.0, 144.0, 202.0)
+        L_target = np.clip(L_base + L_detail * 1.25, 0, 212)
+        b_target = np.clip(b_ch * 0.30 + 115.5, 152.0, 160.0)
+        a_target = np.clip(a_ch * 0.50 + 65.4, 129.0, 132.5)
+        brilho_especular = 5.0
+        teto_rgb = 226.0
 
     lab[:, :, 0] = L * (1.0 - tooth_mask) + L_target * tooth_mask
     lab[:, :, 1] = a_ch * (1.0 - tooth_mask) + a_target * tooth_mask
@@ -334,11 +339,11 @@ def aplicar_calibracao_escala(ai_np, selected_color):
 
     res_rgb = cv2.cvtColor(np.clip(lab, 0, 255).astype(np.uint8), cv2.COLOR_LAB2RGB).astype(np.float32)
 
-    if cor == 'bl2':
-        gray = cv2.cvtColor(res_rgb.astype(np.uint8), cv2.COLOR_RGB2GRAY).astype(np.float32)
-        specular = np.clip((gray - 185.0) / 70.0, 0.0, 1.0) * 8.0
-        for c in range(3):
-            res_rgb[:, :, c] = np.clip(res_rgb[:, :, c] + specular * tooth_mask, 0, 246.0)
+    # Realca o reflexo natural do esmalte para nao parecer fosco
+    gray = cv2.cvtColor(res_rgb.astype(np.uint8), cv2.COLOR_RGB2GRAY).astype(np.float32)
+    specular = np.clip((gray - 178.0) / 77.0, 0.0, 1.0) * brilho_especular
+    for c in range(3):
+        res_rgb[:, :, c] = np.clip(res_rgb[:, :, c] + specular * tooth_mask, 0, teto_rgb)
 
     return np.clip(res_rgb, 0, 255).astype(np.uint8)
 
