@@ -137,7 +137,7 @@ def init_db():
 
 init_db()
 
-print("Servidor iniciado com Flux 2 Pro (BL1-BL4 Calibrado) + Mercado Pago Pix e Cartao de Credito")
+print("Servidor iniciado com Flux 2 Pro (Sorriso Nota 12 + Escala LAB BL1-BL4) + Mercado Pago Pix e Cartao de Credito")
 
 def enviar_email_codigo(destinatario, nome, codigo, assunto="Codigo de Verificacao - Dental Smile"):
     if not RESEND_API_KEY:
@@ -258,6 +258,87 @@ def obter_dados_pagador(email, cpf_pagador, incluir_nome=True, email_override=No
         payer["last_name"] = sobrenome
 
     return payer
+
+def aplicar_escala_clareamento_boca(ai_rgb_np, selected_color):
+    """
+    Aplica a escala BL1..BL4 exclusivamente nos dentes dentro da regiao central do sorriso,
+    preservando integralmente a pele, barba, labios e oculos.
+    """
+    h, w, _ = ai_rgb_np.shape
+
+    # Janela focalizada na regiao do sorriso (evita afetar reflexo em oculos, testa ou pele)
+    y_grid, x_grid = np.ogrid[:h, :w]
+    cy, cx = h * 0.60, w * 0.50
+    ry, rx = h * 0.22, w * 0.28
+    dist_norm = ((y_grid - cy) / ry) ** 2 + ((x_grid - cx) / rx) ** 2
+    mouth_roi = np.clip(1.35 - dist_norm, 0.0, 1.0).astype(np.float32)
+    mouth_roi = cv2.GaussianBlur(mouth_roi, (25, 25), 0)
+
+    # Deteccao de pixels de dente (alta luminosidade, baixa saturacao e sem vermelho dominante de labio/gengiva)
+    hsv = cv2.cvtColor(ai_rgb_np.astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
+    r = ai_rgb_np[:, :, 0]
+    g = ai_rgb_np[:, :, 1]
+    b = ai_rgb_np[:, :, 2]
+
+    cond_luma = np.clip((hsv[:, :, 2] - 115.0) / 55.0, 0.0, 1.0)
+    cond_sat = np.clip((125.0 - hsv[:, :, 1]) / 55.0, 0.0, 1.0)
+    # Exclui labios e gengivas onde o canal R supera muito o canal G
+    rg_diff = r - g
+    cond_nao_labio = np.clip((38.0 - rg_diff) / 22.0, 0.0, 1.0)
+
+    tooth_mask = cond_luma * cond_sat * cond_nao_labio * mouth_roi
+    tooth_mask = cv2.GaussianBlur(tooth_mask, (7, 7), 0)
+
+    # Conversao para CIE LAB para controlar luminosidade (L) e temperatura (b*: amarelo <-> neutro/branco)
+    lab = cv2.cvtColor(ai_rgb_np.astype(np.uint8), cv2.COLOR_RGB2LAB).astype(np.float32)
+    L = lab[:, :, 0]
+    a_ch = lab[:, :, 1]
+    b_ch = lab[:, :, 2]
+
+    if selected_color == 'bl1':
+        # BL1 Ultra: meio-termo luminoso entre BL1 e BL2, remove amarelado e da brilho natural de esmalte
+        L_target = np.clip(L * 1.13 + 14.0, 0, 246)
+        b_target = np.clip(b_ch - 14.0, 118, 255)
+        a_target = np.clip(a_ch - 1.5, 0, 255)
+    elif selected_color == 'bl2':
+        # BL2 Intenso: branco bem claro e limpo, um degrau abaixo do BL1
+        L_target = np.clip(L * 1.09 + 9.0, 0, 240)
+        b_target = np.clip(b_ch - 10.0, 121, 255)
+        a_target = np.clip(a_ch - 1.0, 0, 255)
+    elif selected_color == 'bl3':
+        # BL3 Natural: branco natural equilibrado
+        L_target = np.clip(L * 1.04 + 4.0, 0, 232)
+        b_target = np.clip(b_ch - 5.0, 124, 255)
+        a_target = a_ch
+    else:
+        # BL4 Suave: marfim natural claro e acolhedor
+        L_target = np.clip(L * 1.01 + 1.0, 0, 226)
+        b_target = np.clip(b_ch - 1.5, 126, 255)
+        a_target = a_ch
+
+    lab[:, :, 0] = L * (1.0 - tooth_mask) + L_target * tooth_mask
+    lab[:, :, 1] = a_ch * (1.0 - tooth_mask) + a_target * tooth_mask
+    lab[:, :, 2] = b_ch * (1.0 - tooth_mask) + b_target * tooth_mask
+
+    res_rgb = cv2.cvtColor(np.clip(lab, 0, 255).astype(np.uint8), cv2.COLOR_LAB2RGB).astype(np.float32)
+
+    # Brilho especular suave de esmalte para BL1 e BL2 sem estourar branco chapado
+    if selected_color in ['bl1', 'bl2']:
+        gray = cv2.cvtColor(res_rgb.astype(np.uint8), cv2.COLOR_RGB2GRAY).astype(np.float32)
+        local_mean = cv2.GaussianBlur(gray, (13, 13), 0)
+        micro_relief = np.clip((gray - local_mean) * 0.30, -10.0, 10.0)
+        spec_strength = 12.0 if selected_color == 'bl1' else 7.0
+        specular = np.clip((gray - 185.0) / 70.0, 0.0, 1.0) * spec_strength
+        cap_max = 248.0 if selected_color == 'bl1' else 242.0
+
+        for c in range(3):
+            res_rgb[:, :, c] = np.clip(
+                res_rgb[:, :, c] + (micro_relief + specular) * tooth_mask,
+                0,
+                cap_max
+            )
+
+    return np.clip(res_rgb, 0, 255).astype(np.uint8)
 
 @app.route('/register', methods=['POST'])
 def register():
@@ -1050,27 +1131,15 @@ def process_smile():
         file_data = file_resp.json()
         input_image_url = file_data.get("urls", {}).get("get") or file_data.get("url")
 
-        shade_prompt_map = {
-            'bl1': (
-                "bright natural white teeth balanced between BL1 and BL2, clear luminous tooth shade "
-                "with realistic glossy enamel highlights and natural translucency, not yellowish, not flat chalky white"
-            ),
-            'bl2': (
-                "natural bright bleach shade BL2 teeth, slightly softer and warmer than BL1, "
-                "realistic tooth enamel texture with natural light falloff and subtle gloss, not overly bright white"
-            ),
-            'bl3': "natural warm off-white teeth, subtle realistic ivory shade BL3, not overly bright",
-            'bl4': "soft natural creamy ivory teeth, gentle understated tooth shade BL4, slightly darker and warmer than bleach white"
-        }
-        shade_instruction = shade_prompt_map.get(selected_color, shade_prompt_map['bl2'])
+        print(f"Disparando Flux 2 Pro (Sorriso Nota 12 + Escala LAB) | Escala selecionada: {selected_color.upper()}")
 
-        print(f"Disparando Flux 2 Pro (Virada de Ouro + Calibracao BL1-BL4) | Escala selecionada: {selected_color.upper()}")
-
+        # Prompt direto da virada de ouro para o LoRA reconstruir os dentes perfeitos (sem enfraquecer o branco)
         prompt_text = (
             "photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1> "
-            f"upper teeth only, (Beautiful natural teeth), {shade_instruction}, "
-            "aligned white teeth, human like teeth, (no teeth gap), celebrity-like teeth, "
-            "healthy teeth with a perfect smile, not big incisor, good proportion teeth"
+            "upper and lower teeth, (Beautiful natural white teeth), aligned white porcelain veneers, "
+            "human like teeth, (no teeth gap), celebrity-like teeth, "
+            "healthy white teeth with a perfect smile, not big incisor, good proportion teeth, "
+            "natural glossy tooth enamel, preserve exact face and skin"
         )
 
         payload = {
@@ -1079,8 +1148,8 @@ def process_smile():
                 "prompt": prompt_text,
                 "aspect_ratio": "1:1",
                 "output_format": "webp",
-                "output_quality": 80,
-                "resolution": "1 MP",
+                "output_quality": 90,
+                "resolution": "match_input_image",
                 "safety_tolerance": 2
             }
         }
@@ -1131,55 +1200,8 @@ def process_smile():
 
         ai_np = np.array(ai_crop_restaurado).astype(np.float32)
 
-        hsv_ai = cv2.cvtColor(ai_np.astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
-        if selected_color == 'bl1':
-            # Mascara mais abrangente para captar os dentes mesmo com iluminacao quente
-            tooth_mask_sup = ((hsv_ai[:, :, 2] > 95) & (hsv_ai[:, :, 1] < 135)).astype(np.float32)
-        else:
-            tooth_mask_sup = ((hsv_ai[:, :, 2] > 110) & (hsv_ai[:, :, 1] < 115)).astype(np.float32)
-        tooth_mask_sup_smooth = cv2.GaussianBlur(tooth_mask_sup, (7, 7), 0)
-
-        r_gain, g_gain, b_gain = 1.00, 1.00, 1.00
-        if selected_color == 'bl1':
-            # Meio-termo entre BL1 e BL2: branco luminoso e natural com brilho, sem aspecto amarelado nem chapado
-            r_gain, g_gain, b_gain = 1.030, 1.032, 1.038
-        elif selected_color == 'bl2':
-            r_gain, g_gain, b_gain = 1.015, 1.005, 0.945
-        elif selected_color == 'bl3':
-            r_gain, g_gain, b_gain = 1.025, 0.995, 0.895
-        elif selected_color == 'bl4':
-            r_gain, g_gain, b_gain = 1.020, 0.985, 0.865
-
-        ai_colorido_np = ai_np.copy()
-        ai_colorido_np[:, :, 0] = np.clip(ai_np[:, :, 0] * (1.0 + (r_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
-        ai_colorido_np[:, :, 1] = np.clip(ai_np[:, :, 1] * (1.0 + (g_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
-        ai_colorido_np[:, :, 2] = np.clip(ai_np[:, :, 2] * (1.0 + (b_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
-
-        if selected_color == 'bl1':
-            # Preserva micro-relevo do esmalte e adiciona brilho natural nos destaques dos dentes
-            gray_ai = cv2.cvtColor(ai_colorido_np.astype(np.uint8), cv2.COLOR_RGB2GRAY).astype(np.float32)
-            local_mean = cv2.GaussianBlur(gray_ai, (15, 15), 0)
-            micro_detail = np.clip((gray_ai - local_mean) * 0.30, -10.0, 10.0)
-
-            highlight_mask = np.clip((hsv_ai[:, :, 2] - 165.0) / 85.0, 0.0, 1.0) * tooth_mask_sup_smooth
-            gloss_boost = highlight_mask * 18.0
-
-            for c in range(3):
-                canal_ajustado = ai_colorido_np[:, :, c] + (micro_detail * tooth_mask_sup_smooth) + gloss_boost
-                # Limita o topo em 248 para manter brilho luminoso sem estourar branco opaco chapado
-                ai_colorido_np[:, :, c] = np.clip(canal_ajustado, 0, 248)
-        elif selected_color == 'bl2':
-            max_cap_bl2 = 236.0
-            for c in range(3):
-                canal = ai_colorido_np[:, :, c]
-                canal_limitado = np.minimum(canal, max_cap_bl2)
-                ai_colorido_np[:, :, c] = np.clip(
-                    canal * (1.0 - tooth_mask_sup_smooth) + canal_limitado * tooth_mask_sup_smooth,
-                    0,
-                    255
-                )
-
-        imagem_final_rgb = ai_colorido_np.astype(np.uint8)
+        # Aplica a graduacao clinica BL1..BL4 exclusivamente nos dentes da regiao do sorriso
+        imagem_final_rgb = aplicar_escala_clareamento_boca(ai_np, selected_color)
 
         final_bgr = cv2.cvtColor(imagem_final_rgb, cv2.COLOR_RGB2BGR)
         _, buffer = cv2.imencode('.jpg', final_bgr, [cv2.IMWRITE_JPEG_QUALITY, 95])
