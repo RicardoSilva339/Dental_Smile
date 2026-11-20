@@ -137,7 +137,7 @@ def init_db():
 
 init_db()
 
-print("Servidor iniciado com Virada de Ouro Flux 2 Pro (BL1 Intocado + BL2/BL3/BL4 Calibrados) + Mercado Pago Pix e Cartao")
+print("Servidor iniciado com Virada de Ouro Flux 2 Pro (BL1 Intocado + Escala Absoluta BL2/BL3/BL4) + Mercado Pago Pix e Cartao")
 
 def enviar_email_codigo(destinatario, nome, codigo, assunto="Codigo de Verificacao - Dental Smile"):
     if not RESEND_API_KEY:
@@ -261,11 +261,14 @@ def obter_dados_pagador(email, cpf_pagador, incluir_nome=True, email_override=No
 
 def aplicar_calibracao_escala(ai_np, selected_color):
     """
-    - BL1: Mantem 100% da calibracao original aprovada na virada de ouro.
-    - BL2, BL3 e BL4: Aplica graduacao CIE LAB focalizada exclusivamente na regiao do sorriso,
-      garantindo branco brilhante uniforme no BL2 e degraus naturais visiveis no BL3 e BL4.
+    - BL1: Mantem 100% da calibracao original aprovada no DS-116.
+    - BL2, BL3 e BL4: Ancora o alvo de luminosidade (L) e temperatura (b*) no espaco LAB
+      dentro da mascara dos dentes, garantindo progressao deterministica independente da
+      variacao de brilho bruto devolvida pelo Flux 2 Pro.
     """
-    if selected_color == 'bl1':
+    cor = (selected_color or 'bl2').strip().lower()
+
+    if cor == 'bl1':
         hsv_ai = cv2.cvtColor(ai_np.astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
         tooth_mask_sup = ((hsv_ai[:, :, 2] > 110) & (hsv_ai[:, :, 1] < 115)).astype(np.float32)
         tooth_mask_sup_smooth = cv2.GaussianBlur(tooth_mask_sup, (7, 7), 0)
@@ -289,7 +292,6 @@ def aplicar_calibracao_escala(ai_np, selected_color):
     r = ai_np[:, :, 0]
     g = ai_np[:, :, 1]
 
-    # Captura tanto os dentes superiores quanto os inferiores dentro da boca sem pegar labios/gengiva
     cond_luma = np.clip((hsv[:, :, 2] - 102.0) / 48.0, 0.0, 1.0)
     cond_sat = np.clip((132.0 - hsv[:, :, 1]) / 52.0, 0.0, 1.0)
     rg_diff = r - g
@@ -303,21 +305,28 @@ def aplicar_calibracao_escala(ai_np, selected_color):
     a_ch = lab[:, :, 1]
     b_ch = lab[:, :, 2]
 
-    if selected_color == 'bl2':
-        # BL2 Intenso: branco bem claro, uniforme (inclusive inferiores) e com brilho de esmalte
-        L_target = np.clip(L * 1.05 + 7.0, 0, 245)
-        b_target = np.clip(b_ch * 0.88 + 14.5, 125, 255)
-        a_target = np.clip(a_ch - 0.8, 0, 255)
-    elif selected_color == 'bl3':
-        # BL3 Natural: reduz luminosidade estourada e traz tom natural marfim claro equilibrado
-        L_target = np.clip(L * 0.91 + 4.0, 0, 224)
-        b_target = np.clip(b_ch + 8.5, 0, 152)
-        a_target = np.clip(a_ch + 0.8, 0, 255)
+    # Preserva o micro-relevo/sombreamento entre dentes (variacao local de L)
+    L_blur = cv2.GaussianBlur(L, (15, 15), 0)
+    L_detail = L - L_blur
+
+    if cor == 'bl2':
+        # BL2 Intenso: branco bem claro e luminoso, um degrau abaixo do BL1
+        L_base = np.clip(L_blur * 0.45 + 128.0, 155.0, 232.0)
+        L_target = np.clip(L_base + L_detail * 0.95, 0, 240)
+        b_target = np.clip(b_ch * 0.50 + 66.0, 127.0, 134.0)
+        a_target = np.clip(a_ch * 0.70 + 38.4, 126.0, 130.0)
+    elif cor == 'bl3':
+        # BL3 Natural: branco natural marfim claro (tira o branco estourado da IA)
+        L_base = np.clip(L_blur * 0.45 + 112.0, 145.0, 214.0)
+        L_target = np.clip(L_base + L_detail * 0.95, 0, 222)
+        b_target = np.clip(b_ch * 0.50 + 71.5, 133.0, 141.0)
+        a_target = np.clip(a_ch * 0.70 + 38.8, 127.0, 131.5)
     else:
-        # BL4 Suave: um degrau mais suave e acolhedor que o BL3 (creme/marfim discreto)
-        L_target = np.clip(L * 0.85 + 3.0, 0, 212)
-        b_target = np.clip(b_ch + 14.5, 0, 160)
-        a_target = np.clip(a_ch + 1.5, 0, 255)
+        # BL4 Suave: marfim/creme suave e natural, claramente abaixo do BL3
+        L_base = np.clip(L_blur * 0.45 + 100.0, 138.0, 200.0)
+        L_target = np.clip(L_base + L_detail * 0.95, 0, 208)
+        b_target = np.clip(b_ch * 0.50 + 76.5, 139.0, 148.0)
+        a_target = np.clip(a_ch * 0.70 + 39.2, 128.0, 133.0)
 
     lab[:, :, 0] = L * (1.0 - tooth_mask) + L_target * tooth_mask
     lab[:, :, 1] = a_ch * (1.0 - tooth_mask) + a_target * tooth_mask
@@ -325,17 +334,11 @@ def aplicar_calibracao_escala(ai_np, selected_color):
 
     res_rgb = cv2.cvtColor(np.clip(lab, 0, 255).astype(np.uint8), cv2.COLOR_LAB2RGB).astype(np.float32)
 
-    if selected_color == 'bl2':
+    if cor == 'bl2':
         gray = cv2.cvtColor(res_rgb.astype(np.uint8), cv2.COLOR_RGB2GRAY).astype(np.float32)
-        local_mean = cv2.GaussianBlur(gray, (13, 13), 0)
-        micro_relief = np.clip((gray - local_mean) * 0.25, -8.0, 8.0)
-        specular = np.clip((gray - 180.0) / 75.0, 0.0, 1.0) * 11.0
+        specular = np.clip((gray - 185.0) / 70.0, 0.0, 1.0) * 8.0
         for c in range(3):
-            res_rgb[:, :, c] = np.clip(
-                res_rgb[:, :, c] + (micro_relief + specular) * tooth_mask,
-                0,
-                250.0
-            )
+            res_rgb[:, :, c] = np.clip(res_rgb[:, :, c] + specular * tooth_mask, 0, 246.0)
 
     return np.clip(res_rgb, 0, 255).astype(np.uint8)
 
@@ -1085,7 +1088,7 @@ def process_smile():
         return jsonify({"success": False, "error": "Creditos insuficientes."}), 403
 
     image_b64 = data.get('image')
-    selected_color = data.get('color', 'bl2').lower()
+    selected_color = str(data.get('color') or 'bl2').strip().lower()
 
     if not image_b64:
         cur.close()
