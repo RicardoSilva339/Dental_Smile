@@ -27,19 +27,44 @@ class _CompareScreenState extends State<CompareScreen> {
   String? _userEmail;
 
   bool _isInit = true;
+  bool _gerandoId = false;
+
+  Future<String> _gerarProximoIdSimulacao() async {
+    final boxUser = Hive.box('box_usuario');
+    final int ultimoId = (boxUser.get('ultimo_id_simulacao', defaultValue: 100) as int);
+    final int proximoId = ultimoId < 100 ? 101 : ultimoId + 1;
+    await boxUser.put('ultimo_id_simulacao', proximoId);
+    return 'DS-$proximoId';
+  }
+
+  Future<void> _prepararNovoId() async {
+    if (_gerandoId) return;
+    _gerandoId = true;
+    final novoId = await _gerarProximoIdSimulacao();
+    if (mounted) {
+      setState(() {
+        _simulationId = novoId;
+        _gerandoId = false;
+      });
+    } else {
+      _gerandoId = false;
+    }
+  }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (_isInit) {
       final args = ModalRoute.of(context)?.settings.arguments;
+      String? idRecebido;
+
       if (args is Map<String, dynamic>) {
         _originalPath = args['originalPath'] ?? args['original'];
         _processedPath = args['processedPath'] ?? args['processed'] ?? args['image'] ?? args['resultPath'];
 
         _selectedColor = args['color'] ?? 'BL3';
         _selectedShape = args['shape'] ?? 'Natural';
-        _simulationId = args['simulationId'] ?? 'DS-${DateTime.now().millisecondsSinceEpoch.toString().substring(5)}';
+        idRecebido = args['simulationId'] as String?;
 
         _userEmail = args['userEmail'];
 
@@ -47,6 +72,12 @@ class _CompareScreenState extends State<CompareScreen> {
         if (existingNotes != null) {
           _notesController.text = existingNotes;
         }
+      }
+
+      if (idRecebido != null && idRecebido.isNotEmpty) {
+        _simulationId = idRecebido;
+      } else {
+        _prepararNovoId();
       }
 
       if (_userEmail == null || _userEmail!.isEmpty) {
@@ -161,7 +192,7 @@ class _CompareScreenState extends State<CompareScreen> {
                     ),
                     pw.SizedBox(height: 4),
                     pw.Text(
-                      'ID da Simulação: ${simulationId ?? "DS-Geral"}',
+                      'ID da Simulação: ${simulationId ?? "DS-101"}',
                       style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey700),
                     ),
                     pw.Text(
@@ -179,7 +210,6 @@ class _CompareScreenState extends State<CompareScreen> {
             ),
             pw.SizedBox(height: 4),
             pw.Text('- Cor / Escala: $corFormatada', style: const pw.TextStyle(fontSize: 10)),
-            // Linha de formato redundante removida conforme solicitado
             pw.Text('- Observações do Dentista: ${note ?? 'Sem observações'}', style: const pw.TextStyle(fontSize: 10)),
             pw.SizedBox(height: 12),
             pw.Row(
@@ -257,7 +287,11 @@ class _CompareScreenState extends State<CompareScreen> {
         ? _userEmail!
         : Hive.box('box_usuario').get('email', defaultValue: '') as String;
 
-    final idSimulacao = _simulationId ?? 'DS-${DateTime.now().millisecondsSinceEpoch.toString().substring(5)}';
+    final idSimulacao = (_simulationId != null && _simulationId!.isNotEmpty)
+        ? _simulationId!
+        : await _gerarProximoIdSimulacao();
+
+    _simulationId = idSimulacao;
 
     final caminhoOriginalPerm = await _salvarImagemPermanente(_originalPath, '${idSimulacao}_orig');
     final caminhoProcessadoPerm = await _salvarImagemPermanente(_processedPath, '${idSimulacao}_proc');
