@@ -1057,7 +1057,10 @@ def process_smile():
                 "realistic natural tooth enamel with subtle glossy specular highlights and natural translucency, "
                 "authentic tooth grain and interdental shading, not chalky white, not flat matte white"
             ),
-            'bl2': "bright clean natural white teeth, balanced luminous bleach shade BL2",
+            'bl2': (
+                "natural bright bleach shade BL2 teeth, slightly softer and warmer than BL1, "
+                "realistic tooth enamel texture with natural light falloff and subtle gloss, not overly bright white"
+            ),
             'bl3': "natural warm off-white teeth, subtle realistic ivory shade BL3, not overly bright",
             'bl4': "soft natural creamy ivory teeth, gentle understated tooth shade BL4, slightly darker and warmer than bleach white"
         }
@@ -1140,7 +1143,8 @@ def process_smile():
             # Meio-termo entre BL1 e BL2: levemente mais suave que BL1 puro, mantendo luminosidade
             r_gain, g_gain, b_gain = 0.992, 0.988, 0.978
         elif selected_color == 'bl2':
-            r_gain, g_gain, b_gain = 1.00, 1.00, 0.98
+            # Reducao percentual calibrada para diferenciar BL2 do BL1 sem branco estourado
+            r_gain, g_gain, b_gain = 0.980, 0.968, 0.945
         elif selected_color == 'bl3':
             r_gain, g_gain, b_gain = 0.98, 0.96, 0.89
         elif selected_color == 'bl4':
@@ -1165,6 +1169,17 @@ def process_smile():
                 canal_ajustado = ai_colorido_np[:, :, c] + (micro_detail * tooth_mask_sup_smooth) + gloss_boost
                 # Limita o topo em 246 para evitar estourar em branco chapado
                 ai_colorido_np[:, :, c] = np.clip(canal_ajustado, 0, 246)
+        elif selected_color == 'bl2':
+            # Evita que os pontos mais claros do BL2 encostem no branco puro do BL1
+            max_cap_bl2 = 238.0
+            for c in range(3):
+                canal = ai_colorido_np[:, :, c]
+                canal_limitado = np.minimum(canal, max_cap_bl2)
+                ai_colorido_np[:, :, c] = np.clip(
+                    canal * (1.0 - tooth_mask_sup_smooth) + canal_limitado * tooth_mask_sup_smooth,
+                    0,
+                    255
+                )
 
         imagem_final_rgb = ai_colorido_np.astype(np.uint8)
 
