@@ -137,7 +137,7 @@ def init_db():
 
 init_db()
 
-print("Servidor iniciado com Escala VITA Elipse Bucal Precisa (BL1=Dente 1 | BL2=Dentes 3-5 | BL3=Dente 21 | BL4=Dente 27) + Mercado Pago Pix e Cartao")
+print("Servidor iniciado com Calibracao VITA Uniforme BL1/BL2 + Mercado Pago Pix e Cartao")
 
 def enviar_email_codigo(destinatario, nome, codigo, assunto="Codigo de Verificacao - Dental Smile"):
     if not RESEND_API_KEY:
@@ -261,64 +261,65 @@ def obter_dados_pagador(email, cpf_pagador, incluir_nome=True, email_override=No
 
 def aplicar_calibracao_escala(ai_np, selected_color):
     """
-    Mapeamento exato na regua VITA Bleachedguide 3D-MASTER:
-    - BL1 - Ultra   -> Dente 1 (formula exata do DS-143 com elipse centrada nos labios)
-    - BL2 - Intenso -> Entre Dentes 3 e 5 (elipse centrada nos labios)
-    - BL3 - Natural -> Dente 21 (100% mantido do DS-136 aprovado)
-    - BL4 - Suave   -> Dente 27 (100% mantido do DS-137 aprovado)
+    Mapeamento na regua VITA Bleachedguide:
+    - BL1 / BL2: clareamento uniforme na regiao da boca evitando efeito meio branco / meio amarelo
+    - BL3 / BL4: mantidos conforme definicao anterior
     """
     cor = (selected_color or 'bl2').strip().lower()
 
     if cor in ['bl1', 'bl2']:
         h, w, _ = ai_np.shape
 
-        # Elipse ajustada exatamente ao contorno externo dos labios (sem pegar queixo ou bochechas)
-        elipse_boca = np.zeros((h, w), dtype=np.float32)
+        # Janela focada na regiao da boca (evita bochechas externas e queixo)
+        zona_boca = np.zeros((h, w), dtype=np.float32)
         cv2.ellipse(
-            elipse_boca,
+            zona_boca,
             center=(int(w * 0.50), int(h * 0.54)),
-            axes=(int(w * 0.255), int(h * 0.088)),
+            axes=(int(w * 0.235), int(h * 0.082)),
             angle=0,
             startAngle=0,
             endAngle=360,
             color=1.0,
             thickness=-1
         )
-        elipse_boca = cv2.GaussianBlur(elipse_boca, (15, 15), 0)
+        zona_boca = cv2.GaussianBlur(zona_boca, (17, 17), 0)
 
         lab_img = cv2.cvtColor(ai_np.astype(np.uint8), cv2.COLOR_RGB2LAB).astype(np.float32)
         L_orig = lab_img[:, :, 0]
         a_orig = lab_img[:, :, 1]
         b_orig = lab_img[:, :, 2]
 
-        # Exatamente a mesma condicao que produziu o Dente 1 perfeito no DS-143
-        cond_luma_dente = np.clip((L_orig - 92.0) / 22.0, 0.0, 1.0)
-        cond_nao_labio_a = np.clip((142.0 - a_orig) / 6.0, 0.0, 1.0)
+        # Separa esmalte visivel (incluindo incisivos inferiores e laterais) de labios/gengiva (a* alto) e fundo escuro (L* baixo)
+        cond_luma = np.clip((L_orig - 82.0) / 24.0, 0.0, 1.0)
+        cond_nao_labio = np.clip((141.0 - a_orig) / 5.0, 0.0, 1.0)
 
-        tooth_mask_boca = cv2.GaussianBlur(elipse_boca * cond_luma_dente * cond_nao_labio_a, (5, 5), 0)
+        # Mascara base dos dentes com suavizacao para evitar bordas duras
+        mascara_dentes = cv2.GaussianBlur(zona_boca * cond_luma * cond_nao_labio, (7, 7), 0)
+
+        # Versao mais uniforme para reduzir diferencas entre centro e laterais dos dentes
+        mascara_uniforme = cv2.GaussianBlur((mascara_dentes > 0.25).astype(np.float32), (11, 11), 0)
+        peso_final = np.clip(0.55 * mascara_dentes + 0.45 * mascara_uniforme * zona_boca, 0.0, 1.0)
 
         if cor == 'bl1':
-            # BL1 Ultra -> Dente 1 da regua VITA Bleachedguide (identico ao DS-143)
-            l_boost = 44.0
-            a_target = 127.0
-            b_target = 125.0
-            forca_cor = 0.96
-        else:
-            # BL2 Intenso -> Entre os Dentes 3 e 5 da regua VITA Bleachedguide
-            l_boost = 30.0
+            l_boost = 38.0
             a_target = 127.5
-            b_target = 127.5
-            forca_cor = 0.86
+            b_target = 125.5
+            forca_cor = 0.92
+        else:
+            l_boost = 28.0
+            a_target = 128.0
+            b_target = 128.0
+            forca_cor = 0.84
 
-        L_novo = np.clip(L_orig + l_boost * tooth_mask_boca, 0, 248)
-        a_novo = a_orig * (1.0 - forca_cor * tooth_mask_boca) + a_target * (forca_cor * tooth_mask_boca)
-        b_novo = b_orig * (1.0 - forca_cor * tooth_mask_boca) + b_target * (forca_cor * tooth_mask_boca)
+        L_novo = np.clip(L_orig + l_boost * peso_final, 0, 245)
+        a_novo = a_orig * (1.0 - forca_cor * peso_final) + a_target * (forca_cor * peso_final)
+        b_novo = b_orig * (1.0 - forca_cor * peso_final) + b_target * (forca_cor * peso_final)
 
         lab_final = np.stack([L_novo, a_novo, b_novo], axis=-1).astype(np.uint8)
         rgb_final = cv2.cvtColor(lab_final, cv2.COLOR_LAB2RGB)
         return rgb_final.astype(np.uint8)
 
-    # Mascara original mantida 100% intocada para BL3 e BL4
+    # Mascara original mantida para BL3 e BL4
     hsv_ai = cv2.cvtColor(ai_np.astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
     rg_diff = ai_np[:, :, 0] - ai_np[:, :, 1]
     cond_luma = np.clip((hsv_ai[:, :, 2] - 105.0) / 35.0, 0.0, 1.0)
@@ -328,10 +329,8 @@ def aplicar_calibracao_escala(ai_np, selected_color):
     tooth_mask_uniforme = cv2.GaussianBlur(cond_luma * cond_sat * cond_nao_labio, (7, 7), 0)
 
     if cor == 'bl3':
-        # BL3 Natural -> Dente 21 da regua VITA (100% mantido do DS-136)
         r_gain, g_gain, b_gain = 0.935, 0.91, 0.845
     else:
-        # BL4 Suave -> Dente 27 da regua VITA (100% mantido do DS-137)
         r_gain, g_gain, b_gain = 0.92, 0.89, 0.82
 
     ai_colorido_np = ai_np.copy()
