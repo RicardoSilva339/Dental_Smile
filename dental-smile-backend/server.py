@@ -137,7 +137,7 @@ def init_db():
 
 init_db()
 
-print("Servidor iniciado com Virada de Ouro Flux 2 Pro (Preservacao Facial + Escala VITA BL1/BL2/BL3/BL4) + Mercado Pago Pix e Cartao")
+print("Servidor iniciado com Escala VITA Calibrada (BL1=Dente 1 | BL2=Dentes 3-5 | BL3=Dente 21 | BL4=Dente 27) + Mercado Pago Pix e Cartao")
 
 def enviar_email_codigo(destinatario, nome, codigo, assunto="Codigo de Verificacao - Dental Smile"):
     if not RESEND_API_KEY:
@@ -261,25 +261,13 @@ def obter_dados_pagador(email, cpf_pagador, incluir_nome=True, email_override=No
 
 def aplicar_calibracao_escala(ai_np, selected_color):
     """
-    Escala VITA Bleachedguide 3D-MASTER calibrada uniformemente em toda a arcada:
-    - BL1 (Dente 1): Mantem 100% da calibracao original aprovada no DS-116 / DS-133.
-    - BL2 (Dente 3): Branco intenso luminoso aprovado no DS-134.
-    - BL3 (Dente 5): Branco natural marfim claro (ponto exato entre BL2 e BL4).
-    - BL4 (Dente 7): Branco perola/marfim suave aprovado no DS-132.
+    Mapeamento exato na regua VITA Bleachedguide 3D-MASTER:
+    - BL1 - Ultra   -> Dente 1 (branco maximo luminoso)
+    - BL2 - Intenso -> Entre Dentes 3 e 5 (branco claro luminoso)
+    - BL3 - Natural -> Dente 21 (aprovado no DS-136)
+    - BL4 - Suave   -> Dente 27 (aprovado no DS-137)
     """
     cor = (selected_color or 'bl2').strip().lower()
-
-    if cor == 'bl1':
-        hsv_ai = cv2.cvtColor(ai_np.astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
-        tooth_mask_sup = ((hsv_ai[:, :, 2] > 110) & (hsv_ai[:, :, 1] < 115)).astype(np.float32)
-        tooth_mask_sup_smooth = cv2.GaussianBlur(tooth_mask_sup, (7, 7), 0)
-
-        r_gain, g_gain, b_gain = 1.02, 1.01, 0.96
-        ai_colorido_np = ai_np.copy()
-        ai_colorido_np[:, :, 0] = np.clip(ai_np[:, :, 0] * (1.0 + (r_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
-        ai_colorido_np[:, :, 1] = np.clip(ai_np[:, :, 1] * (1.0 + (g_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
-        ai_colorido_np[:, :, 2] = np.clip(ai_np[:, :, 2] * (1.0 + (b_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
-        return ai_colorido_np.astype(np.uint8)
 
     # Mascara uniforme em toda a arcada (exclui labios/gengiva pela diferenca R - G)
     hsv_ai = cv2.cvtColor(ai_np.astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
@@ -290,14 +278,17 @@ def aplicar_calibracao_escala(ai_np, selected_color):
 
     tooth_mask_uniforme = cv2.GaussianBlur(cond_luma * cond_sat * cond_nao_labio, (7, 7), 0)
 
-    if cor == 'bl2':
-        # BL2 Intenso (Dente 3 VITA): aprovado no DS-134
-        r_gain, g_gain, b_gain = 0.98, 0.97, 0.93
+    if cor == 'bl1':
+        # BL1 Ultra -> Dente 1 da regua VITA Bleachedguide
+        r_gain, g_gain, b_gain = 1.18, 1.18, 1.19
+    elif cor == 'bl2':
+        # BL2 Intenso -> Entre os Dentes 3 e 5 da regua VITA Bleachedguide
+        r_gain, g_gain, b_gain = 1.09, 1.09, 1.08
     elif cor == 'bl3':
-        # BL3 Natural (Dente 5 VITA): exatamente entre BL2 e BL4
+        # BL3 Natural -> Dente 21 da regua VITA (aprovado no DS-136)
         r_gain, g_gain, b_gain = 0.935, 0.91, 0.845
     else:
-        # BL4 Suave (Dente 7 VITA): aprovado no DS-132
+        # BL4 Suave -> Dente 27 da regua VITA (aprovado no DS-137)
         r_gain, g_gain, b_gain = 0.92, 0.89, 0.82
 
     ai_colorido_np = ai_np.copy()
