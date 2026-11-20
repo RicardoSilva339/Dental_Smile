@@ -1073,7 +1073,7 @@ def process_smile():
             f"upper and lower teeth, (Beautiful natural teeth), {shade_instruction}, "
             "aligned teeth, human like teeth, (no teeth gap), celebrity-like teeth, "
             "healthy teeth with a perfect smile, not big incisor, good proportion teeth, "
-            "clean shaven smooth skin, preserve exact original skin and jawline from input photo"
+            "smooth even skin tone across cheeks and chin, natural unshaven look matching original photo"
         )
 
         payload = {
@@ -1180,6 +1180,22 @@ def process_smile():
                     0,
                     255
                 )
+
+        # Suaviza a micro-textura de pelos/granulação na pele fora da região dos dentes
+        skin_mask = np.clip(1.0 - tooth_mask_sup_smooth, 0.0, 1.0)
+        pele_suavizada_bgr = cv2.bilateralFilter(
+            cv2.cvtColor(ai_colorido_np.astype(np.uint8), cv2.COLOR_RGB2BGR),
+            d=7,
+            sigmaColor=22,
+            sigmaSpace=22
+        )
+        pele_suavizada_rgb = cv2.cvtColor(pele_suavizada_bgr, cv2.COLOR_BGR2RGB).astype(np.float32)
+        for c in range(3):
+            ai_colorido_np[:, :, c] = np.clip(
+                ai_colorido_np[:, :, c] * (1.0 - skin_mask * 0.65) + pele_suavizada_rgb[:, :, c] * (skin_mask * 0.65),
+                0,
+                255
+            )
 
         imagem_final_rgb = ai_colorido_np.astype(np.uint8)
 
