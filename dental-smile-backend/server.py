@@ -137,7 +137,7 @@ def init_db():
 
 init_db()
 
-print("Servidor iniciado com Calibracao VITA Diferenciada BL1 e BL2 + Mercado Pago Pix e Cartao")
+print("Servidor iniciado com Calibracao VITA Cantos BL1 + Mercado Pago Pix e Cartao")
 
 def enviar_email_codigo(destinatario, nome, codigo, assunto="Codigo de Verificacao - Dental Smile"):
     if not RESEND_API_KEY:
@@ -262,7 +262,7 @@ def obter_dados_pagador(email, cpf_pagador, incluir_nome=True, email_override=No
 def aplicar_calibracao_escala(ai_np, selected_color):
     """
     Mapeamento na regua VITA Bleachedguide:
-    - BL1: cobertura refinada em superiores, inferiores e cantos sem estourar pele
+    - BL1: cobertura estendida nos cantos da boca mantendo uniformidade
     - BL2: calibracao intermediaria visivelmente distinta do BL1
     - BL3 / BL4: mantidos conforme definicao anterior
     """
@@ -271,11 +271,32 @@ def aplicar_calibracao_escala(ai_np, selected_color):
     if cor in ['bl1', 'bl2']:
         h, w, _ = ai_np.shape
 
+        if cor == 'bl1':
+            rx_boca = int(w * 0.275)
+            ry_boca = int(h * 0.092)
+            piso_luma = 66.0
+            teto_a = 148.5
+            l_boost = 41.0
+            a_target = 127.5
+            b_target = 124.5
+            forca_cor = 0.95
+            teto_l = 244
+        else:
+            rx_boca = int(w * 0.242)
+            ry_boca = int(h * 0.096)
+            piso_luma = 74.0
+            teto_a = 148.0
+            l_boost = 20.0
+            a_target = 129.0
+            b_target = 131.0
+            forca_cor = 0.72
+            teto_l = 236
+
         zona_boca = np.zeros((h, w), dtype=np.float32)
         cv2.ellipse(
             zona_boca,
             center=(int(w * 0.50), int(h * 0.515)),
-            axes=(int(w * 0.242), int(h * 0.096)),
+            axes=(rx_boca, ry_boca),
             angle=0,
             startAngle=0,
             endAngle=360,
@@ -289,27 +310,12 @@ def aplicar_calibracao_escala(ai_np, selected_color):
         a_orig = lab_img[:, :, 1]
         b_orig = lab_img[:, :, 2]
 
-        # Alcanca areas mais altas e laterais dos dentes reduzindo sobras amareladas sem invadir labios/pele
-        cond_luma = np.clip((L_orig - 74.0) / 24.0, 0.0, 1.0)
-        cond_nao_labio = np.clip((148.0 - a_orig) / 6.0, 0.0, 1.0)
+        cond_luma = np.clip((L_orig - piso_luma) / 24.0, 0.0, 1.0)
+        cond_nao_labio = np.clip((teto_a - a_orig) / 6.0, 0.0, 1.0)
 
         mascara_dentes = cv2.GaussianBlur(zona_boca * cond_luma * cond_nao_labio, (7, 7), 0)
-        mascara_uniforme = cv2.GaussianBlur((mascara_dentes > 0.18).astype(np.float32), (13, 13), 0)
+        mascara_uniforme = cv2.GaussianBlur((mascara_dentes > 0.16).astype(np.float32), (13, 13), 0)
         peso_final = np.clip(0.45 * mascara_dentes + 0.55 * mascara_uniforme * zona_boca, 0.0, 1.0)
-
-        if cor == 'bl1':
-            l_boost = 41.0
-            a_target = 127.5
-            b_target = 124.5
-            forca_cor = 0.95
-            teto_l = 244
-        else:
-            # BL2 com diferenca clara em relacao ao BL1 (mais suave e levemente mais quente)
-            l_boost = 20.0
-            a_target = 129.0
-            b_target = 131.0
-            forca_cor = 0.72
-            teto_l = 236
 
         L_novo = np.clip(L_orig + l_boost * peso_final, 0, teto_l)
         a_novo = a_orig * (1.0 - forca_cor * peso_final) + a_target * (forca_cor * peso_final)
