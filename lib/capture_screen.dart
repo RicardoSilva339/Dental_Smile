@@ -26,7 +26,6 @@ class _CaptureScreenState extends State<CaptureScreen> {
         bool _isCapturing = false;
         int _selectedCameraIndex = 0;
 
-        // 🤖 Detector Facial via Google ML Kit com Landmarks ativados
         final FaceDetector _faceDetector = FaceDetector(
                 options: FaceDetectorOptions(
                         enableLandmarks: true,
@@ -39,7 +38,6 @@ class _CaptureScreenState extends State<CaptureScreen> {
                 super.initState();
                 _initializeCamera(_selectedCameraIndex);
 
-                // Exibe as instruções de captura automaticamente na primeira abertura da tela
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                         _exibirInstrucoesCaptura(context);
                 });
@@ -84,8 +82,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
                 super.dispose();
         }
 
-        // 💡 Pop-up compacto com as regras de ouro para a captura (Estilo limpo e moderno aprovado)
-        void _exibirInstrucoesCaptura(BuildContext context, {VoidCallback? onContinuar}) {
+        void _exibirInstrucoesCaptura(BuildContext context) {
                 showDialog(
                         context: context,
                         barrierDismissible: false,
@@ -142,10 +139,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
                                                                 padding: const EdgeInsets.symmetric(vertical: 10),
                                                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                                                         ),
-                                                        onPressed: () {
-                                                                Navigator.pop(ctx);
-                                                                if (onContinuar != null) onContinuar();
-                                                        },
+                                                        onPressed: () => Navigator.pop(ctx),
                                                         child: const Text('Entendido', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                                                 ),
                                         ),
@@ -186,37 +180,34 @@ class _CaptureScreenState extends State<CaptureScreen> {
         }
 
         Future<void> _pickFromGallery() async {
-                _exibirInstrucoesCaptura(context, onContinuar: () async {
-                        final picker = ImagePicker();
-                        final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+                final picker = ImagePicker();
+                final pickedFile = await picker.pickImage(source: ImageSource.gallery);
 
-                        if (pickedFile != null) {
-                                setState(() => _isCapturing = true);
-                                try {
-                                        File originalFile = File(pickedFile.path);
-                                        _ProcessResult resultado = await _processarRecorteInteligente(originalFile);
+                if (pickedFile != null) {
+                        setState(() => _isCapturing = true);
+                        try {
+                                File originalFile = File(pickedFile.path);
+                                _ProcessResult resultado = await _processarRecorteInteligente(originalFile);
 
-                                        if (resultado.erro != null) {
-                                                if (!mounted) return;
-                                                ScaffoldMessenger.of(context).showSnackBar(
-                                                        SnackBar(
-                                                                content: Text(resultado.erro!),
-                                                                backgroundColor: Colors.redAccent,
-                                                        ),
-                                                );
-                                                return;
-                                        }
-
+                                if (resultado.erro != null) {
                                         if (!mounted) return;
-                                        await _avancarParaAnalise(resultado.file);
-                                } finally {
-                                        if (mounted) setState(() => _isCapturing = false);
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                                SnackBar(
+                                                        content: Text(resultado.erro!),
+                                                        backgroundColor: Colors.redAccent,
+                                                ),
+                                        );
+                                        return;
                                 }
+
+                                if (!mounted) return;
+                                await _avancarParaAnalise(resultado.file);
+                        } finally {
+                                if (mounted) setState(() => _isCapturing = false);
                         }
-                });
+                }
         }
 
-        // 🧠 DETECÇÃO E RECORTE ESTÁVEL COMPROVADO (Fator 0.85 focado na boca)
         Future<_ProcessResult> _processarRecorteInteligente(File imagemOriginal) async {
                 try {
                         final inputImage = InputImage.fromFile(imagemOriginal);
@@ -302,7 +293,6 @@ class _CaptureScreenState extends State<CaptureScreen> {
         }
 
         Future<void> _avancarParaAnalise(File imagemFinal) async {
-                final simulationId = await _gerarSimulationId();
                 final userEmail = _obterEmailUsuarioAtual();
 
                 if (!mounted) return;
@@ -311,19 +301,9 @@ class _CaptureScreenState extends State<CaptureScreen> {
                         '/analysis',
                         arguments: {
                                 'image': imagemFinal.path,
-                                'simulationId': simulationId,
                                 'userEmail': userEmail,
                         },
                 );
-        }
-
-        // 🔢 Gera ID sequencial DS-101+ usando o mesmo contador do CompareScreen
-        Future<String> _gerarSimulationId() async {
-                final boxUser = Hive.box('box_usuario');
-                final int ultimoId = (boxUser.get('ultimo_id_simulacao', defaultValue: 100) as int);
-                final int proximoId = ultimoId < 100 ? 101 : ultimoId + 1;
-                await boxUser.put('ultimo_id_simulacao', proximoId);
-                return 'DS-$proximoId';
         }
 
         String _obterEmailUsuarioAtual() {
