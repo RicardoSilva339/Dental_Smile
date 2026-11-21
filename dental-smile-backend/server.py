@@ -1160,24 +1160,24 @@ def process_smile():
 
         ai_np = np.array(ai_crop_restaurado).astype(np.float32)
 
-        # Calibracao Termica BL1-BL4 mapeada nas faixas SHADE_MAP (1..29) sobre a mascara Virada de Ouro
+        # Calibracao Termica BL1-BL4 escalonada na regua 1..29 sobre a mascara Virada de Ouro
         hsv_ai = cv2.cvtColor(ai_np.astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
         tooth_mask_sup = ((hsv_ai[:, :, 2] > 110) & (hsv_ai[:, :, 1] < 115)).astype(np.float32)
         tooth_mask_sup_smooth = cv2.GaussianBlur(tooth_mask_sup, (7, 7), 0)
 
         r_gain, g_gain, b_gain = 1.00, 1.00, 1.00
         if selected_color == 'bl1':
-            # Faixa 1 ("0M1")
+            # Faixa 1 ("0M1") - Topo claro e neutro
             r_gain, g_gain, b_gain = 1.14, 1.15, 1.24
         elif selected_color == 'bl2':
-            # Faixa 5..9 ("1M2".."2M1")
-            r_gain, g_gain, b_gain = 1.07, 1.07, 1.11
+            # Faixa 5..9 ("1M2".."2M1") - Luminoso intermediario abaixo do BL1
+            r_gain, g_gain, b_gain = 1.03, 1.03, 1.04
         elif selected_color == 'bl3':
-            # Faixa 13..19 ("2R2.5".."3R1.5")
-            r_gain, g_gain, b_gain = 1.02, 1.01, 0.99
+            # Faixa 13..19 ("2R2.5".."3R1.5") - Natural moderado no meio da escala
+            r_gain, g_gain, b_gain = 1.01, 0.99, 0.92
         elif selected_color == 'bl4':
-            # Faixa 21..29 ("4L1.5".."5M3")
-            r_gain, g_gain, b_gain = 1.03, 1.00, 0.91
+            # Faixa 21..29 ("4L1.5".."5M3") - Aquecido/marfim na base da escala
+            r_gain, g_gain, b_gain = 1.03, 0.98, 0.85
 
         ai_colorido_np = ai_np.copy()
         ai_colorido_np[:, :, 0] = np.clip(ai_np[:, :, 0] * (1.0 + (r_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
