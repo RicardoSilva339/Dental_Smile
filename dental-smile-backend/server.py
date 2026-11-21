@@ -36,6 +36,46 @@ TABELA_PACOTES = {
     '100': {'creditos': 100, 'valor': '579.00', 'titulo': 'Pacote 100 Creditos Dental Smile'}
 }
 
+# Referencia de tons (1 a 29) e faixas alvo para BL1-BL4
+SHADE_MAP = {
+     1: "0M1",
+     2: "0M2",
+     3: "0M3",
+     4: "1M1",
+     5: "1M2",
+     6: "1M3",
+     7: "2L1.5",
+     8: "2L2.5",
+     9: "2M1",
+    10: "2M2",
+    11: "2M3",
+    12: "2R1.5",
+    13: "2R2.5",
+    14: "3L1.5",
+    15: "3L2.5",
+    16: "3M1",
+    17: "3M2",
+    18: "3M3",
+    19: "3R1.5",
+    20: "3R2.5",
+    21: "4L1.5",
+    22: "4L2.5",
+    23: "4M1",
+    24: "4M2",
+    25: "4M3",
+    26: "4R1.5",
+    27: "4R2.5",
+    28: "5M2",
+    29: "5M3"
+}
+
+ESCALA_BL_REFERENCIA = {
+    'bl1': {'indices': [1], 'tons': [SHADE_MAP[1]]},
+    'bl2': {'indices': list(range(5, 10)), 'tons': [SHADE_MAP[i] for i in range(5, 10)]},
+    'bl3': {'indices': list(range(13, 20)), 'tons': [SHADE_MAP[i] for i in range(13, 20)]},
+    'bl4': {'indices': list(range(21, 30)), 'tons': [SHADE_MAP[i] for i in range(21, 30)]},
+}
+
 # Tabela oficial Mercado Pago (Taxa base vendedora: 4.98% | Acrescimos parcelado comprador 2x a 10x)
 TAXA_BASE_CARTAO = 0.0498
 TABELA_JUROS_PARCELAS_MP = {
@@ -1005,7 +1045,7 @@ def process_smile():
         return jsonify({"success": False, "error": "Creditos insuficientes."}), 403
 
     image_b64 = data.get('image')
-    selected_color = data.get('color', 'bl2').lower()
+    selected_color = str(data.get('color') or 'bl2').strip().lower()
 
     if not image_b64:
         cur.close()
@@ -1023,8 +1063,9 @@ def process_smile():
         rgb_image = orig_image.convert("RGB")
         img_512 = rgb_image.resize((512, 512), Image.Resampling.LANCZOS)
 
+        ref_info = ESCALA_BL_REFERENCIA.get(selected_color, ESCALA_BL_REFERENCIA['bl2'])
         print("=" * 60)
-        print(f"[PYTHON REST] Imagem recebida | Cor selecionada: {selected_color.upper()}")
+        print(f"[PYTHON REST] Imagem recebida | Cor: {selected_color.upper()} | Ref: {ref_info['tons']}")
         print("=" * 60)
 
         buffered_orig = io.BytesIO()
@@ -1119,20 +1160,24 @@ def process_smile():
 
         ai_np = np.array(ai_crop_restaurado).astype(np.float32)
 
-        # Calibracao Termica BL1-BL4 (Virada de Ouro)
+        # Calibracao Termica BL1-BL4 mapeada nas faixas SHADE_MAP (1..29) sobre a mascara Virada de Ouro
         hsv_ai = cv2.cvtColor(ai_np.astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
         tooth_mask_sup = ((hsv_ai[:, :, 2] > 110) & (hsv_ai[:, :, 1] < 115)).astype(np.float32)
         tooth_mask_sup_smooth = cv2.GaussianBlur(tooth_mask_sup, (7, 7), 0)
 
         r_gain, g_gain, b_gain = 1.00, 1.00, 1.00
         if selected_color == 'bl1':
-            r_gain, g_gain, b_gain = 1.02, 1.01, 0.96
+            # Faixa 1 ("0M1")
+            r_gain, g_gain, b_gain = 1.14, 1.15, 1.24
         elif selected_color == 'bl2':
-            r_gain, g_gain, b_gain = 1.03, 1.01, 0.93
+            # Faixa 5..9 ("1M2".."2M1")
+            r_gain, g_gain, b_gain = 1.07, 1.07, 1.11
         elif selected_color == 'bl3':
-            r_gain, g_gain, b_gain = 1.04, 1.00, 0.89
+            # Faixa 13..19 ("2R2.5".."3R1.5")
+            r_gain, g_gain, b_gain = 1.02, 1.01, 0.99
         elif selected_color == 'bl4':
-            r_gain, g_gain, b_gain = 1.05, 0.99, 0.85
+            # Faixa 21..29 ("4L1.5".."5M3")
+            r_gain, g_gain, b_gain = 1.03, 1.00, 0.91
 
         ai_colorido_np = ai_np.copy()
         ai_colorido_np[:, :, 0] = np.clip(ai_np[:, :, 0] * (1.0 + (r_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
@@ -1153,7 +1198,7 @@ def process_smile():
         conn.close()
 
         print("=" * 60)
-        print("[PYTHON REST] Simulacao concluida com sucesso absoluto (Flux 2 Pro)!")
+        print(f"[PYTHON REST] Simulacao concluida com sucesso absoluto (Flux 2 Pro - {selected_color.upper()})!")
         print("=" * 60)
 
         return jsonify({
