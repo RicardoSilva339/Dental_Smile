@@ -137,7 +137,7 @@ def init_db():
 
 init_db()
 
-print("Servidor iniciado com Calibracao VITA Cantos BL1 + Mercado Pago Pix e Cartao")
+print("Servidor iniciado com Virada de Ouro Flux 2 Pro (BL1-BL4) + Mercado Pago Pix e Cartao de Credito")
 
 def enviar_email_codigo(destinatario, nome, codigo, assunto="Codigo de Verificacao - Dental Smile"):
     if not RESEND_API_KEY:
@@ -258,93 +258,6 @@ def obter_dados_pagador(email, cpf_pagador, incluir_nome=True, email_override=No
         payer["last_name"] = sobrenome
 
     return payer
-
-def aplicar_calibracao_escala(ai_np, selected_color):
-    """
-    Mapeamento na regua VITA Bleachedguide:
-    - BL1: cobertura estendida nos cantos da boca mantendo uniformidade
-    - BL2: calibracao intermediaria visivelmente distinta do BL1
-    - BL3 / BL4: mantidos conforme definicao anterior
-    """
-    cor = (selected_color or 'bl2').strip().lower()
-
-    if cor in ['bl1', 'bl2']:
-        h, w, _ = ai_np.shape
-
-        if cor == 'bl1':
-            rx_boca = int(w * 0.275)
-            ry_boca = int(h * 0.092)
-            piso_luma = 66.0
-            teto_a = 148.5
-            l_boost = 41.0
-            a_target = 127.5
-            b_target = 124.5
-            forca_cor = 0.95
-            teto_l = 244
-        else:
-            rx_boca = int(w * 0.242)
-            ry_boca = int(h * 0.096)
-            piso_luma = 74.0
-            teto_a = 148.0
-            l_boost = 20.0
-            a_target = 129.0
-            b_target = 131.0
-            forca_cor = 0.72
-            teto_l = 236
-
-        zona_boca = np.zeros((h, w), dtype=np.float32)
-        cv2.ellipse(
-            zona_boca,
-            center=(int(w * 0.50), int(h * 0.515)),
-            axes=(rx_boca, ry_boca),
-            angle=0,
-            startAngle=0,
-            endAngle=360,
-            color=1.0,
-            thickness=-1
-        )
-        zona_boca = cv2.GaussianBlur(zona_boca, (15, 15), 0)
-
-        lab_img = cv2.cvtColor(ai_np.astype(np.uint8), cv2.COLOR_RGB2LAB).astype(np.float32)
-        L_orig = lab_img[:, :, 0]
-        a_orig = lab_img[:, :, 1]
-        b_orig = lab_img[:, :, 2]
-
-        cond_luma = np.clip((L_orig - piso_luma) / 24.0, 0.0, 1.0)
-        cond_nao_labio = np.clip((teto_a - a_orig) / 6.0, 0.0, 1.0)
-
-        mascara_dentes = cv2.GaussianBlur(zona_boca * cond_luma * cond_nao_labio, (7, 7), 0)
-        mascara_uniforme = cv2.GaussianBlur((mascara_dentes > 0.16).astype(np.float32), (13, 13), 0)
-        peso_final = np.clip(0.45 * mascara_dentes + 0.55 * mascara_uniforme * zona_boca, 0.0, 1.0)
-
-        L_novo = np.clip(L_orig + l_boost * peso_final, 0, teto_l)
-        a_novo = a_orig * (1.0 - forca_cor * peso_final) + a_target * (forca_cor * peso_final)
-        b_novo = b_orig * (1.0 - forca_cor * peso_final) + b_target * (forca_cor * peso_final)
-
-        lab_final = np.stack([L_novo, a_novo, b_novo], axis=-1).astype(np.uint8)
-        rgb_final = cv2.cvtColor(lab_final, cv2.COLOR_LAB2RGB)
-        return rgb_final.astype(np.uint8)
-
-    # Mascara original mantida para BL3 e BL4
-    hsv_ai = cv2.cvtColor(ai_np.astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
-    rg_diff = ai_np[:, :, 0] - ai_np[:, :, 1]
-    cond_luma = np.clip((hsv_ai[:, :, 2] - 105.0) / 35.0, 0.0, 1.0)
-    cond_sat = np.clip((120.0 - hsv_ai[:, :, 1]) / 40.0, 0.0, 1.0)
-    cond_nao_labio = np.clip((35.0 - rg_diff) / 20.0, 0.0, 1.0)
-
-    tooth_mask_uniforme = cv2.GaussianBlur(cond_luma * cond_sat * cond_nao_labio, (7, 7), 0)
-
-    if cor == 'bl3':
-        r_gain, g_gain, b_gain = 0.935, 0.91, 0.845
-    else:
-        r_gain, g_gain, b_gain = 0.92, 0.89, 0.82
-
-    ai_colorido_np = ai_np.copy()
-    ai_colorido_np[:, :, 0] = np.clip(ai_np[:, :, 0] * (1.0 + (r_gain - 1.0) * tooth_mask_uniforme), 0, 255)
-    ai_colorido_np[:, :, 1] = np.clip(ai_np[:, :, 1] * (1.0 + (g_gain - 1.0) * tooth_mask_uniforme), 0, 255)
-    ai_colorido_np[:, :, 2] = np.clip(ai_np[:, :, 2] * (1.0 + (b_gain - 1.0) * tooth_mask_uniforme), 0, 255)
-
-    return ai_colorido_np.astype(np.uint8)
 
 @app.route('/register', methods=['POST'])
 def register():
@@ -1092,7 +1005,7 @@ def process_smile():
         return jsonify({"success": False, "error": "Creditos insuficientes."}), 403
 
     image_b64 = data.get('image')
-    selected_color = str(data.get('color') or 'bl2').strip().lower()
+    selected_color = data.get('color', 'bl2').lower()
 
     if not image_b64:
         cur.close()
@@ -1142,19 +1055,19 @@ def process_smile():
         print("[REPLICATE REST] Disparando Official Model Black Forest Labs Flux 2 Pro...")
 
         prompt_text = (
-            "Keep the exact same person, face identity, skin texture, facial hair, lips, nose, glasses, "
-            "and lighting completely unchanged. Only refine the teeth inside the mouth to look like "
-            "aligned, healthy, natural human teeth with good proportions and no gaps, preserving the natural smile."
+            "photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1> "
+            "upper teeth only, (Beautiful natural teeth), aligned white teeth, "
+            "human like teeth, (no teeth gap), celebrity-like teeth, "
+            "healthy teeth with a perfect smile, not big incisor, good proportion teeth"
         )
 
         payload = {
             "input": {
                 "input_images": [input_image_url],
                 "prompt": prompt_text,
-                "seed": 42,
                 "aspect_ratio": "1:1",
                 "output_format": "webp",
-                "output_quality": 85,
+                "output_quality": 80,
                 "resolution": "1 MP",
                 "safety_tolerance": 2
             }
@@ -1206,7 +1119,27 @@ def process_smile():
 
         ai_np = np.array(ai_crop_restaurado).astype(np.float32)
 
-        imagem_final_rgb = aplicar_calibracao_escala(ai_np, selected_color)
+        # Calibracao Termica BL1-BL4 (Virada de Ouro)
+        hsv_ai = cv2.cvtColor(ai_np.astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
+        tooth_mask_sup = ((hsv_ai[:, :, 2] > 110) & (hsv_ai[:, :, 1] < 115)).astype(np.float32)
+        tooth_mask_sup_smooth = cv2.GaussianBlur(tooth_mask_sup, (7, 7), 0)
+
+        r_gain, g_gain, b_gain = 1.00, 1.00, 1.00
+        if selected_color == 'bl1':
+            r_gain, g_gain, b_gain = 1.02, 1.01, 0.96
+        elif selected_color == 'bl2':
+            r_gain, g_gain, b_gain = 1.03, 1.01, 0.93
+        elif selected_color == 'bl3':
+            r_gain, g_gain, b_gain = 1.04, 1.00, 0.89
+        elif selected_color == 'bl4':
+            r_gain, g_gain, b_gain = 1.05, 0.99, 0.85
+
+        ai_colorido_np = ai_np.copy()
+        ai_colorido_np[:, :, 0] = np.clip(ai_np[:, :, 0] * (1.0 + (r_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
+        ai_colorido_np[:, :, 1] = np.clip(ai_np[:, :, 1] * (1.0 + (g_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
+        ai_colorido_np[:, :, 2] = np.clip(ai_np[:, :, 2] * (1.0 + (b_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
+
+        imagem_final_rgb = ai_colorido_np.astype(np.uint8)
 
         final_bgr = cv2.cvtColor(imagem_final_rgb, cv2.COLOR_RGB2BGR)
         _, buffer = cv2.imencode('.jpg', final_bgr, [cv2.IMWRITE_JPEG_QUALITY, 95])
@@ -1220,7 +1153,7 @@ def process_smile():
         conn.close()
 
         print("=" * 60)
-        print(f"[PYTHON REST] Simulacao concluida com sucesso absoluto (Escala {selected_color.upper()})!")
+        print("[PYTHON REST] Simulacao concluida com sucesso absoluto (Flux 2 Pro)!")
         print("=" * 60)
 
         return jsonify({
