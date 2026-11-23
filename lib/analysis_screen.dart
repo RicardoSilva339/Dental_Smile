@@ -22,7 +22,8 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
       final args = ModalRoute.of(context)?.settings.arguments;
 
       if (args is Map<String, dynamic>) {
-        final path = args['imagePath'] ?? args['image'] ?? args['originalImagePath'];
+        final path =
+            args['imagePath'] ?? args['image'] ?? args['originalImagePath'];
         if (path is String && path.isNotEmpty) {
           _imageFile = File(path);
         } else if (path is File) {
@@ -31,7 +32,6 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
 
         _simulationId = args['simulationId'] ?? '';
         _userEmail = args['userEmail'] ?? '';
-
       } else if (args is String && args.isNotEmpty) {
         _imageFile = File(args);
       } else if (args is File) {
@@ -72,17 +72,18 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
         ),
       )
           : Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+        padding:
+        const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             const Text(
               'Imagem Capturada',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
 
-            // 🖼️ Foto com espaço expandido para ficar bem nítida e ampla
+            // 🖼️ Foto capturada com espaço proporcional
             Expanded(
               child: Container(
                 width: double.infinity,
@@ -103,16 +104,19 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                     _imageFile!,
                     fit: BoxFit.contain,
                   )
-                      : const Icon(Icons.image_not_supported, size: 80, color: Colors.grey),
+                      : const Icon(Icons.image_not_supported,
+                      size: 80, color: Colors.grey),
                 ),
               ),
             ),
 
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
 
-            // 🦷 Guia Explicativo Compacto
+            // 🦷 Guia da Tonalidade baseado na escala VITA Bleachedguide
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 12, vertical: 9),
               decoration: BoxDecoration(
                 color: Colors.indigo.shade50,
                 borderRadius: BorderRadius.circular(12),
@@ -122,28 +126,49 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'Guia da Tonalidade (Escala Bleach):',
+                    'Tonalidades baseadas na escala VITA Bleachedguide',
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
-                      fontSize: 12,
+                      fontSize: 12.5,
                       color: Color(0xFF3F51B5),
                     ),
                   ),
+                  const Text(
+                    'Do clareamento mais intenso ao mais próximo do tom natural:',
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      color: Colors.black54,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  _buildLinhaEscala(
+                    'BL1',
+                    'Máximo clareamento:',
+                    'o tom mais claro e intenso da escala, para quem busca o branco mais destacado.',
+                  ),
                   const SizedBox(height: 4),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      _buildMiniGuide('BL1', 'Ultra'),
-                      _buildMiniGuide('BL2', 'Intenso'),
-                      _buildMiniGuide('BL3', 'Natural'),
-                      _buildMiniGuide('BL4', 'Suave'),
-                    ],
+                  _buildLinhaEscala(
+                    'BL2',
+                    'Clareamento intenso:',
+                    'branco bem claro e marcante, com forte correção do tom.',
+                  ),
+                  const SizedBox(height: 4),
+                  _buildLinhaEscala(
+                    'BL3',
+                    'Próximo ao natural ("claro"):',
+                    'alinhado à tonalidade natural dos dentes, com resultado equilibrado.',
+                  ),
+                  const SizedBox(height: 4),
+                  _buildLinhaEscala(
+                    'BL4',
+                    'Próximo ao tom atual / natural:',
+                    'o mais discreto e próximo da coloração natural do dente humano.',
                   ),
                 ],
               ),
             ),
 
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
 
             // Botão Principal para Seguir para os Ajustes do Sorriso
             SizedBox(
@@ -161,7 +186,8 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                 icon: const Icon(Icons.arrow_forward, size: 18),
                 label: const Text(
                   'Seguir para Ajustes do Sorriso',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                      fontSize: 15, fontWeight: FontWeight.bold),
                 ),
                 onPressed: () {
                   if (_imageFile != null) {
@@ -172,7 +198,6 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                         'image': _imageFile!,
                         'simulationId': _simulationId,
                         'userEmail': _userEmail,
-                        // 🧹 mouth_box totalmente removido daqui!
                       },
                     );
                   }
@@ -180,11 +205,12 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
               ),
             ),
 
-            const SizedBox(height: 4),
+            const SizedBox(height: 2),
 
             TextButton.icon(
               onPressed: () => Navigator.pop(context),
-              icon: const Icon(Icons.refresh, size: 16, color: Colors.grey),
+              icon:
+              const Icon(Icons.refresh, size: 16, color: Colors.grey),
               label: const Text(
                 'Tirar outra foto',
                 style: TextStyle(color: Colors.grey, fontSize: 13),
@@ -196,20 +222,48 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
     );
   }
 
-  Widget _buildMiniGuide(String code, String label) {
+  Widget _buildLinhaEscala(String code, String titulo, String descricao) {
     return Row(
-      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+          margin: const EdgeInsets.only(top: 1),
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
           decoration: BoxDecoration(
-            color: Colors.indigo,
+            color: const Color(0xFF3F51B5),
             borderRadius: BorderRadius.circular(4),
           ),
-          child: Text(code, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+          child: Text(
+            code,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
         ),
-        const SizedBox(width: 3),
-        Text(label, style: TextStyle(fontSize: 11, color: Colors.grey.shade800)),
+        const SizedBox(width: 6),
+        Expanded(
+          child: RichText(
+            text: TextSpan(
+              style: TextStyle(
+                fontSize: 11,
+                color: Colors.grey.shade800,
+                height: 1.25,
+              ),
+              children: [
+                TextSpan(
+                  text: '$titulo ',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
+                ),
+                TextSpan(text: descricao),
+              ],
+            ),
+          ),
+        ),
       ],
     );
   }
