@@ -299,52 +299,6 @@ def obter_dados_pagador(email, cpf_pagador, incluir_nome=True, email_override=No
 
     return payer
 
-def aplicar_calibracao_e_preservar_pele(orig_rgb_np, ai_rgb_np, selected_color):
-    """
-    Aplica a calibracao BL1-BL4 apenas na area do sorriso/dentes e preserva
-    a pele do rosto e nariz da imagem original para evitar manchas/alteracoes indesejadas.
-    """
-    h, w, _ = orig_rgb_np.shape
-    ai_float = ai_rgb_np.astype(np.float32)
-    orig_float = orig_rgb_np.astype(np.float32)
-
-    # Mascara suave concentrada na regiao central/inferior do rosto (boca/sorriso)
-    y_grid, x_grid = np.mgrid[0:h, 0:w].astype(np.float32)
-    cy, cx = h * 0.56, w * 0.50
-    ry, rx = h * 0.24, w * 0.30
-    dist_norm = np.sqrt(((y_grid - cy) / ry) ** 2 + ((x_grid - cx) / rx) ** 2)
-    mouth_zone = np.clip(1.0 - np.maximum(0.0, (dist_norm - 0.65) / 0.55), 0.0, 1.0)
-    mouth_zone = cv2.GaussianBlur(mouth_zone, (31, 31), 0)
-
-    # Detecta pixels claros/desaturados compativeis com dentes dentro da regiao do sorriso
-    hsv_ai = cv2.cvtColor(ai_rgb_np, cv2.COLOR_RGB2HSV).astype(np.float32)
-    tooth_raw = ((hsv_ai[:, :, 2] > 115) & (hsv_ai[:, :, 1] < 110) & (mouth_zone > 0.15)).astype(np.float32)
-    tooth_mask = cv2.GaussianBlur(tooth_raw * mouth_zone, (7, 7), 0)
-
-    # Ganhos calibrados de BL1 (mais claro) a BL4 (mais proximo do natural sem exagerar no amarelo)
-    if selected_color == 'bl1':
-        r_gain, g_gain, b_gain = 1.07, 1.08, 1.11
-    elif selected_color == 'bl2':
-        r_gain, g_gain, b_gain = 1.03, 1.03, 1.05
-    elif selected_color == 'bl3':
-        r_gain, g_gain, b_gain = 1.00, 0.99, 0.97
-    elif selected_color == 'bl4':
-        r_gain, g_gain, b_gain = 1.01, 0.99, 0.93
-    else:
-        r_gain, g_gain, b_gain = 1.03, 1.03, 1.05
-
-    calibrada_np = ai_float.copy()
-    calibrada_np[:, :, 0] = np.clip(ai_float[:, :, 0] * (1.0 + (r_gain - 1.0) * tooth_mask), 0, 255)
-    calibrada_np[:, :, 1] = np.clip(ai_float[:, :, 1] * (1.0 + (g_gain - 1.0) * tooth_mask), 0, 255)
-    calibrada_np[:, :, 2] = np.clip(ai_float[:, :, 2] * (1.0 + (b_gain - 1.0) * tooth_mask), 0, 255)
-
-    # Mascara de blend: usa o sorriso gerado pela IA + dentes calibrados, e mantem a pele original fora dele
-    blend_mask = np.clip(np.maximum(mouth_zone * 0.85, tooth_mask), 0.0, 1.0)
-    blend_mask_3c = np.repeat(blend_mask[:, :, np.newaxis], 3, axis=2)
-
-    resultado = calibrada_np * blend_mask_3c + orig_float * (1.0 - blend_mask_3c)
-    return np.clip(resultado, 0, 255).astype(np.uint8)
-
 @app.route('/register', methods=['POST'])
 def register():
     data = request.get_json(force=True, silent=True) or {}
@@ -1108,7 +1062,6 @@ def process_smile():
 
         rgb_image = orig_image.convert("RGB")
         img_512 = rgb_image.resize((512, 512), Image.Resampling.LANCZOS)
-        orig_512_np = np.array(img_512)
 
         ref_info = ESCALA_BL_REFERENCIA.get(selected_color, ESCALA_BL_REFERENCIA['bl2'])
         print("=" * 60)
@@ -1142,18 +1095,11 @@ def process_smile():
 
         print("[REPLICATE REST] Disparando Official Model Black Forest Labs Flux 2 Pro...")
 
-        tone_hint = {
-            'bl1': "very bright bleached white teeth",
-            'bl2': "bright white natural teeth",
-            'bl3': "natural light teeth shade, realistic enamel",
-            'bl4': "soft natural tooth shade matching natural enamel"
-        }.get(selected_color, "bright white natural teeth")
-
         prompt_text = (
-            f"photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1> "
-            f"upper teeth only, {tone_hint}, aligned teeth, "
-            f"human like teeth, (no teeth gap), "
-            f"healthy teeth with a perfect smile, not big incisor, good proportion teeth"
+            "photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1> "
+            "upper teeth only, (Beautiful natural teeth), aligned white teeth, "
+            "human like teeth, (no teeth gap), celebrity-like teeth, "
+            "healthy teeth with a perfect smile, not big incisor, good proportion teeth"
         )
 
         payload = {
@@ -1211,9 +1157,34 @@ def process_smile():
 
         ai_image_raw = Image.open(io.BytesIO(img_download.content)).convert("RGB")
         ai_crop_restaurado = ai_image_raw.resize((512, 512), Image.Resampling.LANCZOS)
-        ai_np = np.array(ai_crop_restaurado)
 
-        imagem_final_rgb = aplicar_calibracao_e_preservar_pele(orig_512_np, ai_np, selected_color)
+        ai_np = np.array(ai_crop_restaurado).astype(np.float32)
+
+        # Calibracao Termica BL1-BL4 escalonada na regua 1..29 sobre a mascara Virada de Ouro
+        hsv_ai = cv2.cvtColor(ai_np.astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
+        tooth_mask_sup = ((hsv_ai[:, :, 2] > 110) & (hsv_ai[:, :, 1] < 115)).astype(np.float32)
+        tooth_mask_sup_smooth = cv2.GaussianBlur(tooth_mask_sup, (7, 7), 0)
+
+        r_gain, g_gain, b_gain = 1.00, 1.00, 1.00
+        if selected_color == 'bl1':
+            # Faixa 1 ("0M1") - Topo claro e neutro
+            r_gain, g_gain, b_gain = 1.14, 1.15, 1.24
+        elif selected_color == 'bl2':
+            # Faixa 5..9 ("1M2".."2M1") - Luminoso intermediario abaixo do BL1
+            r_gain, g_gain, b_gain = 1.03, 1.03, 1.04
+        elif selected_color == 'bl3':
+            # Faixa 13..19 ("2R2.5".."3R1.5") - Natural moderado no meio da escala
+            r_gain, g_gain, b_gain = 1.01, 0.99, 0.92
+        elif selected_color == 'bl4':
+            # Faixa 21..29 ("4L1.5".."5M3") - Aquecido/marfim na base da escala
+            r_gain, g_gain, b_gain = 1.03, 0.98, 0.85
+
+        ai_colorido_np = ai_np.copy()
+        ai_colorido_np[:, :, 0] = np.clip(ai_np[:, :, 0] * (1.0 + (r_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
+        ai_colorido_np[:, :, 1] = np.clip(ai_np[:, :, 1] * (1.0 + (g_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
+        ai_colorido_np[:, :, 2] = np.clip(ai_np[:, :, 2] * (1.0 + (b_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
+
+        imagem_final_rgb = ai_colorido_np.astype(np.uint8)
 
         final_bgr = cv2.cvtColor(imagem_final_rgb, cv2.COLOR_RGB2BGR)
         _, buffer = cv2.imencode('.jpg', final_bgr, [cv2.IMWRITE_JPEG_QUALITY, 95])
