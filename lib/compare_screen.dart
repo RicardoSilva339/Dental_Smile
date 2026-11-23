@@ -32,6 +32,7 @@ class _CompareScreenState extends State<CompareScreen>
   bool _isInit = true;
   bool _idInicializado = false;
   bool _salvouAutomatico = false;
+  bool _saindoPeloPopScope = false;
 
   OverlayEntry? _tipOverlayEntry;
   Timer? _tipDismissTimer;
@@ -679,290 +680,301 @@ class _CompareScreenState extends State<CompareScreen>
         ? File(_processedPath!)
         : null;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Resultado da Simulação'),
-        backgroundColor: const Color(0xFF5C6BC0),
-        foregroundColor: Colors.white,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.home),
-            onPressed: () async {
-              _removerAvisoHistorico();
-              await _garantirSalvoAntesDeSair();
-              if (!mounted) return;
-              Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
-            },
-          ),
-        ],
-      ),
-      body: Background(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              if (_simulationId != null)
-                Container(
-                  padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.indigo.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(20),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop || _saindoPeloPopScope) return;
+        _saindoPeloPopScope = true;
+        _removerAvisoHistorico();
+        await _garantirSalvoAntesDeSair();
+        if (!mounted) return;
+        Navigator.of(context).pop(result);
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Resultado da Simulação'),
+          backgroundColor: const Color(0xFF5C6BC0),
+          foregroundColor: Colors.white,
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.home),
+              onPressed: () async {
+                _removerAvisoHistorico();
+                await _garantirSalvoAntesDeSair();
+                if (!mounted) return;
+                Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
+              },
+            ),
+          ],
+        ),
+        body: Background(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                if (_simulationId != null)
+                  Container(
+                    padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.indigo.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      'ID: $_simulationId',
+                      style: const TextStyle(
+                          fontWeight: FontWeight.bold, color: Colors.indigo),
+                    ),
                   ),
-                  child: Text(
-                    'ID: $_simulationId',
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold, color: Colors.indigo),
-                  ),
-                ),
-              const SizedBox(height: 12),
+                const SizedBox(height: 12),
 
-              Center(
-                child: ConstrainedBox(
-                  constraints:
-                  const BoxConstraints(maxHeight: 400, maxWidth: 400),
-                  child: AspectRatio(
-                    aspectRatio: 1 / 1,
-                    child: InteractiveViewer(
-                      minScale: 1.0,
-                      maxScale: 4.0,
-                      child: LayoutBuilder(
-                        builder: (context, constraints) {
-                          final containerWidth = constraints.maxWidth;
-                          final containerHeight = constraints.maxHeight;
+                Center(
+                  child: ConstrainedBox(
+                    constraints:
+                    const BoxConstraints(maxHeight: 400, maxWidth: 400),
+                    child: AspectRatio(
+                      aspectRatio: 1 / 1,
+                      child: InteractiveViewer(
+                        minScale: 1.0,
+                        maxScale: 4.0,
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            final containerWidth = constraints.maxWidth;
+                            final containerHeight = constraints.maxHeight;
 
-                          return GestureDetector(
-                            onPanUpdate: (details) {
-                              setState(() {
-                                _sliderValue +=
-                                    details.delta.dx / containerWidth;
-                                if (_sliderValue < 0.0) _sliderValue = 0.0;
-                                if (_sliderValue > 1.0) _sliderValue = 1.0;
-                              });
-                            },
-                            onTapDown: (details) {
-                              final localX = details.localPosition.dx;
-                              setState(() {
-                                _sliderValue =
-                                    (localX / containerWidth).clamp(0.0, 1.0);
-                              });
-                            },
-                            child: Container(
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(16),
-                                color: Colors.black,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withOpacity(0.15),
-                                    blurRadius: 10,
-                                    offset: const Offset(0, 4),
-                                  ),
-                                ],
-                              ),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(16),
-                                child: Stack(
-                                  fit: StackFit.expand,
-                                  children: [
-                                    if (processedFile != null &&
-                                        processedFile.existsSync())
-                                      Image.file(
-                                        processedFile,
-                                        fit: BoxFit.cover,
-                                        alignment: Alignment.center,
-                                      )
-                                    else
-                                      const Center(
-                                          child: Text(
-                                              'Erro ao carregar imagem processada',
-                                              style: TextStyle(
-                                                  color: Colors.white))),
+                            return GestureDetector(
+                              onPanUpdate: (details) {
+                                setState(() {
+                                  _sliderValue +=
+                                      details.delta.dx / containerWidth;
+                                  if (_sliderValue < 0.0) _sliderValue = 0.0;
+                                  if (_sliderValue > 1.0) _sliderValue = 1.0;
+                                });
+                              },
+                              onTapDown: (details) {
+                                final localX = details.localPosition.dx;
+                                setState(() {
+                                  _sliderValue =
+                                      (localX / containerWidth).clamp(0.0, 1.0);
+                                });
+                              },
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(16),
+                                  color: Colors.black,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.15),
+                                      blurRadius: 10,
+                                      offset: const Offset(0, 4),
+                                    ),
+                                  ],
+                                ),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(16),
+                                  child: Stack(
+                                    fit: StackFit.expand,
+                                    children: [
+                                      if (processedFile != null &&
+                                          processedFile.existsSync())
+                                        Image.file(
+                                          processedFile,
+                                          fit: BoxFit.cover,
+                                          alignment: Alignment.center,
+                                        )
+                                      else
+                                        const Center(
+                                            child: Text(
+                                                'Erro ao carregar imagem processada',
+                                                style: TextStyle(
+                                                    color: Colors.white))),
 
-                                    if (originalFile != null &&
-                                        originalFile.existsSync())
-                                      Align(
-                                        alignment: Alignment.centerLeft,
-                                        child: FractionallySizedBox(
-                                          widthFactor: _sliderValue,
-                                          alignment: Alignment.topLeft,
-                                          child: ClipRect(
-                                            child: OverflowBox(
-                                              alignment: Alignment.topLeft,
-                                              minWidth: containerWidth,
-                                              maxWidth: containerWidth,
-                                              minHeight: containerHeight,
-                                              maxHeight: containerHeight,
-                                              child: Image.file(
-                                                originalFile,
-                                                width: containerWidth,
-                                                height: containerHeight,
-                                                fit: BoxFit.cover,
-                                                alignment: Alignment.center,
+                                      if (originalFile != null &&
+                                          originalFile.existsSync())
+                                        Align(
+                                          alignment: Alignment.centerLeft,
+                                          child: FractionallySizedBox(
+                                            widthFactor: _sliderValue,
+                                            alignment: Alignment.topLeft,
+                                            child: ClipRect(
+                                              child: OverflowBox(
+                                                alignment: Alignment.topLeft,
+                                                minWidth: containerWidth,
+                                                maxWidth: containerWidth,
+                                                minHeight: containerHeight,
+                                                maxHeight: containerHeight,
+                                                child: Image.file(
+                                                  originalFile,
+                                                  width: containerWidth,
+                                                  height: containerHeight,
+                                                  fit: BoxFit.cover,
+                                                  alignment: Alignment.center,
+                                                ),
                                               ),
                                             ),
                                           ),
                                         ),
+
+                                      Positioned(
+                                        top: 0,
+                                        bottom: 0,
+                                        left: (containerWidth * _sliderValue) - 1.5,
+                                        child: Container(
+                                          width: 3,
+                                          color: Colors.white,
+                                          child: Stack(
+                                            alignment: Alignment.center,
+                                            clipBehavior: Clip.none,
+                                            children: [
+                                              Container(
+                                                height: 38,
+                                                width: 38,
+                                                decoration: BoxDecoration(
+                                                  color: Colors.white,
+                                                  shape: BoxShape.circle,
+                                                  boxShadow: [
+                                                    BoxShadow(
+                                                      color: Colors.black
+                                                          .withOpacity(0.3),
+                                                      blurRadius: 6,
+                                                    )
+                                                  ],
+                                                ),
+                                                child: const Icon(
+                                                  Icons.compare_arrows,
+                                                  size: 22,
+                                                  color: Colors.indigo,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
                                       ),
 
-                                    Positioned(
-                                      top: 0,
-                                      bottom: 0,
-                                      left: (containerWidth * _sliderValue) - 1.5,
-                                      child: Container(
-                                        width: 3,
-                                        color: Colors.white,
-                                        child: Stack(
-                                          alignment: Alignment.center,
-                                          clipBehavior: Clip.none,
-                                          children: [
-                                            Container(
-                                              height: 38,
-                                              width: 38,
-                                              decoration: BoxDecoration(
+                                      Positioned(
+                                        top: 12,
+                                        left: 12,
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 10, vertical: 4),
+                                          decoration: BoxDecoration(
+                                            color: Colors.black.withOpacity(0.65),
+                                            borderRadius: BorderRadius.circular(6),
+                                          ),
+                                          child: const Text(
+                                            'Original',
+                                            style: TextStyle(
                                                 color: Colors.white,
-                                                shape: BoxShape.circle,
-                                                boxShadow: [
-                                                  BoxShadow(
-                                                    color: Colors.black
-                                                        .withOpacity(0.3),
-                                                    blurRadius: 6,
-                                                  )
-                                                ],
-                                              ),
-                                              child: const Icon(
-                                                Icons.compare_arrows,
-                                                size: 22,
-                                                color: Colors.indigo,
-                                              ),
-                                            ),
-                                          ],
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.bold),
+                                          ),
                                         ),
                                       ),
-                                    ),
 
-                                    Positioned(
-                                      top: 12,
-                                      left: 12,
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 10, vertical: 4),
-                                        decoration: BoxDecoration(
-                                          color: Colors.black.withOpacity(0.65),
-                                          borderRadius: BorderRadius.circular(6),
-                                        ),
-                                        child: const Text(
-                                          'Original',
-                                          style: TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.bold),
-                                        ),
-                                      ),
-                                    ),
-
-                                    Positioned(
-                                      top: 12,
-                                      right: 12,
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 10, vertical: 4),
-                                        decoration: BoxDecoration(
-                                          color: Colors.indigo.withOpacity(0.85),
-                                          borderRadius: BorderRadius.circular(6),
-                                        ),
-                                        child: const Text(
-                                          'Com IA',
-                                          style: TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.bold),
+                                      Positioned(
+                                        top: 12,
+                                        right: 12,
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 10, vertical: 4),
+                                          decoration: BoxDecoration(
+                                            color: Colors.indigo.withOpacity(0.85),
+                                            borderRadius: BorderRadius.circular(6),
+                                          ),
+                                          child: const Text(
+                                            'Com IA',
+                                            style: TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.bold),
+                                          ),
                                         ),
                                       ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
                               ),
-                            ),
-                          );
-                        },
+                            );
+                          },
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
 
-              const SizedBox(height: 16),
+                const SizedBox(height: 16),
 
-              TextField(
-                controller: _notesController,
-                maxLines: 3,
-                decoration: InputDecoration(
-                  labelText: 'Observações do Dentista',
-                  hintText: 'Insira as notas clínicas ou recomendações...',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
+                TextField(
+                  controller: _notesController,
+                  maxLines: 3,
+                  decoration: InputDecoration(
+                    labelText: 'Observações do Dentista',
+                    hintText: 'Insira as notas clínicas ou recomendações...',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    filled: true,
+                    fillColor: Colors.white.withOpacity(0.9),
                   ),
-                  filled: true,
-                  fillColor: Colors.white.withOpacity(0.9),
                 ),
-              ),
 
-              const SizedBox(height: 20),
+                const SizedBox(height: 20),
 
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                         ),
-                      ),
-                      onPressed: () async {
-                        _removerAvisoHistorico();
-                        await _garantirSalvoAntesDeSair();
-                        if (!mounted) return;
-                        if (_originalPath != null &&
-                            _originalPath!.isNotEmpty) {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => AdjustSmileScreen(
-                                image: File(_originalPath!),
-                                userEmail: _userEmail,
-                                initialColor: _selectedColor?.toLowerCase(),
+                        onPressed: () async {
+                          _removerAvisoHistorico();
+                          await _garantirSalvoAntesDeSair();
+                          if (!mounted) return;
+                          if (_originalPath != null &&
+                              _originalPath!.isNotEmpty) {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => AdjustSmileScreen(
+                                  image: File(_originalPath!),
+                                  userEmail: _userEmail,
+                                  initialColor: _selectedColor?.toLowerCase(),
+                                ),
                               ),
-                            ),
-                          );
-                        } else {
-                          Navigator.pop(context);
-                        }
-                      },
-                      icon: const Icon(Icons.tune),
-                      label: const Text('Ajustar'),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        backgroundColor: const Color(0xFF5C6BC0),
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
+                            );
+                          } else {
+                            Navigator.pop(context);
+                          }
+                        },
+                        icon: const Icon(Icons.tune),
+                        label: const Text('Ajustar'),
                       ),
-                      onPressed: _abrirPreviewPdf,
-                      icon: const Icon(Icons.picture_as_pdf),
-                      label: const Text('Gerar PDF'),
                     ),
-                  ),
-                ],
-              ),
-            ],
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          backgroundColor: const Color(0xFF5C6BC0),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        onPressed: _abrirPreviewPdf,
+                        icon: const Icon(Icons.picture_as_pdf),
+                        label: const Text('Gerar PDF'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
