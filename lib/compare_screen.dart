@@ -53,9 +53,23 @@ class _CompareScreenState extends State<CompareScreen>
     );
   }
 
+  Future<Box> _obterBoxSimulacoes() async {
+    if (Hive.isBoxOpen('simulacoes')) {
+      return Hive.box('simulacoes');
+    }
+    return await Hive.openBox('simulacoes');
+  }
+
+  Future<Box> _obterBoxUsuario() async {
+    if (Hive.isBoxOpen('box_usuario')) {
+      return Hive.box('box_usuario');
+    }
+    return await Hive.openBox('box_usuario');
+  }
+
   // Incrementa estritamente de 1 em 1 (ex.: 110, 111, 112, 113, 114)
   Future<String> _gerarProximoIdSimulacao() async {
-    final boxUser = Hive.box('box_usuario');
+    final boxUser = await _obterBoxUsuario();
     final int ultimoId =
     (boxUser.get('ultimo_id_simulacao', defaultValue: 100) as int);
     final int proximoId = ultimoId < 100 ? 101 : ultimoId + 1;
@@ -78,21 +92,33 @@ class _CompareScreenState extends State<CompareScreen>
   Future<void> _executarSalvamentoAutomaticoInicial() async {
     if (_salvouAutomatico) return;
     if (_processedPath == null || _processedPath!.isEmpty) return;
-    _salvouAutomatico = true;
 
     final notaInicial = _notesController.text.trim().isEmpty
         ? 'Sem observações'
         : _notesController.text.trim();
 
     await _salvarNoHistorico(notaInicial);
+    _salvouAutomatico = true;
 
     if (mounted) {
       await _exibirAvisoHistorico5Segundos();
     }
   }
 
+  Future<void> _garantirSalvoAntesDeSair() async {
+    if (_processedPath == null || _processedPath!.isEmpty) return;
+    if (_simulationId == null || _simulationId!.isEmpty) {
+      _simulationId = await _gerarProximoIdSimulacao();
+    }
+    final notaAtual = _notesController.text.trim().isEmpty
+        ? 'Sem observações'
+        : _notesController.text.trim();
+    await _salvarNoHistorico(notaAtual);
+    _salvouAutomatico = true;
+  }
+
   Future<void> _exibirAvisoHistorico5Segundos() async {
-    final boxUser = Hive.box('box_usuario');
+    final boxUser = await _obterBoxUsuario();
     final bool ocultarAviso =
     (boxUser.get(_kHideHistoryPdfTipKey, defaultValue: false) as bool);
 
@@ -280,6 +306,17 @@ class _CompareScreenState extends State<CompareScreen>
         }
       }
 
+      if (_simulationDate == null || _simulationDate!.isEmpty) {
+        _simulationDate = DateTime.now().toIso8601String();
+      }
+
+      if (_userEmail == null || _userEmail!.isEmpty) {
+        if (Hive.isBoxOpen('box_usuario')) {
+          _userEmail =
+          Hive.box('box_usuario').get('email', defaultValue: '') as String;
+        }
+      }
+
       if (idRecebido != null && idRecebido.trim().isNotEmpty) {
         _simulationId = idRecebido.trim();
         _idInicializado = true;
@@ -287,15 +324,6 @@ class _CompareScreenState extends State<CompareScreen>
         _salvouAutomatico = true;
       } else {
         _prepararNovoIdUnico();
-      }
-
-      if (_simulationDate == null || _simulationDate!.isEmpty) {
-        _simulationDate = DateTime.now().toIso8601String();
-      }
-
-      if (_userEmail == null || _userEmail!.isEmpty) {
-        final boxUser = Hive.box('box_usuario');
-        _userEmail = boxUser.get('email', defaultValue: '') as String;
       }
 
       _isInit = false;
@@ -541,11 +569,12 @@ class _CompareScreenState extends State<CompareScreen>
   }
 
   Future<void> _salvarNoHistorico(String noteText) async {
-    final box = Hive.box('simulacoes');
+    final box = await _obterBoxSimulacoes();
+    final boxUser = await _obterBoxUsuario();
 
     final String emailDono = (_userEmail != null && _userEmail!.isNotEmpty)
         ? _userEmail!
-        : Hive.box('box_usuario').get('email', defaultValue: '') as String;
+        : (boxUser.get('email', defaultValue: '') as String);
 
     final idSimulacao = (_simulationId != null && _simulationId!.isNotEmpty)
         ? _simulationId!
@@ -553,7 +582,8 @@ class _CompareScreenState extends State<CompareScreen>
 
     _simulationId = idSimulacao;
 
-    final dataHoraRegistro = (_simulationDate != null && _simulationDate!.isNotEmpty)
+    final dataHoraRegistro =
+    (_simulationDate != null && _simulationDate!.isNotEmpty)
         ? _simulationDate!
         : DateTime.now().toIso8601String();
     _simulationDate = dataHoraRegistro;
@@ -574,7 +604,6 @@ class _CompareScreenState extends State<CompareScreen>
       'userEmail': emailDono,
     };
 
-    // Se ja existe um registro com esse mesmo simulationId no Hive, atualiza em vez de duplicar
     int? indiceExistente;
     for (int i = 0; i < box.length; i++) {
       final item = box.getAt(i);
@@ -599,6 +628,7 @@ class _CompareScreenState extends State<CompareScreen>
         : _notesController.text.trim();
 
     await _salvarNoHistorico(noteText);
+    _salvouAutomatico = true;
 
     if (!mounted) return;
 
@@ -657,8 +687,10 @@ class _CompareScreenState extends State<CompareScreen>
         actions: [
           IconButton(
             icon: const Icon(Icons.home),
-            onPressed: () {
+            onPressed: () async {
               _removerAvisoHistorico();
+              await _garantirSalvoAntesDeSair();
+              if (!mounted) return;
               Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
             },
           ),
@@ -688,7 +720,8 @@ class _CompareScreenState extends State<CompareScreen>
 
               Center(
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 400, maxWidth: 400),
+                  constraints:
+                  const BoxConstraints(maxHeight: 400, maxWidth: 400),
                   child: AspectRatio(
                     aspectRatio: 1 / 1,
                     child: InteractiveViewer(
@@ -702,7 +735,8 @@ class _CompareScreenState extends State<CompareScreen>
                           return GestureDetector(
                             onPanUpdate: (details) {
                               setState(() {
-                                _sliderValue += details.delta.dx / containerWidth;
+                                _sliderValue +=
+                                    details.delta.dx / containerWidth;
                                 if (_sliderValue < 0.0) _sliderValue = 0.0;
                                 if (_sliderValue > 1.0) _sliderValue = 1.0;
                               });
@@ -886,8 +920,10 @@ class _CompareScreenState extends State<CompareScreen>
                           borderRadius: BorderRadius.circular(12),
                         ),
                       ),
-                      onPressed: () {
+                      onPressed: () async {
                         _removerAvisoHistorico();
+                        await _garantirSalvoAntesDeSair();
+                        if (!mounted) return;
                         if (_originalPath != null &&
                             _originalPath!.isNotEmpty) {
                           Navigator.push(
@@ -895,7 +931,6 @@ class _CompareScreenState extends State<CompareScreen>
                             MaterialPageRoute(
                               builder: (context) => AdjustSmileScreen(
                                 image: File(_originalPath!),
-                                simulationId: _simulationId,
                                 userEmail: _userEmail,
                                 initialColor: _selectedColor?.toLowerCase(),
                               ),

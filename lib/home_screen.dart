@@ -66,9 +66,6 @@ class _HomeScreenState extends State<HomeScreen>
     final apiKey = _obterApiKeyAtual();
     final boxUser = Hive.box('box_usuario');
 
-    // Aguarda 3 segundos antes de exibir o card de conexão:
-    // - Servidor ativo: carrega silenciosamente sem piscar
-    // - Servidor dormindo: exibe o aviso elegante de conexão após 3s
     if (isInitial && apiKey.isNotEmpty) {
       _timerAvisoServidor?.cancel();
       _timerAvisoServidor = Timer(const Duration(milliseconds: 3000), () {
@@ -101,7 +98,6 @@ class _HomeScreenState extends State<HomeScreen>
       final resultado = await ApiService.checkCredits(apiKey);
       _timerAvisoServidor?.cancel();
 
-      // Se o card chegou a aparecer porque o servidor estava dormindo, mantém por pelo menos 1.5s para leitura suave
       if (_isLoadingCredits && _momentoExibicaoCard != null) {
         final tempoVisivel = DateTime.now().difference(_momentoExibicaoCard!).inMilliseconds;
         if (tempoVisivel < 1500) {
@@ -113,10 +109,8 @@ class _HomeScreenState extends State<HomeScreen>
         setState(() {
           if (resultado['success'] == true) {
             _creditos = resultado['creditos'] ?? 0;
-            // Salva em cache local para garantir robustez contra falhas futuras de rede
             boxUser.put('cached_creditos', _creditos);
           } else {
-            // 🛡️ Mantém o crédito atual em cache se houver falha de rede temporária
             _creditos = boxUser.get('cached_creditos', defaultValue: _creditos) as int;
           }
           _isLoadingCredits = false;
@@ -549,6 +543,27 @@ class _HomeScreenState extends State<HomeScreen>
                             const SizedBox(height: 20),
                             _buildButton(context, 'Sobre o Tratamento', '/about'),
                           ],
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  // Rodapé institucional
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12.0, top: 4.0),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.35),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: const Text(
+                        'Dental Smile © 2026',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 0.4,
                         ),
                       ),
                     ),

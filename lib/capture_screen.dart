@@ -552,13 +552,13 @@ class _ModalInstrucoesLeituraState extends State<_ModalInstrucoesLeitura>
                                         const _ItemDicaCompacta(
                                                 icone: Icons.straighten,
                                                 texto:
-                                                'Distância de 40 a 60 cm para pegar o rosto inteiro (perto demais gera erro na foto)',
+                                                'Distância de 40 a 60 cm para pegar o rosto inteiro (perto demais gera erro na simulação)',
                                         ),
                                         const SizedBox(height: 9),
                                         const _ItemDicaCompacta(
                                                 icone: Icons.sentiment_satisfied_alt,
                                                 texto:
-                                                'Sorriso mostrando bem os dentes (evite lábios fechados ou cobrindo a dentição)',
+                                                'Sorriso mostrando bem os dentes, com os dentes superiores e inferiores levemente encostados/alinhados (evite lábios fechados ou cobrindo os dentes)',
                                         ),
                                         const SizedBox(height: 9),
                                         const _ItemDicaCompacta(
