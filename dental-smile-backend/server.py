@@ -1160,33 +1160,47 @@ def process_smile():
         ai_crop_restaurado = ai_image_raw.resize((512, 512), Image.Resampling.LANCZOS)
 
         ai_np = np.array(ai_crop_restaurado).astype(np.float32)
+        h, w, _ = ai_np.shape
 
-        # Calibracao Termica BL1-BL4 escalonada na regua 1..29 sobre a mascara Virada de Ouro
+        # Restringe o clareamento a uma faixa central da boca para nao clarear rosto ou barba
+        regiao_boca = np.zeros((h, w), dtype=np.float32)
+        y_inicio = int(h * 0.43)
+        y_fim = int(h * 0.70)
+        x_inicio = int(w * 0.25)
+        x_fim = int(w * 0.75)
+        regiao_boca[y_inicio:y_fim, x_inicio:x_fim] = 1.0
+        regiao_boca = cv2.GaussianBlur(regiao_boca, (25, 25), 0)
+
+        # Mascara focada apenas nos dentes (alto brilho V e baixa saturacao S) dentro da regiao_boca
         hsv_ai = cv2.cvtColor(ai_np.astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
-        tooth_mask_sup = ((hsv_ai[:, :, 2] > 110) & (hsv_ai[:, :, 1] < 115)).astype(np.float32)
-        tooth_mask_sup_smooth = cv2.GaussianBlur(tooth_mask_sup, (7, 7), 0)
+        tooth_mask_bruto = (
+            (hsv_ai[:, :, 2] > 140) &
+            (hsv_ai[:, :, 1] < 95) &
+            (regiao_boca > 0.25)
+        ).astype(np.float32) * regiao_boca
+        tooth_mask_sup_smooth = cv2.GaussianBlur(tooth_mask_bruto, (7, 7), 0)
 
         r_gain, g_gain, b_gain = 1.00, 1.00, 1.00
         if selected_color == 'bl1':
-            # Faixa 1 ("0M1") - Topo claro sem excesso azulado
-            r_gain, g_gain, b_gain = 1.07, 1.08, 1.09
+            # Faixa 1 ("0M1") - Topo bem claro e vibrante sem estourar azul
+            r_gain, g_gain, b_gain = 1.18, 1.19, 1.21
         elif selected_color == 'bl2':
-            # Faixa 5..9 ("1M2".."2M1") - Luminoso intermediario abaixo do BL1
-            r_gain, g_gain, b_gain = 1.03, 1.03, 1.04
+            # Faixa 5..9 ("1M2".."2M1") - Branco nitido da escala Bleach
+            r_gain, g_gain, b_gain = 1.08, 1.09, 1.11
         elif selected_color == 'bl3':
-            # Faixa 13..19 ("2R2.5".."3R1.5") - Natural moderado no meio da escala
+            # Faixa 13..19 ("2R2.5".."3R1.5") - Natural intermediario mais suave
             r_gain, g_gain, b_gain = 1.01, 0.99, 0.92
         elif selected_color == 'bl4':
-            # Faixa 21..29 ("4L1.5".."5M3") - Aquecido/marfim na base da escala
-            r_gain, g_gain, b_gain = 1.03, 0.98, 0.85
+            # Faixa 21..29 ("4L1.5".."5M3") - Mais aquecido e marfim
+            r_gain, g_gain, b_gain = 1.02, 0.97, 0.84
 
         ai_colorido_np = ai_np.copy()
         ai_colorido_np[:, :, 0] = np.clip(ai_np[:, :, 0] * (1.0 + (r_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
         ai_colorido_np[:, :, 1] = np.clip(ai_np[:, :, 1] * (1.0 + (g_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
         ai_colorido_np[:, :, 2] = np.clip(ai_np[:, :, 2] * (1.0 + (b_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
 
-        # Mistura leve com a imagem original apenas nos dentes para preservar textura natural
-        alpha_dente = np.repeat((0.12 * tooth_mask_sup_smooth)[:, :, np.newaxis], 3, axis=2)
+        # Mistura leve (6%) com a imagem original apenas nos dentes para manter textura sem apagar o clareamento
+        alpha_dente = np.repeat((0.06 * tooth_mask_sup_smooth)[:, :, np.newaxis], 3, axis=2)
         imagem_final_rgb = np.clip(ai_colorido_np * (1.0 - alpha_dente) + orig_512_np * alpha_dente, 0, 255).astype(np.uint8)
 
         final_bgr = cv2.cvtColor(imagem_final_rgb, cv2.COLOR_RGB2BGR)
