@@ -35,12 +35,12 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
   late String _selectedColor;
   bool _isInit = true;
 
-  // 🦷 Apenas os códigos curtos e objetivos
+  // Código técnico + descrição amigável para dentistas e testadores leigos
   final Map<String, String> _colors = {
-    'bl1': 'BL1',
-    'bl2': 'BL2',
-    'bl3': 'BL3',
-    'bl4': 'BL4',
+    'bl1': 'BL1 • Ultra Branco',
+    'bl2': 'BL2 • Branco Intenso',
+    'bl3': 'BL3 • Branco Natural',
+    'bl4': 'BL4 • Suave',
   };
 
   @override
@@ -69,7 +69,8 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
   // 🔢 Gera ID sequencial DS-101+ usando o contador persistente em box_usuario
   Future<String> _gerarProximoIdSimulacao() async {
     final boxUser = Hive.box('box_usuario');
-    final int ultimoId = (boxUser.get('ultimo_id_simulacao', defaultValue: 100) as int);
+    final int ultimoId =
+    (boxUser.get('ultimo_id_simulacao', defaultValue: 100) as int);
     final int proximoId = ultimoId < 100 ? 101 : ultimoId + 1;
     await boxUser.put('ultimo_id_simulacao', proximoId);
     return 'DS-$proximoId';
@@ -93,7 +94,8 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
       final dynamic resDevice = await ApiService.checkOrRegisterDevice();
       if (mounted) {
         setState(() {
-          if (resDevice is Map<String, dynamic> && resDevice['success'] == true) {
+          if (resDevice is Map<String, dynamic> &&
+              resDevice['success'] == true) {
             _creditos = resDevice['creditos'] ?? 0;
           } else if (resDevice is int) {
             _creditos = resDevice;
@@ -112,7 +114,8 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
     if (apiKey.isEmpty && _creditos <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Seus créditos de cortesia acabaram. Adquira um pacote para continuar!'),
+          content: Text(
+              'Seus créditos de cortesia acabaram. Adquira um pacote para continuar!'),
           backgroundColor: Colors.redAccent,
         ),
       );
@@ -133,7 +136,9 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
 
     try {
       final boxUser = Hive.box('box_usuario');
-      final deviceId = boxUser.get('device_id', defaultValue: 'device_${DateTime.now().millisecondsSinceEpoch}') as String;
+      final deviceId = boxUser.get('device_id',
+          defaultValue: 'device_${DateTime.now().millisecondsSinceEpoch}')
+      as String;
 
       final resultado = await ApiService.processSmile(
         imageFile: widget.image,
@@ -150,7 +155,8 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
 
         if (mounted) {
           setState(() {
-            if (resultado['creditos_restantes'] != null && resultado['creditos_restantes'] is int) {
+            if (resultado['creditos_restantes'] != null &&
+                resultado['creditos_restantes'] is int) {
               _creditos = resultado['creditos_restantes'];
             } else if (_creditos > 0) {
               _creditos = _creditos - 1;
@@ -161,7 +167,8 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(resultado['error'] ?? 'Créditos insuficientes ou falha na simulação.'),
+              content: Text(resultado['error'] ??
+                  'Créditos insuficientes ou falha na simulação.'),
               backgroundColor: Colors.redAccent,
             ),
           );
@@ -171,7 +178,8 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
       debugPrint("Falha na chamada do servidor: $e");
     }
 
-    final String idParaEnviar = (widget.simulationId != null && widget.simulationId!.isNotEmpty)
+    final String idParaEnviar =
+    (widget.simulationId != null && widget.simulationId!.isNotEmpty)
         ? widget.simulationId!
         : await _gerarProximoIdSimulacao();
 
@@ -197,6 +205,34 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
     );
   }
 
+  Widget _buildFramingInfoBadge() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16.0),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.45),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.white24),
+      ),
+      child: const Row(
+        children: [
+          Icon(Icons.check_circle_outline, color: Color(0xFF34D399), size: 18),
+          SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Enquadramento focado no sorriso: o recorte próximo na boca/nariz é normal e ajuda a IA a detalhar os dentes.',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 11.5,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildColorGrid() {
     final keys = _colors.keys.toList();
 
@@ -206,8 +242,9 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const Text(
-            'Selecione a Tonalidade:',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.white),
+            'Selecione a Tonalidade (do mais claro ao mais suave):',
+            style: TextStyle(
+                fontWeight: FontWeight.bold, fontSize: 12, color: Colors.white),
           ),
           const SizedBox(height: 6),
           Row(
@@ -235,10 +272,12 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
     final label = _colors[key]!;
 
     return SizedBox(
-      height: 38,
+      height: 40,
       child: ElevatedButton(
         style: ElevatedButton.styleFrom(
-          backgroundColor: isSelected ? const Color(0xFF5C6BC0) : Colors.white.withOpacity(0.9),
+          backgroundColor: isSelected
+              ? const Color(0xFF5C6BC0)
+              : Colors.white.withOpacity(0.92),
           foregroundColor: isSelected ? Colors.white : Colors.black87,
           elevation: isSelected ? 3 : 1,
           shape: RoundedRectangleBorder(
@@ -248,13 +287,16 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
               width: 1.5,
             ),
           ),
-          padding: EdgeInsets.zero,
+          padding: const EdgeInsets.symmetric(horizontal: 6),
         ),
-        onPressed: _isProcessing ? null : () => setState(() => _selectedColor = key),
+        onPressed:
+        _isProcessing ? null : () => setState(() => _selectedColor = key),
         child: Text(
           label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: TextStyle(
-            fontSize: 13,
+            fontSize: 12,
             fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
           ),
         ),
@@ -276,21 +318,26 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
             padding: const EdgeInsets.only(right: 12.0),
             child: Center(
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
                   color: saldoZerado
                       ? Colors.red.shade900.withOpacity(0.8)
                       : Colors.black.withOpacity(0.3),
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
-                    color: saldoZerado ? Colors.redAccent : Colors.amber.withOpacity(0.6),
+                    color: saldoZerado
+                        ? Colors.redAccent
+                        : Colors.amber.withOpacity(0.6),
                   ),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
-                      saldoZerado ? Icons.warning_amber_rounded : Icons.stars,
+                      saldoZerado
+                          ? Icons.warning_amber_rounded
+                          : Icons.stars,
                       color: saldoZerado ? Colors.redAccent : Colors.amber,
                       size: 18,
                     ),
@@ -307,7 +354,9 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
                         : Text(
                       '$_creditos CR',
                       style: TextStyle(
-                        color: saldoZerado ? Colors.red.shade100 : Colors.white,
+                        color: saldoZerado
+                            ? Colors.red.shade100
+                            : Colors.white,
                         fontWeight: FontWeight.bold,
                         fontSize: 13,
                       ),
@@ -324,6 +373,8 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
           padding: const EdgeInsets.symmetric(vertical: 10.0),
           child: Column(
             children: [
+              _buildFramingInfoBadge(),
+              const SizedBox(height: 8),
               Expanded(
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -349,12 +400,14 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
                       ? const SizedBox(
                     width: 18,
                     height: 18,
-                    child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                    child: CircularProgressIndicator(
+                        color: Colors.white, strokeWidth: 2),
                   )
                       : const Icon(Icons.auto_awesome, size: 18),
                   label: Text(
                     _isProcessing ? 'Processando...' : 'Aplicar Clareamento',
-                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.bold),
                     textAlign: TextAlign.center,
                   ),
                   style: ElevatedButton.styleFrom(

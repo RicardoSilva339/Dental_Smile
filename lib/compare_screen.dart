@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -15,7 +16,8 @@ class CompareScreen extends StatefulWidget {
   State<CompareScreen> createState() => _CompareScreenState();
 }
 
-class _CompareScreenState extends State<CompareScreen> {
+class _CompareScreenState extends State<CompareScreen>
+    with SingleTickerProviderStateMixin {
   double _sliderValue = 0.5; // 0.0 = Original, 1.0 = Com IA
   final TextEditingController _notesController = TextEditingController();
 
@@ -29,11 +31,33 @@ class _CompareScreenState extends State<CompareScreen> {
 
   bool _isInit = true;
   bool _idInicializado = false;
+  bool _salvouAutomatico = false;
+
+  OverlayEntry? _tipOverlayEntry;
+  Timer? _tipDismissTimer;
+  late final AnimationController _pulseController;
+  late final Animation<double> _pulseAnimation;
+
+  static const String _kHideHistoryPdfTipKey = 'ocultar_aviso_historico';
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 700),
+    )..repeat(reverse: true);
+
+    _pulseAnimation = Tween<double>(begin: 0.75, end: 1.0).animate(
+      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+    );
+  }
 
   // Incrementa estritamente de 1 em 1 (ex.: 110, 111, 112, 113, 114)
   Future<String> _gerarProximoIdSimulacao() async {
     final boxUser = Hive.box('box_usuario');
-    final int ultimoId = (boxUser.get('ultimo_id_simulacao', defaultValue: 100) as int);
+    final int ultimoId =
+    (boxUser.get('ultimo_id_simulacao', defaultValue: 100) as int);
     final int proximoId = ultimoId < 100 ? 101 : ultimoId + 1;
     await boxUser.put('ultimo_id_simulacao', proximoId);
     return 'DS-$proximoId';
@@ -48,6 +72,180 @@ class _CompareScreenState extends State<CompareScreen> {
         _simulationId = novoId;
       });
     }
+    await _executarSalvamentoAutomaticoInicial();
+  }
+
+  Future<void> _executarSalvamentoAutomaticoInicial() async {
+    if (_salvouAutomatico) return;
+    if (_processedPath == null || _processedPath!.isEmpty) return;
+    _salvouAutomatico = true;
+
+    final notaInicial = _notesController.text.trim().isEmpty
+        ? 'Sem observações'
+        : _notesController.text.trim();
+
+    await _salvarNoHistorico(notaInicial);
+
+    if (mounted) {
+      await _exibirAvisoHistorico5Segundos();
+    }
+  }
+
+  Future<void> _exibirAvisoHistorico5Segundos() async {
+    final boxUser = Hive.box('box_usuario');
+    final bool ocultarAviso =
+    (boxUser.get(_kHideHistoryPdfTipKey, defaultValue: false) as bool);
+
+    if (ocultarAviso || !mounted) return;
+
+    _removerAvisoHistorico();
+
+    bool dontShowAgain = false;
+    final overlay = Overlay.of(context);
+
+    void fecharAviso() {
+      _tipDismissTimer?.cancel();
+      _tipDismissTimer = null;
+      if (_tipOverlayEntry != null && _tipOverlayEntry!.mounted) {
+        _tipOverlayEntry!.remove();
+      }
+      _tipOverlayEntry = null;
+    }
+
+    _tipOverlayEntry = OverlayEntry(
+      builder: (ctx) {
+        return Positioned(
+          left: 16,
+          right: 16,
+          bottom: 20,
+          child: StatefulBuilder(
+            builder: (ctx, setBannerState) {
+              return AnimatedBuilder(
+                animation: _pulseAnimation,
+                builder: (ctx, child) {
+                  final alpha = _pulseAnimation.value;
+                  return Material(
+                    elevation: 10,
+                    borderRadius: BorderRadius.circular(14),
+                    color: const Color(0xFF1E293B),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: Colors.redAccent.withOpacity(alpha),
+                          width: 2.0,
+                        ),
+                      ),
+                      padding: const EdgeInsets.fromLTRB(14, 12, 8, 8),
+                      child: child,
+                    ),
+                  );
+                },
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        FadeTransition(
+                          opacity: _pulseAnimation,
+                          child: const Icon(
+                            Icons.notifications_active,
+                            color: Colors.redAccent,
+                            size: 20,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        const Expanded(
+                          child: Text(
+                            'Salvo no histórico! Você pode gerar o PDF posteriormente.',
+                            style: TextStyle(
+                              color: Colors.redAccent,
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          visualDensity: VisualDensity.compact,
+                          onPressed: fecharAviso,
+                          icon: const Icon(
+                            Icons.close,
+                            color: Colors.white70,
+                            size: 18,
+                          ),
+                        ),
+                      ],
+                    ),
+                    InkWell(
+                      onTap: () async {
+                        final novoValor = !dontShowAgain;
+                        setBannerState(() {
+                          dontShowAgain = novoValor;
+                        });
+                        await boxUser.put(_kHideHistoryPdfTipKey, novoValor);
+                        if (novoValor) {
+                          _tipDismissTimer?.cancel();
+                          _tipDismissTimer = Timer(
+                            const Duration(milliseconds: 500),
+                            fecharAviso,
+                          );
+                        }
+                      },
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Checkbox(
+                            value: dontShowAgain,
+                            activeColor: Colors.redAccent,
+                            side: const BorderSide(color: Colors.white70),
+                            visualDensity: VisualDensity.compact,
+                            onChanged: (val) async {
+                              final marcado = val ?? false;
+                              setBannerState(() {
+                                dontShowAgain = marcado;
+                              });
+                              await boxUser.put(_kHideHistoryPdfTipKey, marcado);
+                              if (marcado) {
+                                _tipDismissTimer?.cancel();
+                                _tipDismissTimer = Timer(
+                                  const Duration(milliseconds: 500),
+                                  fecharAviso,
+                                );
+                              }
+                            },
+                          ),
+                          const Text(
+                            'Não mostrar novamente',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+
+    overlay.insert(_tipOverlayEntry!);
+    _tipDismissTimer = Timer(const Duration(seconds: 5), fecharAviso);
+  }
+
+  void _removerAvisoHistorico() {
+    _tipDismissTimer?.cancel();
+    _tipDismissTimer = null;
+    if (_tipOverlayEntry != null && _tipOverlayEntry!.mounted) {
+      _tipOverlayEntry!.remove();
+    }
+    _tipOverlayEntry = null;
   }
 
   @override
@@ -59,7 +257,10 @@ class _CompareScreenState extends State<CompareScreen> {
 
       if (args is Map<String, dynamic>) {
         _originalPath = args['originalPath'] ?? args['original'];
-        _processedPath = args['processedPath'] ?? args['processed'] ?? args['image'] ?? args['resultPath'];
+        _processedPath = args['processedPath'] ??
+            args['processed'] ??
+            args['image'] ??
+            args['resultPath'];
 
         _selectedColor = args['color'] ?? 'BL3';
         _selectedShape = args['shape'] ?? 'Natural';
@@ -82,6 +283,8 @@ class _CompareScreenState extends State<CompareScreen> {
       if (idRecebido != null && idRecebido.trim().isNotEmpty) {
         _simulationId = idRecebido.trim();
         _idInicializado = true;
+        // Se veio do histórico, não precisa re-exibir o aviso de "salvo no histórico"
+        _salvouAutomatico = true;
       } else {
         _prepararNovoIdUnico();
       }
@@ -101,6 +304,8 @@ class _CompareScreenState extends State<CompareScreen> {
 
   @override
   void dispose() {
+    _removerAvisoHistorico();
+    _pulseController.dispose();
     _notesController.dispose();
     super.dispose();
   }
@@ -152,7 +357,8 @@ class _CompareScreenState extends State<CompareScreen> {
   }
 
   // Copia a imagem para o diretorio permanente do app para evitar que o cache apague
-  Future<String?> _salvarImagemPermanente(String? caminhoTemporario, String prefixoId) async {
+  Future<String?> _salvarImagemPermanente(
+      String? caminhoTemporario, String prefixoId) async {
     if (caminhoTemporario == null || caminhoTemporario.isEmpty) return null;
     try {
       final arquivoTemp = File(caminhoTemporario);
@@ -171,7 +377,8 @@ class _CompareScreenState extends State<CompareScreen> {
       }
 
       final extensao = pathExtensao(caminhoTemporario);
-      final caminhoFinal = '${pastaDestino.path}/${prefixoId}_${DateTime.now().millisecondsSinceEpoch}.$extensao';
+      final caminhoFinal =
+          '${pastaDestino.path}/${prefixoId}_${DateTime.now().millisecondsSinceEpoch}.$extensao';
 
       await arquivoTemp.copy(caminhoFinal);
       return caminhoFinal;
@@ -204,7 +411,8 @@ class _CompareScreenState extends State<CompareScreen> {
     final afterImage = await _carregarImagemSegura(adjustedPath);
 
     final corFormatada = _obterNomeEscalaBleach(color);
-    final dataHoraFormatada = _formatarDataHoraSimulacao(simulationDate ?? _simulationDate);
+    final dataHoraFormatada =
+    _formatarDataHoraSimulacao(simulationDate ?? _simulationDate);
 
     pdf.addPage(
       pw.Page(
@@ -222,16 +430,19 @@ class _CompareScreenState extends State<CompareScreen> {
                   children: [
                     pw.Text(
                       'Relatório de Simulação - Dental Smile',
-                      style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
+                      style: pw.TextStyle(
+                          fontSize: 18, fontWeight: pw.FontWeight.bold),
                     ),
                     pw.SizedBox(height: 4),
                     pw.Text(
                       'ID da Simulação: ${simulationId ?? "DS-101"}',
-                      style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey700),
+                      style: const pw.TextStyle(
+                          fontSize: 10, color: PdfColors.grey700),
                     ),
                     pw.Text(
                       'Data: $dataHoraFormatada',
-                      style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey700),
+                      style: const pw.TextStyle(
+                          fontSize: 10, color: PdfColors.grey700),
                     ),
                   ],
                 ),
@@ -243,8 +454,10 @@ class _CompareScreenState extends State<CompareScreen> {
               style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold),
             ),
             pw.SizedBox(height: 4),
-            pw.Text('- Cor / Escala: $corFormatada', style: const pw.TextStyle(fontSize: 10)),
-            pw.Text('- Observações do Dentista: ${note ?? 'Sem observações'}', style: const pw.TextStyle(fontSize: 10)),
+            pw.Text('- Cor / Escala: $corFormatada',
+                style: const pw.TextStyle(fontSize: 10)),
+            pw.Text('- Observações do Dentista: ${note ?? 'Sem observações'}',
+                style: const pw.TextStyle(fontSize: 10)),
             pw.SizedBox(height: 12),
             pw.Row(
               mainAxisAlignment: pw.MainAxisAlignment.spaceAround,
@@ -253,18 +466,24 @@ class _CompareScreenState extends State<CompareScreen> {
                   pw.Column(
                     crossAxisAlignment: pw.CrossAxisAlignment.center,
                     children: [
-                      pw.Text("Antes (Original)", style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11)),
+                      pw.Text("Antes (Original)",
+                          style: pw.TextStyle(
+                              fontWeight: pw.FontWeight.bold, fontSize: 11)),
                       pw.SizedBox(height: 4),
-                      pw.Image(beforeImage, width: 160, height: 190, fit: pw.BoxFit.contain),
+                      pw.Image(beforeImage,
+                          width: 160, height: 190, fit: pw.BoxFit.contain),
                     ],
                   ),
                 if (afterImage != null)
                   pw.Column(
                     crossAxisAlignment: pw.CrossAxisAlignment.center,
                     children: [
-                      pw.Text("Depois (Simulação IA)", style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11)),
+                      pw.Text("Depois (Simulação IA)",
+                          style: pw.TextStyle(
+                              fontWeight: pw.FontWeight.bold, fontSize: 11)),
                       pw.SizedBox(height: 4),
-                      pw.Image(afterImage, width: 160, height: 190, fit: pw.BoxFit.contain),
+                      pw.Image(afterImage,
+                          width: 160, height: 190, fit: pw.BoxFit.contain),
                     ],
                   ),
               ],
@@ -281,12 +500,16 @@ class _CompareScreenState extends State<CompareScreen> {
                 children: [
                   pw.Text(
                     'Observação Importante:',
-                    style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold, color: PdfColors.grey900),
+                    style: pw.TextStyle(
+                        fontSize: 9,
+                        fontWeight: pw.FontWeight.bold,
+                        color: PdfColors.grey900),
                   ),
                   pw.SizedBox(height: 2),
                   pw.Text(
                     'Esta imagem representa apenas uma simulação digital com finalidade ilustrativa e não garante o resultado clínico final do tratamento odontológico. O resultado real pode variar de acordo com as condições clínicas, planejamento profissional e execução do tratamento.',
-                    style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
+                    style:
+                    const pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
                   ),
                 ],
               ),
@@ -298,7 +521,10 @@ class _CompareScreenState extends State<CompareScreen> {
               children: [
                 pw.Text(
                   'Dental Smile © 2026',
-                  style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold, color: PdfColors.grey600),
+                  style: pw.TextStyle(
+                      fontSize: 9,
+                      fontWeight: pw.FontWeight.bold,
+                      color: PdfColors.grey600),
                 ),
                 pw.Text(
                   'Documento gerado digitalmente',
@@ -332,8 +558,10 @@ class _CompareScreenState extends State<CompareScreen> {
         : DateTime.now().toIso8601String();
     _simulationDate = dataHoraRegistro;
 
-    final caminhoOriginalPerm = await _salvarImagemPermanente(_originalPath, '${idSimulacao}_orig');
-    final caminhoProcessadoPerm = await _salvarImagemPermanente(_processedPath, '${idSimulacao}_proc');
+    final caminhoOriginalPerm =
+    await _salvarImagemPermanente(_originalPath, '${idSimulacao}_orig');
+    final caminhoProcessadoPerm =
+    await _salvarImagemPermanente(_processedPath, '${idSimulacao}_proc');
 
     final simulationData = {
       'simulationId': idSimulacao,
@@ -364,6 +592,8 @@ class _CompareScreenState extends State<CompareScreen> {
   }
 
   void _abrirPreviewPdf() async {
+    _removerAvisoHistorico();
+
     final noteText = _notesController.text.trim().isEmpty
         ? 'Sem observações'
         : _notesController.text.trim();
@@ -398,7 +628,8 @@ class _CompareScreenState extends State<CompareScreen> {
             allowPrinting: true,
             canChangeOrientation: false,
             canChangePageFormat: false,
-            pdfFileName: 'Relatorio_Dental_Smile_${_simulationId ?? "simulacao"}.pdf',
+            pdfFileName:
+            'Relatorio_Dental_Smile_${_simulationId ?? "simulacao"}.pdf',
           ),
         ),
       ),
@@ -410,8 +641,13 @@ class _CompareScreenState extends State<CompareScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final originalFile = (_originalPath != null && _originalPath!.isNotEmpty) ? File(_originalPath!) : null;
-    final processedFile = (_processedPath != null && _processedPath!.isNotEmpty) ? File(_processedPath!) : null;
+    final originalFile = (_originalPath != null && _originalPath!.isNotEmpty)
+        ? File(_originalPath!)
+        : null;
+    final processedFile =
+    (_processedPath != null && _processedPath!.isNotEmpty)
+        ? File(_processedPath!)
+        : null;
 
     return Scaffold(
       appBar: AppBar(
@@ -421,7 +657,10 @@ class _CompareScreenState extends State<CompareScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.home),
-            onPressed: () => Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false),
+            onPressed: () {
+              _removerAvisoHistorico();
+              Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
+            },
           ),
         ],
       ),
@@ -433,14 +672,16 @@ class _CompareScreenState extends State<CompareScreen> {
             children: [
               if (_simulationId != null)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                   decoration: BoxDecoration(
                     color: Colors.indigo.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
                     'ID: $_simulationId',
-                    style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.indigo),
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, color: Colors.indigo),
                   ),
                 ),
               const SizedBox(height: 12),
@@ -469,7 +710,8 @@ class _CompareScreenState extends State<CompareScreen> {
                             onTapDown: (details) {
                               final localX = details.localPosition.dx;
                               setState(() {
-                                _sliderValue = (localX / containerWidth).clamp(0.0, 1.0);
+                                _sliderValue =
+                                    (localX / containerWidth).clamp(0.0, 1.0);
                               });
                             },
                             child: Container(
@@ -489,16 +731,22 @@ class _CompareScreenState extends State<CompareScreen> {
                                 child: Stack(
                                   fit: StackFit.expand,
                                   children: [
-                                    if (processedFile != null && processedFile.existsSync())
+                                    if (processedFile != null &&
+                                        processedFile.existsSync())
                                       Image.file(
                                         processedFile,
                                         fit: BoxFit.cover,
                                         alignment: Alignment.center,
                                       )
                                     else
-                                      const Center(child: Text('Erro ao carregar imagem processada', style: TextStyle(color: Colors.white))),
+                                      const Center(
+                                          child: Text(
+                                              'Erro ao carregar imagem processada',
+                                              style: TextStyle(
+                                                  color: Colors.white))),
 
-                                    if (originalFile != null && originalFile.existsSync())
+                                    if (originalFile != null &&
+                                        originalFile.existsSync())
                                       Align(
                                         alignment: Alignment.centerLeft,
                                         child: FractionallySizedBox(
@@ -542,7 +790,8 @@ class _CompareScreenState extends State<CompareScreen> {
                                                 shape: BoxShape.circle,
                                                 boxShadow: [
                                                   BoxShadow(
-                                                    color: Colors.black.withOpacity(0.3),
+                                                    color: Colors.black
+                                                        .withOpacity(0.3),
                                                     blurRadius: 6,
                                                   )
                                                 ],
@@ -562,14 +811,18 @@ class _CompareScreenState extends State<CompareScreen> {
                                       top: 12,
                                       left: 12,
                                       child: Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 10, vertical: 4),
                                         decoration: BoxDecoration(
                                           color: Colors.black.withOpacity(0.65),
                                           borderRadius: BorderRadius.circular(6),
                                         ),
                                         child: const Text(
                                           'Original',
-                                          style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                                          style: TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.bold),
                                         ),
                                       ),
                                     ),
@@ -578,14 +831,18 @@ class _CompareScreenState extends State<CompareScreen> {
                                       top: 12,
                                       right: 12,
                                       child: Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 10, vertical: 4),
                                         decoration: BoxDecoration(
                                           color: Colors.indigo.withOpacity(0.85),
                                           borderRadius: BorderRadius.circular(6),
                                         ),
                                         child: const Text(
                                           'Com IA',
-                                          style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                                          style: TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.bold),
                                         ),
                                       ),
                                     ),
@@ -630,7 +887,9 @@ class _CompareScreenState extends State<CompareScreen> {
                         ),
                       ),
                       onPressed: () {
-                        if (_originalPath != null && _originalPath!.isNotEmpty) {
+                        _removerAvisoHistorico();
+                        if (_originalPath != null &&
+                            _originalPath!.isNotEmpty) {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
