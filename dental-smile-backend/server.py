@@ -1006,6 +1006,66 @@ def webhook_mercadopago():
         traceback.print_exc()
         return jsonify({"status": "error", "message": str(e)}), 500
 
+def aplicar_calibracao_e_preservar_pele(orig_rgb_np, ai_rgb_np, selected_color):
+    """
+    Aplica a calibracao BL1-BL4 apenas sobre os dentes detectados dentro da boca
+    e mantem a pele do rosto, queixo e labios preservados com a imagem original.
+    """
+    h, w, _ = orig_rgb_np.shape
+    ai_float = ai_rgb_np.astype(np.float32)
+    orig_float = orig_rgb_np.astype(np.float32)
+
+    # Zona central da boca (evita queixo inferior, bochechas laterais e parte externa dos labios)
+    y_grid, x_grid = np.mgrid[0:h, 0:w].astype(np.float32)
+    cy, cx = h * 0.54, w * 0.50
+    ry, rx = h * 0.14, w * 0.22
+    dist_norm = np.sqrt(((y_grid - cy) / ry) ** 2 + ((x_grid - cx) / rx) ** 2)
+    mouth_zone = np.clip(1.0 - np.maximum(0.0, (dist_norm - 0.65) / 0.45), 0.0, 1.0)
+    mouth_zone = cv2.GaussianBlur(mouth_zone, (21, 21), 0)
+
+    # Mascara estrita para pixels claros/desaturados compativeis com dentes dentro da zona central da boca
+    hsv_ai = cv2.cvtColor(ai_rgb_np.astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
+    tooth_raw = (
+        (hsv_ai[:, :, 2] > 145) &
+        (hsv_ai[:, :, 1] < 95) &
+        (mouth_zone > 0.25)
+    ).astype(np.float32)
+    tooth_mask = cv2.GaussianBlur(tooth_raw * mouth_zone, (5, 5), 0)
+
+    if selected_color == 'bl1':
+        r_gain, g_gain, b_gain = 1.04, 1.05, 1.09
+        saturation, brightness = 0.84, 1.05
+    elif selected_color == 'bl2':
+        r_gain, g_gain, b_gain = 1.03, 1.03, 1.05
+        saturation, brightness = 0.90, 1.03
+    elif selected_color == 'bl3':
+        r_gain, g_gain, b_gain = 1.02, 1.00, 0.97
+        saturation, brightness = 0.98, 1.01
+    elif selected_color == 'bl4':
+        # Tom marfim suave sem puxar para marrom/alaranjado na pele
+        r_gain, g_gain, b_gain = 1.03, 1.00, 0.95
+        saturation, brightness = 1.03, 1.00
+    else:
+        r_gain, g_gain, b_gain = 1.03, 1.03, 1.05
+        saturation, brightness = 0.90, 1.03
+
+    calibrada = ai_float.copy()
+    calibrada[:, :, 0] = np.clip(ai_float[:, :, 0] * (1.0 + (r_gain - 1.0) * tooth_mask), 0, 255)
+    calibrada[:, :, 1] = np.clip(ai_float[:, :, 1] * (1.0 + (g_gain - 1.0) * tooth_mask), 0, 255)
+    calibrada[:, :, 2] = np.clip(ai_float[:, :, 2] * (1.0 + (b_gain - 1.0) * tooth_mask), 0, 255)
+
+    hsv_adj = cv2.cvtColor(calibrada.astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
+    hsv_adj[:, :, 1] = np.clip(hsv_adj[:, :, 1] * (1.0 + (saturation - 1.0) * tooth_mask), 0, 255)
+    hsv_adj[:, :, 2] = np.clip(hsv_adj[:, :, 2] * (1.0 + (brightness - 1.0) * tooth_mask), 0, 255)
+    calibrada = cv2.cvtColor(hsv_adj.astype(np.uint8), cv2.COLOR_HSV2RGB).astype(np.float32)
+
+    # Usa a imagem calibrada apenas onde ha dente/sorriso dentro da zona central, mantendo a pele e os labios originais ao redor
+    blend_mask = np.clip(tooth_mask * 1.15, 0.0, 1.0)
+    blend_mask_3c = np.repeat(blend_mask[:, :, np.newaxis], 3, axis=2)
+
+    resultado = calibrada * blend_mask_3c + orig_float * (1.0 - blend_mask_3c)
+    return np.clip(resultado, 0, 255).astype(np.uint8)
+
 @app.route('/process-smile', methods=['POST'])
 def process_smile():
     data = request.get_json(force=True, silent=True) or {}
@@ -1158,61 +1218,9 @@ def process_smile():
 
         ai_image_raw = Image.open(io.BytesIO(img_download.content)).convert("RGB")
         ai_crop_restaurado = ai_image_raw.resize((512, 512), Image.Resampling.LANCZOS)
-
         ai_np = np.array(ai_crop_restaurado).astype(np.float32)
-        h, w, _ = ai_np.shape
 
-        # Restringe o clareamento a uma faixa central da boca para nao clarear rosto ou barba
-        regiao_boca = np.zeros((h, w), dtype=np.float32)
-        y_inicio = int(h * 0.43)
-        y_fim = int(h * 0.70)
-        x_inicio = int(w * 0.25)
-        x_fim = int(w * 0.75)
-        regiao_boca[y_inicio:y_fim, x_inicio:x_fim] = 1.0
-        regiao_boca = cv2.GaussianBlur(regiao_boca, (25, 25), 0)
-
-        # Mascara focada apenas nos dentes (alto brilho V e baixa saturacao S) dentro da regiao_boca
-        hsv_ai = cv2.cvtColor(ai_np.astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
-        tooth_mask_bruto = (
-            (hsv_ai[:, :, 2] > 125) &
-            (hsv_ai[:, :, 1] < 120) &
-            (regiao_boca > 0.25)
-        ).astype(np.float32) * regiao_boca
-        tooth_mask_sup_smooth = cv2.GaussianBlur(tooth_mask_bruto, (7, 7), 0)
-
-        r_gain, g_gain, b_gain = 1.00, 1.00, 1.00
-        sat_factor, bright_factor = 1.00, 1.00
-
-        if selected_color == 'bl1':
-            # Dente 1 (0M1)
-            r_gain, g_gain, b_gain = 1.03, 1.04, 1.08
-            sat_factor, bright_factor = 0.82, 1.06
-        elif selected_color == 'bl2':
-            # Dente 7 (2L1.5)
-            r_gain, g_gain, b_gain = 1.02, 1.02, 1.04
-            sat_factor, bright_factor = 0.90, 1.03
-        elif selected_color == 'bl3':
-            # Dente 17 / 19
-            r_gain, g_gain, b_gain = 1.02, 1.00, 0.97
-            sat_factor, bright_factor = 0.98, 1.01
-        elif selected_color == 'bl4':
-            # Dente 27 / 29 (tom mais aquecido/marfim sem excesso de amarelo)
-            r_gain, g_gain, b_gain = 1.04, 1.00, 0.92
-            sat_factor, bright_factor = 1.08, 0.99
-
-        ai_colorido_np = ai_np.copy()
-        ai_colorido_np[:, :, 0] = np.clip(ai_np[:, :, 0] * (1.0 + (r_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
-        ai_colorido_np[:, :, 1] = np.clip(ai_np[:, :, 1] * (1.0 + (g_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
-        ai_colorido_np[:, :, 2] = np.clip(ai_np[:, :, 2] * (1.0 + (b_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
-
-        hsv_adjust = cv2.cvtColor(ai_colorido_np.astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
-        hsv_adjust[:, :, 1] = np.clip(hsv_adjust[:, :, 1] * (1.0 + (sat_factor - 1.0) * tooth_mask_sup_smooth), 0, 255)
-        hsv_adjust[:, :, 2] = np.clip(hsv_adjust[:, :, 2] * (1.0 + (bright_factor - 1.0) * tooth_mask_sup_smooth), 0, 255)
-        ai_colorido_np = cv2.cvtColor(hsv_adjust.astype(np.uint8), cv2.COLOR_HSV2RGB).astype(np.float32)
-
-        # Mistura leve (6%) com a imagem original apenas nos dentes para manter textura sem apagar o clareamento
-        alpha_dente = np.repeat((0.06 * tooth_mask_sup_smooth)[:, :, np.newaxis], 3, axis=2)
-        imagem_final_rgb = np.clip(ai_colorido_np * (1.0 - alpha_dente) + orig_512_np * alpha_dente, 0, 255).astype(np.uint8)
+        imagem_final_rgb = aplicar_calibracao_e_preservar_pele(orig_512_np, ai_np, selected_color)
 
         final_bgr = cv2.cvtColor(imagem_final_rgb, cv2.COLOR_RGB2BGR)
         _, buffer = cv2.imencode('.jpg', final_bgr, [cv2.IMWRITE_JPEG_QUALITY, 95])
