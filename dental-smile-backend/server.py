@@ -321,17 +321,17 @@ def aplicar_calibracao_e_preservar_pele(orig_rgb_np, ai_rgb_np, selected_color):
     tooth_raw = ((hsv_ai[:, :, 2] > 115) & (hsv_ai[:, :, 1] < 110) & (mouth_zone > 0.15)).astype(np.float32)
     tooth_mask = cv2.GaussianBlur(tooth_raw * mouth_zone, (7, 7), 0)
 
-    # Ganhos moderados para evitar excesso de branco e preservar naturalidade
+    # Ganhos calibrados de BL1 (mais claro) a BL4 (mais proximo do natural sem exagerar no amarelo)
     if selected_color == 'bl1':
-        r_gain, g_gain, b_gain = 1.06, 1.07, 1.10
+        r_gain, g_gain, b_gain = 1.07, 1.08, 1.11
     elif selected_color == 'bl2':
-        r_gain, g_gain, b_gain = 1.03, 1.03, 1.04
+        r_gain, g_gain, b_gain = 1.03, 1.03, 1.05
     elif selected_color == 'bl3':
-        r_gain, g_gain, b_gain = 1.01, 0.99, 0.94
+        r_gain, g_gain, b_gain = 1.00, 0.99, 0.97
     elif selected_color == 'bl4':
-        r_gain, g_gain, b_gain = 1.02, 0.98, 0.88
+        r_gain, g_gain, b_gain = 1.01, 0.99, 0.93
     else:
-        r_gain, g_gain, b_gain = 1.03, 1.03, 1.04
+        r_gain, g_gain, b_gain = 1.03, 1.03, 1.05
 
     calibrada_np = ai_float.copy()
     calibrada_np[:, :, 0] = np.clip(ai_float[:, :, 0] * (1.0 + (r_gain - 1.0) * tooth_mask), 0, 255)
@@ -1142,11 +1142,18 @@ def process_smile():
 
         print("[REPLICATE REST] Disparando Official Model Black Forest Labs Flux 2 Pro...")
 
+        tone_hint = {
+            'bl1': "very bright bleached white teeth",
+            'bl2': "bright white natural teeth",
+            'bl3': "natural light teeth shade, realistic enamel",
+            'bl4': "soft natural tooth shade matching natural enamel"
+        }.get(selected_color, "bright white natural teeth")
+
         prompt_text = (
-            "photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1> "
-            "upper teeth only, (Beautiful natural teeth), aligned white teeth, "
-            "human like teeth, (no teeth gap), celebrity-like teeth, "
-            "healthy teeth with a perfect smile, not big incisor, good proportion teeth"
+            f"photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1> "
+            f"upper teeth only, {tone_hint}, aligned teeth, "
+            f"human like teeth, (no teeth gap), "
+            f"healthy teeth with a perfect smile, not big incisor, good proportion teeth"
         )
 
         payload = {

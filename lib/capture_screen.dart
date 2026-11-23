@@ -26,6 +26,9 @@ class _CaptureScreenState extends State<CaptureScreen> {
         bool _isCapturing = false;
         int _selectedCameraIndex = 0;
 
+        static const String _kHideCaptureInstructionsKey =
+            'ocultar_instrucoes_captura';
+
         final FaceDetector _faceDetector = FaceDetector(
                 options: FaceDetectorOptions(
                         enableLandmarks: true,
@@ -39,8 +42,24 @@ class _CaptureScreenState extends State<CaptureScreen> {
                 _initializeCamera(_selectedCameraIndex);
 
                 WidgetsBinding.instance.addPostFrameCallback((_) {
-                        _exibirInstrucoesCaptura(context);
+                        _exibirInstrucoesCapturaSeNecessario(context);
                 });
+        }
+
+        Future<void> _exibirInstrucoesCapturaSeNecessario(
+            BuildContext context, {
+                    bool forcarExibicao = false,
+            }) async {
+                if (!forcarExibicao) {
+                        final boxUser = Hive.box('box_usuario');
+                        final bool ocultar =
+                        (boxUser.get(_kHideCaptureInstructionsKey, defaultValue: false)
+                        as bool);
+                        if (ocultar || !mounted) return;
+                }
+
+                if (!mounted) return;
+                _exibirInstrucoesCaptura(context);
         }
 
         Future<void> _initializeCamera(int cameraIndex) async {
@@ -86,70 +105,21 @@ class _CaptureScreenState extends State<CaptureScreen> {
                 showDialog(
                         context: context,
                         barrierDismissible: false,
-                        builder: (ctx) => AlertDialog(
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-                                insetPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
-                                titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
-                                contentPadding: const EdgeInsets.fromLTRB(20, 4, 20, 14),
-                                actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
-                                title: const Row(
-                                        children: [
-                                                Icon(Icons.camera_enhance_rounded, color: Color(0xFF5C6BC0), size: 22),
-                                                SizedBox(width: 8),
-                                                Expanded(
-                                                        child: Text(
-                                                                'Padrão Ideal da Foto',
-                                                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                                                        ),
-                                                ),
-                                        ],
-                                ),
-                                content: const Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                                _ItemDicaCompacta(
-                                                        icone: Icons.straighten,
-                                                        texto: 'Distância de 40 a 60 cm (rosto inteiro)',
-                                                ),
-                                                SizedBox(height: 8),
-                                                _ItemDicaCompacta(
-                                                        icone: Icons.person_outline,
-                                                        texto: 'Apenas o paciente na foto (sem terceiros)',
-                                                ),
-                                                SizedBox(height: 8),
-                                                _ItemDicaCompacta(
-                                                        icone: Icons.sentiment_satisfied_alt,
-                                                        texto: 'Sorriso natural frontal e boa iluminação',
-                                                ),
-                                                SizedBox(height: 8),
-                                                _ItemDicaCompacta(
-                                                        icone: Icons.visibility_outlined,
-                                                        texto: 'Olhos, nariz e boca totalmente visíveis',
-                                                ),
-                                        ],
-                                ),
-                                actions: [
-                                        SizedBox(
-                                                width: double.infinity,
-                                                child: ElevatedButton(
-                                                        style: ElevatedButton.styleFrom(
-                                                                backgroundColor: const Color(0xFF5C6BC0),
-                                                                foregroundColor: Colors.white,
-                                                                padding: const EdgeInsets.symmetric(vertical: 10),
-                                                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                                        ),
-                                                        onPressed: () => Navigator.pop(ctx),
-                                                        child: const Text('Entendido', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                                                ),
-                                        ),
-                                ],
-                        ),
+                        builder: (ctx) {
+                                return _ModalInstrucoesLeitura(
+                                        hideKey: _kHideCaptureInstructionsKey,
+                                        onConfirm: () => Navigator.pop(ctx),
+                                );
+                        },
                 );
         }
 
         Future<void> _captureAndCrop() async {
-                if (_controller == null || !_controller!.value.isInitialized || _isCapturing) return;
+                if (_controller == null ||
+                    !_controller!.value.isInitialized ||
+                    _isCapturing) {
+                        return;
+                }
 
                 setState(() => _isCapturing = true);
 
@@ -157,7 +127,8 @@ class _CaptureScreenState extends State<CaptureScreen> {
                         final XFile picture = await _controller!.takePicture();
                         File originalFile = File(picture.path);
 
-                        _ProcessResult resultado = await _processarRecorteInteligente(originalFile);
+                        _ProcessResult resultado =
+                        await _processarRecorteInteligente(originalFile);
 
                         if (resultado.erro != null) {
                                 if (!mounted) return;
@@ -187,7 +158,8 @@ class _CaptureScreenState extends State<CaptureScreen> {
                         setState(() => _isCapturing = true);
                         try {
                                 File originalFile = File(pickedFile.path);
-                                _ProcessResult resultado = await _processarRecorteInteligente(originalFile);
+                                _ProcessResult resultado =
+                                await _processarRecorteInteligente(originalFile);
 
                                 if (resultado.erro != null) {
                                         if (!mounted) return;
@@ -208,7 +180,9 @@ class _CaptureScreenState extends State<CaptureScreen> {
                 }
         }
 
-        Future<_ProcessResult> _processarRecorteInteligente(File imagemOriginal) async {
+        Future<_ProcessResult> _processarRecorteInteligente(
+            File imagemOriginal,
+            ) async {
                 try {
                         final inputImage = InputImage.fromFile(imagemOriginal);
                         final List<Face> faces = await _faceDetector.processImage(inputImage);
@@ -216,14 +190,16 @@ class _CaptureScreenState extends State<CaptureScreen> {
                         if (faces.isEmpty) {
                                 return _ProcessResult(
                                         file: imagemOriginal,
-                                        erro: "Rosto não detectado. Mantenha 40 a 60 cm de distância enquadrando o rosto inteiro.",
+                                        erro:
+                                        "Rosto não detectado. Mantenha 40 a 60 cm de distância enquadrando o rosto inteiro.",
                                 );
                         }
 
                         if (faces.length > 1) {
                                 return _ProcessResult(
                                         file: imagemOriginal,
-                                        erro: "Mais de um rosto detectado. Fotografe apenas o paciente sozinho no enquadramento.",
+                                        erro:
+                                        "Mais de um rosto detectado. Fotografe apenas o paciente sozinho no enquadramento.",
                                 );
                         }
 
@@ -231,7 +207,10 @@ class _CaptureScreenState extends State<CaptureScreen> {
                         final bytes = await imagemOriginal.readAsBytes();
                         final img.Image? imagemDecodificada = img.decodeImage(bytes);
                         if (imagemDecodificada == null) {
-                                return _ProcessResult(file: imagemOriginal, erro: "Falha ao ler a imagem.");
+                                return _ProcessResult(
+                                        file: imagemOriginal,
+                                        erro: "Falha ao ler a imagem.",
+                                );
                         }
 
                         int larguraImg = imagemDecodificada.width;
@@ -263,8 +242,12 @@ class _CaptureScreenState extends State<CaptureScreen> {
 
                         if (offsetX < 0) offsetX = 0;
                         if (offsetY < 0) offsetY = 0;
-                        if (offsetX + tamanhoQuadrado > larguraImg) offsetX = larguraImg - tamanhoQuadrado;
-                        if (offsetY + tamanhoQuadrado > alturaImg) offsetY = alturaImg - tamanhoQuadrado;
+                        if (offsetX + tamanhoQuadrado > larguraImg) {
+                                offsetX = larguraImg - tamanhoQuadrado;
+                        }
+                        if (offsetY + tamanhoQuadrado > alturaImg) {
+                                offsetY = alturaImg - tamanhoQuadrado;
+                        }
 
                         img.Image imagemCropped = img.copyCrop(
                                 imagemDecodificada,
@@ -288,7 +271,10 @@ class _CaptureScreenState extends State<CaptureScreen> {
                         return _ProcessResult(file: arquivoFinal);
                 } catch (e) {
                         debugPrint("Erro no processamento do ML Kit: $e");
-                        return _ProcessResult(file: imagemOriginal, erro: "Erro ao processar o enquadramento da foto.");
+                        return _ProcessResult(
+                                file: imagemOriginal,
+                                erro: "Erro ao processar o enquadramento da foto.",
+                        );
                 }
         }
 
@@ -343,19 +329,27 @@ class _CaptureScreenState extends State<CaptureScreen> {
                                                                                         ),
                                                                                         const Text(
                                                                                                 'Simulação de Sorriso',
-                                                                                                style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                                                                                                style: TextStyle(
+                                                                                                        color: Colors.white,
+                                                                                                        fontSize: 18,
+                                                                                                        fontWeight: FontWeight.bold,
+                                                                                                ),
                                                                                         ),
                                                                                         IconButton(
                                                                                                 icon: const Icon(Icons.help_outline, color: Colors.white),
                                                                                                 tooltip: 'Dicas de Captura',
-                                                                                                onPressed: () => _exibirInstrucoesCaptura(context),
+                                                                                                onPressed: () => _exibirInstrucoesCapturaSeNecessario(
+                                                                                                        context,
+                                                                                                        forcarExibicao: true,
+                                                                                                ),
                                                                                         ),
                                                                                 ],
                                                                         ),
                                                                 ),
                                                                 const SizedBox(height: 12),
                                                                 Container(
-                                                                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                                                                        padding:
+                                                                        const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
                                                                         decoration: BoxDecoration(
                                                                                 color: Colors.black.withOpacity(0.65),
                                                                                 borderRadius: BorderRadius.circular(20),
@@ -363,7 +357,11 @@ class _CaptureScreenState extends State<CaptureScreen> {
                                                                         child: const Row(
                                                                                 mainAxisSize: MainAxisSize.min,
                                                                                 children: [
-                                                                                        Icon(Icons.face_retouching_natural, color: Colors.amberAccent, size: 17),
+                                                                                        Icon(
+                                                                                                Icons.face_retouching_natural,
+                                                                                                color: Colors.amberAccent,
+                                                                                                size: 17,
+                                                                                        ),
                                                                                         SizedBox(width: 7),
                                                                                         Text(
                                                                                                 '40–60 cm • Enquadre o rosto inteiro',
@@ -433,6 +431,191 @@ class _CaptureScreenState extends State<CaptureScreen> {
         }
 }
 
+class _ModalInstrucoesLeitura extends StatefulWidget {
+        final String hideKey;
+        final VoidCallback onConfirm;
+
+        const _ModalInstrucoesLeitura({
+                required this.hideKey,
+                required this.onConfirm,
+        });
+
+        @override
+        State<_ModalInstrucoesLeitura> createState() =>
+            _ModalInstrucoesLeituraState();
+}
+
+class _ModalInstrucoesLeituraState extends State<_ModalInstrucoesLeitura>
+    with SingleTickerProviderStateMixin {
+        late final AnimationController _blinkController;
+        late final Animation<double> _blinkOpacity;
+        bool _naoMostrarNovamente = false;
+
+        @override
+        void initState() {
+                super.initState();
+                final boxUser = Hive.box('box_usuario');
+                _naoMostrarNovamente =
+                (boxUser.get(widget.hideKey, defaultValue: false) as bool);
+
+                _blinkController = AnimationController(
+                        vsync: this,
+                        duration: const Duration(milliseconds: 600),
+                )..repeat(reverse: true);
+
+                _blinkOpacity = Tween<double>(begin: 0.2, end: 1.0).animate(
+                        CurvedAnimation(parent: _blinkController, curve: Curves.easeInOut),
+                );
+        }
+
+        @override
+        void dispose() {
+                _blinkController.dispose();
+                super.dispose();
+        }
+
+        Future<void> _alternarNaoMostrar(bool valor) async {
+                setState(() => _naoMostrarNovamente = valor);
+                final boxUser = Hive.box('box_usuario');
+                await boxUser.put(widget.hideKey, valor);
+        }
+
+        @override
+        Widget build(BuildContext context) {
+                return AlertDialog(
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                        insetPadding: const EdgeInsets.symmetric(horizontal: 26, vertical: 24),
+                        titlePadding: const EdgeInsets.fromLTRB(20, 16, 20, 6),
+                        contentPadding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+                        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+                        title: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                        FadeTransition(
+                                                opacity: _blinkOpacity,
+                                                child: Container(
+                                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                                        decoration: BoxDecoration(
+                                                                color: Colors.red.withOpacity(0.12),
+                                                                borderRadius: BorderRadius.circular(8),
+                                                                border: Border.all(color: Colors.red, width: 1.2),
+                                                        ),
+                                                        child: const Row(
+                                                                mainAxisSize: MainAxisSize.min,
+                                                                children: [
+                                                                        Icon(
+                                                                                Icons.priority_high_rounded,
+                                                                                color: Colors.red,
+                                                                                size: 20,
+                                                                        ),
+                                                                        SizedBox(width: 4),
+                                                                        Text(
+                                                                                'LEIA COM ATENÇÃO!',
+                                                                                style: TextStyle(
+                                                                                        color: Colors.red,
+                                                                                        fontWeight: FontWeight.w900,
+                                                                                        fontSize: 14,
+                                                                                        letterSpacing: 0.6,
+                                                                                ),
+                                                                        ),
+                                                                ],
+                                                        ),
+                                                ),
+                                        ),
+                                        const SizedBox(height: 8),
+                                        const Row(
+                                                children: [
+                                                        Icon(
+                                                                Icons.camera_enhance_rounded,
+                                                                color: Color(0xFF5C6BC0),
+                                                                size: 22,
+                                                        ),
+                                                        SizedBox(width: 8),
+                                                        Expanded(
+                                                                child: Text(
+                                                                        'Padrão Ideal da Foto',
+                                                                        style: TextStyle(
+                                                                                fontWeight: FontWeight.bold,
+                                                                                fontSize: 17,
+                                                                        ),
+                                                                ),
+                                                        ),
+                                                ],
+                                        ),
+                                ],
+                        ),
+                        content: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                        const _ItemDicaCompacta(
+                                                icone: Icons.straighten,
+                                                texto:
+                                                'Distância de 40 a 60 cm para pegar o rosto inteiro (perto demais gera erro na foto)',
+                                        ),
+                                        const SizedBox(height: 9),
+                                        const _ItemDicaCompacta(
+                                                icone: Icons.sentiment_satisfied_alt,
+                                                texto:
+                                                'Sorriso mostrando bem os dentes (evite lábios fechados ou cobrindo a dentição)',
+                                        ),
+                                        const SizedBox(height: 9),
+                                        const _ItemDicaCompacta(
+                                                icone: Icons.person_outline,
+                                                texto:
+                                                'Apenas o paciente na foto, com boa iluminação e sem cortes no rosto',
+                                        ),
+                                        const SizedBox(height: 10),
+                                        InkWell(
+                                                onTap: () => _alternarNaoMostrar(!_naoMostrarNovamente),
+                                                child: Row(
+                                                        children: [
+                                                                Checkbox(
+                                                                        value: _naoMostrarNovamente,
+                                                                        activeColor: const Color(0xFF5C6BC0),
+                                                                        visualDensity: VisualDensity.compact,
+                                                                        onChanged: (val) => _alternarNaoMostrar(val ?? false),
+                                                                ),
+                                                                const Expanded(
+                                                                        child: Text(
+                                                                                'Não mostrar novamente',
+                                                                                style: TextStyle(
+                                                                                        fontSize: 12.5,
+                                                                                        fontWeight: FontWeight.w600,
+                                                                                        color: Colors.black87,
+                                                                                ),
+                                                                        ),
+                                                                ),
+                                                        ],
+                                                ),
+                                        ),
+                                ],
+                        ),
+                        actions: [
+                                SizedBox(
+                                        width: double.infinity,
+                                        child: ElevatedButton(
+                                                style: ElevatedButton.styleFrom(
+                                                        backgroundColor: const Color(0xFF5C6BC0),
+                                                        foregroundColor: Colors.white,
+                                                        padding: const EdgeInsets.symmetric(vertical: 11),
+                                                        shape: RoundedRectangleBorder(
+                                                                borderRadius: BorderRadius.circular(10),
+                                                        ),
+                                                ),
+                                                onPressed: widget.onConfirm,
+                                                child: const Text(
+                                                        'Entendido',
+                                                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                                ),
+                                        ),
+                                ),
+                        ],
+                );
+        }
+}
+
 class _ItemDicaCompacta extends StatelessWidget {
         final IconData icone;
         final String texto;
@@ -448,7 +631,11 @@ class _ItemDicaCompacta extends StatelessWidget {
                                 Expanded(
                                         child: Text(
                                                 texto,
-                                                style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Colors.black87),
+                                                style: const TextStyle(
+                                                        fontSize: 12.5,
+                                                        fontWeight: FontWeight.w600,
+                                                        color: Colors.black87,
+                                                ),
                                         ),
                                 ),
                         ],

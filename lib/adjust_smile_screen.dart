@@ -35,12 +35,11 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
   late String _selectedColor;
   bool _isInit = true;
 
-  // Código técnico + descrição amigável para dentistas e testadores leigos
   final Map<String, String> _colors = {
-    'bl1': 'BL1 • Ultra Branco',
-    'bl2': 'BL2 • Branco Intenso',
-    'bl3': 'BL3 • Branco Natural',
-    'bl4': 'BL4 • Suave',
+    'bl1': 'BL1 Ultra',
+    'bl2': 'BL2 Intenso',
+    'bl3': 'BL3 Natural',
+    'bl4': 'BL4 Suave',
   };
 
   @override
@@ -242,7 +241,7 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const Text(
-            'Selecione a Tonalidade (do mais claro ao mais suave):',
+            'Selecione a Tonalidade:',
             style: TextStyle(
                 fontWeight: FontWeight.bold, fontSize: 12, color: Colors.white),
           ),
@@ -287,7 +286,7 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
               width: 1.5,
             ),
           ),
-          padding: const EdgeInsets.symmetric(horizontal: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 8),
         ),
         onPressed:
         _isProcessing ? null : () => setState(() => _selectedColor = key),
@@ -296,7 +295,7 @@ class _AdjustSmileScreenState extends State<AdjustSmileScreen> {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
-            fontSize: 12,
+            fontSize: 12.5,
             fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
           ),
         ),
