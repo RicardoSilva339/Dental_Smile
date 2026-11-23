@@ -29,7 +29,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
     return boxUser.get('email', defaultValue: '') as String;
   }
 
-  // 🧹 Menu inteligente de opções de limpeza (Filtro por tempo ou limpeza total da conta)
+  // 🧹 Menu inteligente de opções de limpeza (Seleção, Unitário/Deslizar, Filtro por tempo ou Limpeza total)
   void _mostrarOpcoesLimpeza() {
     showDialog(
       context: context,
@@ -42,29 +42,58 @@ class _HistoryScreenState extends State<HistoryScreen> {
             Text('Gerir Histórico', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           ],
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.history_toggle_off, color: Colors.orange),
-              title: const Text('Apagar com mais de 30 dias'),
-              subtitle: const Text('Liberta espaço removendo registos antigos'),
-              onTap: () {
-                Navigator.pop(ctx);
-                _apagarSimulacoesAntigas(30);
-              },
-            ),
-            const Divider(),
-            ListTile(
-              leading: const Icon(Icons.delete_sweep, color: Colors.red),
-              title: const Text('Limpar Meu Histórico'),
-              subtitle: const Text('Apaga todas as simulações da conta ativa'),
-              onTap: () {
-                Navigator.pop(ctx);
-                _confirmarLimpezaTotal();
-              },
-            ),
-          ],
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.check_box_outlined, color: Color(0xFF5C6BC0)),
+                title: const Text('Selecionar simulações'),
+                subtitle: const Text('Marca vários itens para apagar de uma vez'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  setState(() {
+                    _modoSelecao = true;
+                    _chavesSelecionadas.clear();
+                  });
+                },
+              ),
+              const Divider(),
+              ListTile(
+                leading: const Icon(Icons.swipe_left, color: Colors.teal),
+                title: const Text('Apagar item / Deslizar'),
+                subtitle: const Text('Arraste o card para a esquerda ou segure para marcar'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Arraste uma simulação para a esquerda ou segure para selecionar.'),
+                    ),
+                  );
+                },
+              ),
+              const Divider(),
+              ListTile(
+                leading: const Icon(Icons.history_toggle_off, color: Colors.orange),
+                title: const Text('Apagar com mais de 30 dias'),
+                subtitle: const Text('Liberta espaço removendo registos antigos'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _apagarSimulacoesAntigas(30);
+                },
+              ),
+              const Divider(),
+              ListTile(
+                leading: const Icon(Icons.delete_sweep, color: Colors.red),
+                title: const Text('Limpar Meu Histórico'),
+                subtitle: const Text('Apaga todas as simulações da conta ativa'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _confirmarLimpezaTotal();
+                },
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -250,177 +279,177 @@ class _HistoryScreenState extends State<HistoryScreen> {
             final simuFiltradas = [];
 
             for (var i = 0; i < box.length; i++) {
-            final rawItem = box.getAt(i);
-            if (rawItem is Map) {
-            final item = Map<String, dynamic>.from(rawItem);
-            final emailDono = item['userEmail'] ?? item['email'] ?? '';
-            final key = box.keyAt(i);
+              final rawItem = box.getAt(i);
+              if (rawItem is Map) {
+                final item = Map<String, dynamic>.from(rawItem);
+                final emailDono = item['userEmail'] ?? item['email'] ?? '';
+                final key = box.keyAt(i);
 
-            if (emailDono == emailAtual) {
-            item['hiveKey'] = key; // Anexa a chave para exclusão
-            simuFiltradas.add(item);
-            }
-            }
+                if (emailDono == emailAtual) {
+                  item['hiveKey'] = key; // Anexa a chave para exclusão
+                  simuFiltradas.add(item);
+                }
+              }
             }
 
             if (simuFiltradas.isEmpty) {
-            return Center(
-            child: Padding(
-            padding: const EdgeInsets.all(20.0),
-            child: Text(
-            emailAtual.isEmpty
-            ? 'Nenhuma simulação no modo visitante.\nFaça login para acessar o seu histórico.'
-                : 'Nenhuma simulação encontrada para a conta:\n$emailAtual',
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 16, color: Colors.white70),
-            ),
-            ),
-            );
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(20.0),
+                  child: Text(
+                    emailAtual.isEmpty
+                        ? 'Nenhuma simulação no modo visitante.\nFaça login para acessar o seu histórico.'
+                        : 'Nenhuma simulação encontrada para a conta:\n$emailAtual',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 16, color: Colors.white70),
+                  ),
+                ),
+              );
             }
 
             return ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: simuFiltradas.length,
-            itemBuilder: (context, index) {
-            // Inverte para exibir as simulações mais recentes no topo
-            final item = simuFiltradas[simuFiltradas.length - 1 - index];
+              padding: const EdgeInsets.all(16),
+              itemCount: simuFiltradas.length,
+              itemBuilder: (context, index) {
+                // Inverte para exibir as simulações mais recentes no topo
+                final item = simuFiltradas[simuFiltradas.length - 1 - index];
 
-            final simulationId = item['simulationId'] ?? 'DS-SemID';
-            final dateStr = item['date'] ?? '';
-            final processedPath = item['processedPath'];
-            final notes = item['notes'] ?? 'Sem observações';
-            final key = item['hiveKey'];
-            final estaSelecionado = _chavesSelecionadas.contains(key);
+                final simulationId = item['simulationId'] ?? 'DS-SemID';
+                final dateStr = item['date'] ?? '';
+                final processedPath = item['processedPath'];
+                final notes = item['notes'] ?? 'Sem observações';
+                final key = item['hiveKey'];
+                final estaSelecionado = _chavesSelecionadas.contains(key);
 
-            return Dismissible(
-            key: Key(key.toString()),
-            direction: DismissDirection.endToStart,
-            background: Container(
-            alignment: Alignment.centerRight,
-            padding: const EdgeInsets.only(right: 20),
-            margin: const EdgeInsets.only(bottom: 12),
-            decoration: BoxDecoration(
-            color: Colors.red.shade700,
-            borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(Icons.delete, color: Colors.white, size: 28),
-            ),
-            confirmDismiss: (direction) async {
-            return await showDialog(
-            context: context,
-            builder: (ctx) => AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            title: const Text('Excluir Simulação'),
-            content: Text('Deseja apagar a simulação $simulationId do histórico?'),
-            actions: [
-            TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
-            ),
-            ElevatedButton(
-            style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.red,
-            foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            ),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Excluir'),
-            ),
-            ],
-            ),
-            );
-            },
-            onDismissed: (direction) {
-            box.delete(key);
-            ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Simulação removida do histórico.')),
-            );
-            },
-            child: Card(
-            margin: const EdgeInsets.only(bottom: 12),
-            shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-            ),
-            color: estaSelecionado ? Colors.indigo.shade50 : Colors.white,
-            child: ListTile(
-            contentPadding: const EdgeInsets.all(12),
-            leading: _modoSelecao
-            ? Checkbox(
-            activeColor: const Color(0xFF5C6BC0),
-            value: estaSelecionado,
-            onChanged: (bool? valor) {
-            setState(() {
-            if (valor == true) {
-            _chavesSelecionadas.add(key);
-            } else {
-            _chavesSelecionadas.remove(key);
-            }
-            });
-            },
-            )
-                : (processedPath != null && File(processedPath).existsSync()
-            ? ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: Image.file(
-            File(processedPath),
-            width: 50,
-            height: 50,
-            fit: BoxFit.cover,
-            ),
-            )
-                : const Icon(Icons.image, size: 40, color: Colors.grey)),
-            title: Text(
-            'ID: $simulationId',
-            style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-            subtitle: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-            if (dateStr.isNotEmpty)
-            Text(
-            'Data: ${dateStr.split('T')[0]}',
-            style: const TextStyle(fontSize: 12, color: Colors.grey),
-            ),
-            Text(
-            'Obs: $notes',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 12),
-            ),
-            ],
-            ),
-            trailing: _modoSelecao
-            ? null
-                : const Icon(Icons.arrow_forward_ios, size: 16),
-            onTap: () {
-            if (_modoSelecao) {
-            setState(() {
-            if (estaSelecionado) {
-            _chavesSelecionadas.remove(key);
-            } else {
-            _chavesSelecionadas.add(key);
-            }
-            });
-            } else {
-            Navigator.pushNamed(
-            context,
-            '/compare',
-            arguments: item,
-            );
-            }
-            },
-            onLongPress: () {
-            if (!_modoSelecao) {
-            setState(() {
-            _modoSelecao = true;
-            _chavesSelecionadas.add(key);
-            });
-            }
-            },
-            ),
-            ),
-            );
-            },
+                return Dismissible(
+                  key: Key(key.toString()),
+                  direction: DismissDirection.endToStart,
+                  background: Container(
+                    alignment: Alignment.centerRight,
+                    padding: const EdgeInsets.only(right: 20),
+                    margin: const EdgeInsets.only(bottom: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade700,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.delete, color: Colors.white, size: 28),
+                  ),
+                  confirmDismiss: (direction) async {
+                    return await showDialog(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        title: const Text('Excluir Simulação'),
+                        content: Text('Deseja apagar a simulação $simulationId do histórico?'),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx, false),
+                            child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
+                          ),
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.red,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
+                            onPressed: () => Navigator.pop(ctx, true),
+                            child: const Text('Excluir'),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                  onDismissed: (direction) {
+                    box.delete(key);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Simulação removida do histórico.')),
+                    );
+                  },
+                  child: Card(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    color: estaSelecionado ? Colors.indigo.shade50 : Colors.white,
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.all(12),
+                      leading: _modoSelecao
+                          ? Checkbox(
+                        activeColor: const Color(0xFF5C6BC0),
+                        value: estaSelecionado,
+                        onChanged: (bool? valor) {
+                          setState(() {
+                            if (valor == true) {
+                              _chavesSelecionadas.add(key);
+                            } else {
+                              _chavesSelecionadas.remove(key);
+                            }
+                          });
+                        },
+                      )
+                          : (processedPath != null && File(processedPath).existsSync()
+                          ? ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.file(
+                          File(processedPath),
+                          width: 50,
+                          height: 50,
+                          fit: BoxFit.cover,
+                        ),
+                      )
+                          : const Icon(Icons.image, size: 40, color: Colors.grey)),
+                      title: Text(
+                        'ID: $simulationId',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (dateStr.isNotEmpty)
+                            Text(
+                              'Data: ${dateStr.split('T')[0]}',
+                              style: const TextStyle(fontSize: 12, color: Colors.grey),
+                            ),
+                          Text(
+                            'Obs: $notes',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                        ],
+                      ),
+                      trailing: _modoSelecao
+                          ? null
+                          : const Icon(Icons.arrow_forward_ios, size: 16),
+                      onTap: () {
+                        if (_modoSelecao) {
+                          setState(() {
+                            if (estaSelecionado) {
+                              _chavesSelecionadas.remove(key);
+                            } else {
+                              _chavesSelecionadas.add(key);
+                            }
+                          });
+                        } else {
+                          Navigator.pushNamed(
+                            context,
+                            '/compare',
+                            arguments: item,
+                          );
+                        }
+                      },
+                      onLongPress: () {
+                        if (!_modoSelecao) {
+                          setState(() {
+                            _modoSelecao = true;
+                            _chavesSelecionadas.add(key);
+                          });
+                        }
+                      },
+                    ),
+                  ),
+                );
+              },
             );
           },
         ),
