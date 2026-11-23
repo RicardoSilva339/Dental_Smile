@@ -1062,6 +1062,7 @@ def process_smile():
 
         rgb_image = orig_image.convert("RGB")
         img_512 = rgb_image.resize((512, 512), Image.Resampling.LANCZOS)
+        orig_512_np = np.array(img_512).astype(np.float32)
 
         ref_info = ESCALA_BL_REFERENCIA.get(selected_color, ESCALA_BL_REFERENCIA['bl2'])
         print("=" * 60)
@@ -1167,8 +1168,8 @@ def process_smile():
 
         r_gain, g_gain, b_gain = 1.00, 1.00, 1.00
         if selected_color == 'bl1':
-            # Faixa 1 ("0M1") - Topo claro e neutro
-            r_gain, g_gain, b_gain = 1.14, 1.15, 1.24
+            # Faixa 1 ("0M1") - Topo claro sem excesso azulado
+            r_gain, g_gain, b_gain = 1.07, 1.08, 1.09
         elif selected_color == 'bl2':
             # Faixa 5..9 ("1M2".."2M1") - Luminoso intermediario abaixo do BL1
             r_gain, g_gain, b_gain = 1.03, 1.03, 1.04
@@ -1184,7 +1185,9 @@ def process_smile():
         ai_colorido_np[:, :, 1] = np.clip(ai_np[:, :, 1] * (1.0 + (g_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
         ai_colorido_np[:, :, 2] = np.clip(ai_np[:, :, 2] * (1.0 + (b_gain - 1.0) * tooth_mask_sup_smooth), 0, 255)
 
-        imagem_final_rgb = ai_colorido_np.astype(np.uint8)
+        # Mistura leve com a imagem original apenas nos dentes para preservar textura natural
+        alpha_dente = np.repeat((0.12 * tooth_mask_sup_smooth)[:, :, np.newaxis], 3, axis=2)
+        imagem_final_rgb = np.clip(ai_colorido_np * (1.0 - alpha_dente) + orig_512_np * alpha_dente, 0, 255).astype(np.uint8)
 
         final_bgr = cv2.cvtColor(imagem_final_rgb, cv2.COLOR_RGB2BGR)
         _, buffer = cv2.imencode('.jpg', final_bgr, [cv2.IMWRITE_JPEG_QUALITY, 95])
