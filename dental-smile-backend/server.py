@@ -301,50 +301,50 @@ def obter_dados_pagador(email, cpf_pagador, incluir_nome=True, email_override=No
 
 def aplicar_calibracao_e_preservar_pele(orig_rgb_np, ai_rgb_np, selected_color):
     """
-    Aplica a calibracao BL1-BL4 apenas sobre a mascara dos dentes detectados
-    na regiao do sorriso, evitando espalhamento nos labios inferiores e na
-    transicao para o queixo, sem deixar o branco estourado.
+    Aplica a calibracao BL1-BL4 sobre a mascara dos dentes detectados preservando
+    a textura natural do esmalte (sem aspecto de plastico) e travando a regiao
+    abaixo do labio inferior / queixo para evitar manchas.
     """
     h, w, _ = orig_rgb_np.shape
     ai_float = ai_rgb_np.astype(np.float32)
     orig_float = orig_rgb_np.astype(np.float32)
 
-    # Regiao de busca centrada na arcada dentaria para nao descer ao labio inferior/queixo
+    # Regiao de busca centrada nos dentes para nao descer ao queixo
     y_grid, x_grid = np.mgrid[0:h, 0:w].astype(np.float32)
-    cy, cx = h * 0.525, w * 0.50
-    ry, rx = h * 0.145, w * 0.265
+    cy, cx = h * 0.515, w * 0.50
+    ry, rx = h * 0.125, w * 0.26
     dist_norm = np.sqrt(((y_grid - cy) / ry) ** 2 + ((x_grid - cx) / rx) ** 2)
-    mouth_zone = np.clip(1.0 - np.maximum(0.0, (dist_norm - 0.62) / 0.42), 0.0, 1.0)
-    mouth_zone = cv2.GaussianBlur(mouth_zone, (15, 15), 0)
+    mouth_zone = np.clip(1.0 - np.maximum(0.0, (dist_norm - 0.60) / 0.40), 0.0, 1.0)
+    mouth_zone = cv2.GaussianBlur(mouth_zone, (13, 13), 0)
 
-    # Mascara de dentes com corte equilibrado para nao pegar reflexos no labio inferior
+    # Filtra apenas pixels claros/desaturados dos dentes, evitando brilho de pele no queixo
     hsv_ai = cv2.cvtColor(ai_rgb_np.astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
     tooth_raw = (
-        (hsv_ai[:, :, 2] > 138) &
-        (hsv_ai[:, :, 1] < 95) &
-        (mouth_zone > 0.25)
+        (hsv_ai[:, :, 2] > 148) &
+        (hsv_ai[:, :, 1] < 90) &
+        (mouth_zone > 0.28)
     ).astype(np.float32)
     tooth_mask = cv2.GaussianBlur(tooth_raw * mouth_zone, (5, 5), 0)
 
     if selected_color == 'bl1':
-        # Dente 1 (0M1) - Branco limpo sem estourar para hiper branco
-        r_gain, g_gain, b_gain = 1.035, 1.045, 1.07
-        saturation, brightness = 0.86, 1.03
+        # Dente 1 (0M1) - Branco limpo e natural, sem aspecto de plastico
+        r_gain, g_gain, b_gain = 1.025, 1.032, 1.045
+        saturation, brightness = 0.94, 1.015
     elif selected_color == 'bl2':
         # Dente 7 (2L1.5) - Branco nitido intermediario
-        r_gain, g_gain, b_gain = 1.025, 1.03, 1.05
-        saturation, brightness = 0.90, 1.02
+        r_gain, g_gain, b_gain = 1.02, 1.025, 1.035
+        saturation, brightness = 0.96, 1.01
     elif selected_color == 'bl3':
         # Dente 17 / 19 - Natural intermediario suave
-        r_gain, g_gain, b_gain = 1.02, 1.00, 0.97
-        saturation, brightness = 0.97, 1.005
+        r_gain, g_gain, b_gain = 1.015, 1.00, 0.98
+        saturation, brightness = 0.99, 1.005
     elif selected_color == 'bl4':
         # Dente 27 / 29 - Marfim suave
-        r_gain, g_gain, b_gain = 1.03, 1.00, 0.94
-        saturation, brightness = 1.04, 1.00
+        r_gain, g_gain, b_gain = 1.025, 1.00, 0.95
+        saturation, brightness = 1.03, 1.00
     else:
-        r_gain, g_gain, b_gain = 1.025, 1.03, 1.05
-        saturation, brightness = 0.90, 1.02
+        r_gain, g_gain, b_gain = 1.02, 1.025, 1.035
+        saturation, brightness = 0.96, 1.01
 
     calibrada = ai_float.copy()
     calibrada[:, :, 0] = np.clip(ai_float[:, :, 0] * (1.0 + (r_gain - 1.0) * tooth_mask), 0, 255)
@@ -356,7 +356,6 @@ def aplicar_calibracao_e_preservar_pele(orig_rgb_np, ai_rgb_np, selected_color):
     hsv_adj[:, :, 2] = np.clip(hsv_adj[:, :, 2] * (1.0 + (brightness - 1.0) * tooth_mask), 0, 255)
     calibrada = cv2.cvtColor(hsv_adj.astype(np.uint8), cv2.COLOR_HSV2RGB).astype(np.float32)
 
-    # Blend contido para evitar borrar para labios inferiores ou regiao do queixo
     blend_mask = np.clip(tooth_mask * 1.0, 0.0, 1.0)
     blend_mask_3c = np.repeat(blend_mask[:, :, np.newaxis], 3, axis=2)
 
