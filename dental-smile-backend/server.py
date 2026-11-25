@@ -319,11 +319,11 @@ def construir_mascara_dentes(ai_rgb_np):
 
 def aplicar_calibracao_e_preservar_pele(orig_rgb_np, ai_rgb_np, selected_color):
     """
-    Aplica a calibracao BL1-BL4 com degraus nitidos entre todos os 4 niveis:
-    - BL1: aprovado nos relatorios DS-203 / DS-204
-    - BL2: aprovado no relatorio DS-206
-    - BL3: intermediario natural entre BL2 e BL4
-    - BL4: marfim/creme suave distinto do BL3 (corrigindo a proximidade do DS-208)
+    Aplica a calibracao BL1-BL4 fechada com base na escala VITA Bleachedguide (1 a 29):
+    - BL1: aprovado nos relatorios DS-203 / DS-204 (Dente 1 - 0M1)
+    - BL2: aprovado no relatorio DS-206 (Dente 7 - 2L1.5)
+    - BL3: promovido da receita aprovada no DS-209 (faixa 11 a 19 da escala VITA)
+    - BL4: creme/marfim mais marcado na faixa 21 a 29 (aquecimento pos-mistura exclusivo)
     """
     ai_float = ai_rgb_np.astype(np.float32)
     orig_float = orig_rgb_np.astype(np.float32)
@@ -340,15 +340,15 @@ def aplicar_calibracao_e_preservar_pele(orig_rgb_np, ai_rgb_np, selected_color):
         saturation, brightness = 1.08, 0.975
         alpha_ia = 0.48
     elif selected_color == 'bl3':
-        # ~90% - Dente 17 / 19: natural intermediario um degrau abaixo do BL2
-        r_gain, g_gain, b_gain = 1.014, 0.982, 0.922
-        saturation, brightness = 1.10, 0.968
-        alpha_ia = 0.36
-    elif selected_color == 'bl4':
-        # ~85% - Dente 27 / 29: marfim/creme suave com tom quente evidente (distinto do BL3)
+        # ~90% - Faixa 11 a 19: receita exata promovida do DS-209 (creme claro intermediario)
         r_gain, g_gain, b_gain = 1.024, 0.976, 0.875
         saturation, brightness = 1.18, 0.965
         alpha_ia = 0.32
+    elif selected_color == 'bl4':
+        # ~85% - Faixa 21 a 29: base de uniformizacao antes do aquecimento marfim/creme pos-mistura
+        r_gain, g_gain, b_gain = 1.024, 0.976, 0.875
+        saturation, brightness = 1.18, 0.965
+        alpha_ia = 0.30
     else:
         r_gain, g_gain, b_gain = 1.015, 0.985, 0.935
         saturation, brightness = 1.08, 0.975
@@ -368,6 +368,18 @@ def aplicar_calibracao_e_preservar_pele(orig_rgb_np, ai_rgb_np, selected_color):
     blend_mask_3c = np.repeat(blend_mask[:, :, np.newaxis], 3, axis=2)
 
     resultado = calibrada * blend_mask_3c + orig_float * (1.0 - blend_mask_3c)
+
+    if selected_color == 'bl4':
+        # Aquecimento creme/marfim pos-mistura exclusivo do BL4 (faixa 21-29 da escala VITA)
+        resultado[:, :, 0] = np.clip(resultado[:, :, 0] * (1.0 + 0.025 * tooth_mask), 0, 255)
+        resultado[:, :, 1] = np.clip(resultado[:, :, 1] * (1.0 - 0.015 * tooth_mask), 0, 255)
+        resultado[:, :, 2] = np.clip(resultado[:, :, 2] * (1.0 - 0.165 * tooth_mask), 0, 255)
+
+        hsv_bl4 = cv2.cvtColor(np.clip(resultado, 0, 255).astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
+        hsv_bl4[:, :, 1] = np.clip(hsv_bl4[:, :, 1] * (1.0 + 0.16 * tooth_mask), 0, 255)
+        hsv_bl4[:, :, 2] = np.clip(hsv_bl4[:, :, 2] * (1.0 - 0.030 * tooth_mask), 0, 255)
+        resultado = cv2.cvtColor(hsv_bl4.astype(np.uint8), cv2.COLOR_HSV2RGB).astype(np.float32)
+
     return np.clip(resultado, 0, 255).astype(np.uint8)
 
 @app.route('/register', methods=['POST'])
