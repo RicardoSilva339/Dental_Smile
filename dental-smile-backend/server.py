@@ -1245,6 +1245,9 @@ def process_smile():
         print("-" * 60)
         print(f"[DIAG] Cor={selected_color.upper()} | PredID={pred_id} | Status={pred_status} | Metrics={pred_metrics}")
         print(f"[DIAG] MaskPixels(>0.10)={pixels_ativos} | Model={poll_data.get('model')} | Version={poll_data.get('version')}")
+        print(f"[DIAG] PollKeys={list(poll_data.keys())} | InputEco={poll_data.get('input')}")
+        if poll_data.get("logs"):
+            print(f"[DIAG] ReplicateLogs={poll_data.get('logs')}")
         print(f"[DIAG] Boca ORIG   RGB=({orig_512_np[y1:y2, x1:x2, 0].mean():.1f}, {orig_512_np[y1:y2, x1:x2, 1].mean():.1f}, {orig_512_np[y1:y2, x1:x2, 2].mean():.1f}) | S={hsv_orig[y1:y2, x1:x2, 1].mean():.1f} V={hsv_orig[y1:y2, x1:x2, 2].mean():.1f}")
         print(f"[DIAG] Boca AI_RAW RGB=({ai_np[y1:y2, x1:x2, 0].mean():.1f}, {ai_np[y1:y2, x1:x2, 1].mean():.1f}, {ai_np[y1:y2, x1:x2, 2].mean():.1f}) | S={hsv_ai_raw[y1:y2, x1:x2, 1].mean():.1f} V={hsv_ai_raw[y1:y2, x1:x2, 2].mean():.1f}")
         print(f"[DIAG] Boca FINAL  RGB=({imagem_final_rgb[y1:y2, x1:x2, 0].mean():.1f}, {imagem_final_rgb[y1:y2, x1:x2, 1].mean():.1f}, {imagem_final_rgb[y1:y2, x1:x2, 2].mean():.1f}) | S={hsv_final[y1:y2, x1:x2, 1].mean():.1f} V={hsv_final[y1:y2, x1:x2, 2].mean():.1f}")
