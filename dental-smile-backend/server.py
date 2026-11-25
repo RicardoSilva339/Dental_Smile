@@ -319,8 +319,10 @@ def construir_mascara_dentes(ai_rgb_np):
 
 def aplicar_calibracao_e_preservar_pele(orig_rgb_np, ai_rgb_np, selected_color):
     """
-    Aplica a calibracao BL1-BL4 escalonada em cor e intensidade de mistura (alpha_ia)
-    com base nos logs reais (DS-203 a DS-205), preservando integralmente pele e labios.
+    Aplica a calibracao BL1-BL4 com base nas entregas aprovadas:
+    - BL1 aprovado nos relatorios DS-203 / DS-204
+    - BL2 promovido exatamente da receita aprovada no DS-206
+    - BL3 e BL4 escalonados em degraus naturais logo abaixo do BL2
     """
     ai_float = ai_rgb_np.astype(np.float32)
     orig_float = orig_rgb_np.astype(np.float32)
@@ -332,24 +334,24 @@ def aplicar_calibracao_e_preservar_pele(orig_rgb_np, ai_rgb_np, selected_color):
         saturation, brightness = 0.85, 1.028
         alpha_ia = 1.00
     elif selected_color == 'bl2':
-        # ~95% - Dente 7 (2L1.5): branco nitido um degrau abaixo do BL1
-        r_gain, g_gain, b_gain = 1.018, 1.028, 1.045
-        saturation, brightness = 0.91, 1.014
-        alpha_ia = 0.86
-    elif selected_color == 'bl3':
-        # ~90% - Dente 17 / 19: natural intermediario equilibrado
-        r_gain, g_gain, b_gain = 1.015, 1.002, 0.985
-        saturation, brightness = 0.99, 0.996
-        alpha_ia = 0.70
-    elif selected_color == 'bl4':
-        # ~85% - Dente 27 / 29: marfim suave e discreto, contendo o excesso de branco do AI_RAW
+        # ~95% - Dente 7 (2L1.5): receita exata aprovada no DS-206 (um degrau abaixo do BL1)
         r_gain, g_gain, b_gain = 1.015, 0.985, 0.935
         saturation, brightness = 1.08, 0.975
         alpha_ia = 0.48
+    elif selected_color == 'bl3':
+        # ~90% - Dente 17 / 19: natural intermediario um degrau abaixo do BL2
+        r_gain, g_gain, b_gain = 1.012, 0.978, 0.910
+        saturation, brightness = 1.12, 0.962
+        alpha_ia = 0.34
+    elif selected_color == 'bl4':
+        # ~85% - Dente 27 / 29: marfim suave e discreto na base da escala
+        r_gain, g_gain, b_gain = 1.008, 0.970, 0.885
+        saturation, brightness = 1.16, 0.950
+        alpha_ia = 0.22
     else:
-        r_gain, g_gain, b_gain = 1.018, 1.028, 1.045
-        saturation, brightness = 0.91, 1.014
-        alpha_ia = 0.86
+        r_gain, g_gain, b_gain = 1.015, 0.985, 0.935
+        saturation, brightness = 1.08, 0.975
+        alpha_ia = 0.48
 
     calibrada = ai_float.copy()
     calibrada[:, :, 0] = np.clip(ai_float[:, :, 0] * (1.0 + (r_gain - 1.0) * tooth_mask), 0, 255)
