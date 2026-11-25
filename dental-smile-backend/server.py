@@ -323,7 +323,7 @@ def aplicar_calibracao_e_preservar_pele(orig_rgb_np, ai_rgb_np, selected_color):
     - BL1: aprovado nos relatorios DS-203 / DS-204 (Dente 1 - 0M1)
     - BL2: aprovado no relatorio DS-206 (Dente 7 - 2L1.5)
     - BL3: promovido da receita aprovada no DS-209 (faixa 11 a 19 da escala VITA)
-    - BL4: creme/marfim mais marcado na faixa 21 a 29 (aquecimento pos-mistura exclusivo)
+    - BL4: marfim/creme natural suave na faixa 21 a 29 (ajuste fino calibrado apos DS-210)
     """
     ai_float = ai_rgb_np.astype(np.float32)
     orig_float = orig_rgb_np.astype(np.float32)
@@ -345,7 +345,7 @@ def aplicar_calibracao_e_preservar_pele(orig_rgb_np, ai_rgb_np, selected_color):
         saturation, brightness = 1.18, 0.965
         alpha_ia = 0.32
     elif selected_color == 'bl4':
-        # ~85% - Faixa 21 a 29: base de uniformizacao antes do aquecimento marfim/creme pos-mistura
+        # ~85% - Faixa 21 a 29: base de uniformizacao antes do marfim suave pos-mistura
         r_gain, g_gain, b_gain = 1.024, 0.976, 0.875
         saturation, brightness = 1.18, 0.965
         alpha_ia = 0.30
@@ -370,14 +370,14 @@ def aplicar_calibracao_e_preservar_pele(orig_rgb_np, ai_rgb_np, selected_color):
     resultado = calibrada * blend_mask_3c + orig_float * (1.0 - blend_mask_3c)
 
     if selected_color == 'bl4':
-        # Aquecimento creme/marfim pos-mistura exclusivo do BL4 (faixa 21-29 da escala VITA)
-        resultado[:, :, 0] = np.clip(resultado[:, :, 0] * (1.0 + 0.025 * tooth_mask), 0, 255)
-        resultado[:, :, 1] = np.clip(resultado[:, :, 1] * (1.0 - 0.015 * tooth_mask), 0, 255)
-        resultado[:, :, 2] = np.clip(resultado[:, :, 2] * (1.0 - 0.165 * tooth_mask), 0, 255)
+        # Marfim creme suave pos-mistura (calibrado em ~38% da forca do DS-210 para naturalidade na faixa 21-29)
+        resultado[:, :, 0] = np.clip(resultado[:, :, 0] * (1.0 + 0.008 * tooth_mask), 0, 255)
+        resultado[:, :, 1] = np.clip(resultado[:, :, 1] * (1.0 - 0.004 * tooth_mask), 0, 255)
+        resultado[:, :, 2] = np.clip(resultado[:, :, 2] * (1.0 - 0.062 * tooth_mask), 0, 255)
 
         hsv_bl4 = cv2.cvtColor(np.clip(resultado, 0, 255).astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
-        hsv_bl4[:, :, 1] = np.clip(hsv_bl4[:, :, 1] * (1.0 + 0.16 * tooth_mask), 0, 255)
-        hsv_bl4[:, :, 2] = np.clip(hsv_bl4[:, :, 2] * (1.0 - 0.030 * tooth_mask), 0, 255)
+        hsv_bl4[:, :, 1] = np.clip(hsv_bl4[:, :, 1] * (1.0 + 0.055 * tooth_mask), 0, 255)
+        hsv_bl4[:, :, 2] = np.clip(hsv_bl4[:, :, 2] * (1.0 - 0.012 * tooth_mask), 0, 255)
         resultado = cv2.cvtColor(hsv_bl4.astype(np.uint8), cv2.COLOR_HSV2RGB).astype(np.float32)
 
     return np.clip(resultado, 0, 255).astype(np.uint8)
