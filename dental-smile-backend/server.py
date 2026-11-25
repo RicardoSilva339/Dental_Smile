@@ -319,10 +319,11 @@ def construir_mascara_dentes(ai_rgb_np):
 
 def aplicar_calibracao_e_preservar_pele(orig_rgb_np, ai_rgb_np, selected_color):
     """
-    Aplica a calibracao BL1-BL4 com base nas entregas aprovadas:
-    - BL1 aprovado nos relatorios DS-203 / DS-204
-    - BL2 promovido exatamente da receita aprovada no DS-206
-    - BL3 e BL4 escalonados em degraus naturais logo abaixo do BL2
+    Aplica a calibracao BL1-BL4 com degraus nitidos entre todos os 4 niveis:
+    - BL1: aprovado nos relatorios DS-203 / DS-204
+    - BL2: aprovado no relatorio DS-206
+    - BL3: intermediario natural entre BL2 e BL4
+    - BL4: marfim/creme suave distinto do BL3 (corrigindo a proximidade do DS-208)
     """
     ai_float = ai_rgb_np.astype(np.float32)
     orig_float = orig_rgb_np.astype(np.float32)
@@ -340,14 +341,14 @@ def aplicar_calibracao_e_preservar_pele(orig_rgb_np, ai_rgb_np, selected_color):
         alpha_ia = 0.48
     elif selected_color == 'bl3':
         # ~90% - Dente 17 / 19: natural intermediario um degrau abaixo do BL2
-        r_gain, g_gain, b_gain = 1.012, 0.978, 0.910
-        saturation, brightness = 1.12, 0.962
-        alpha_ia = 0.34
+        r_gain, g_gain, b_gain = 1.014, 0.982, 0.922
+        saturation, brightness = 1.10, 0.968
+        alpha_ia = 0.36
     elif selected_color == 'bl4':
-        # ~85% - Dente 27 / 29: marfim suave e discreto na base da escala
-        r_gain, g_gain, b_gain = 1.008, 0.970, 0.885
-        saturation, brightness = 1.16, 0.950
-        alpha_ia = 0.22
+        # ~85% - Dente 27 / 29: marfim/creme suave com tom quente evidente (distinto do BL3)
+        r_gain, g_gain, b_gain = 1.024, 0.976, 0.875
+        saturation, brightness = 1.18, 0.965
+        alpha_ia = 0.32
     else:
         r_gain, g_gain, b_gain = 1.015, 0.985, 0.935
         saturation, brightness = 1.08, 0.975
