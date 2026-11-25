@@ -1171,6 +1171,7 @@ def process_smile():
             "input": {
                 "input_images": [input_image_url],
                 "prompt": prompt_text,
+                "seed": 9283,
                 "aspect_ratio": "1:1",
                 "output_format": "webp",
                 "output_quality": 80,
