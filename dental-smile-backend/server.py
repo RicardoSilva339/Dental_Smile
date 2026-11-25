@@ -71,7 +71,7 @@ SHADE_MAP = {
 
 ESCALA_BL_REFERENCIA = {
     'bl1': {'indices': [1], 'tons': [SHADE_MAP[1]]},
-    'bl2': {'indices': [7], 'tons': [SHADE_MAP[7]]},
+    'bl2': {'indices': [4, 5], 'tons': [SHADE_MAP[4], SHADE_MAP[5]]},
     'bl3': {'indices': [17, 19], 'tons': [SHADE_MAP[17], SHADE_MAP[19]]},
     'bl4': {'indices': [27, 29], 'tons': [SHADE_MAP[27], SHADE_MAP[29]]},
 }
@@ -320,39 +320,39 @@ def construir_mascara_dentes(ai_rgb_np):
 def aplicar_calibracao_e_preservar_pele(orig_rgb_np, ai_rgb_np, selected_color):
     """
     Aplica a calibracao BL1-BL4 fechada com base na escala VITA Bleachedguide (1 a 29):
-    - BL1: aprovado nos relatorios DS-203 / DS-204 (Dente 1 - 0M1)
-    - BL2: aprovado no relatorio DS-206 (Dente 7 - 2L1.5)
-    - BL3: promovido da receita aprovada no DS-209 (faixa 11 a 19 da escala VITA)
-    - BL4: marfim/creme natural suave na faixa 21 a 29 (ajuste fino calibrado apos DS-210)
+    - BL1: Dente 1 (0M1) - branco ultra intensificado e frio
+    - BL2: Faixa 3 a 5 (0M3/1M1/1M2) - receita exata promovida do DS-212
+    - BL3: Faixa 11 a 19 - creme claro natural aprovado no DS-214
+    - BL4: Faixa 21 a 29 - marfim suave aprovado no DS-215
     """
     ai_float = ai_rgb_np.astype(np.float32)
     orig_float = orig_rgb_np.astype(np.float32)
     tooth_mask = construir_mascara_dentes(ai_rgb_np)
 
     if selected_color == 'bl1':
-        # 100% - Dente 1 (0M1): branco limpo e frio (aprovado nos logs DS-203/DS-204)
+        # 100% - Dente 1 (0M1): branco ultra intensificado
+        r_gain, g_gain, b_gain = 1.045, 1.072, 1.115
+        saturation, brightness = 0.72, 1.068
+        alpha_ia = 1.00
+    elif selected_color == 'bl2':
+        # ~95% - Faixa 3 a 5 (0M3 / 1M1 / 1M2): receita exata promovida do DS-212
         r_gain, g_gain, b_gain = 1.020, 1.042, 1.075
         saturation, brightness = 0.85, 1.028
         alpha_ia = 1.00
-    elif selected_color == 'bl2':
-        # ~95% - Dente 7 (2L1.5): receita exata aprovada no DS-206 (um degrau abaixo do BL1)
-        r_gain, g_gain, b_gain = 1.015, 0.985, 0.935
-        saturation, brightness = 1.08, 0.975
-        alpha_ia = 0.48
     elif selected_color == 'bl3':
-        # ~90% - Faixa 11 a 19: receita exata promovida do DS-209 (creme claro intermediario)
+        # ~90% - Faixa 11 a 19: creme claro natural exato do DS-214
         r_gain, g_gain, b_gain = 1.024, 0.976, 0.875
         saturation, brightness = 1.18, 0.965
         alpha_ia = 0.32
     elif selected_color == 'bl4':
-        # ~85% - Faixa 21 a 29: base de uniformizacao antes do marfim suave pos-mistura
+        # ~85% - Faixa 21 a 29: base de uniformizacao antes do marfim suave aprovado no DS-215
         r_gain, g_gain, b_gain = 1.024, 0.976, 0.875
         saturation, brightness = 1.18, 0.965
         alpha_ia = 0.30
     else:
-        r_gain, g_gain, b_gain = 1.015, 0.985, 0.935
-        saturation, brightness = 1.08, 0.975
-        alpha_ia = 0.48
+        r_gain, g_gain, b_gain = 1.020, 1.042, 1.075
+        saturation, brightness = 0.85, 1.028
+        alpha_ia = 1.00
 
     calibrada = ai_float.copy()
     calibrada[:, :, 0] = np.clip(ai_float[:, :, 0] * (1.0 + (r_gain - 1.0) * tooth_mask), 0, 255)
@@ -370,7 +370,7 @@ def aplicar_calibracao_e_preservar_pele(orig_rgb_np, ai_rgb_np, selected_color):
     resultado = calibrada * blend_mask_3c + orig_float * (1.0 - blend_mask_3c)
 
     if selected_color == 'bl4':
-        # Marfim creme suave pos-mistura (calibrado em ~38% da forca do DS-210 para naturalidade na faixa 21-29)
+        # Marfim creme suave pos-mistura aprovado no DS-215 (faixa 21-29)
         resultado[:, :, 0] = np.clip(resultado[:, :, 0] * (1.0 + 0.008 * tooth_mask), 0, 255)
         resultado[:, :, 1] = np.clip(resultado[:, :, 1] * (1.0 - 0.004 * tooth_mask), 0, 255)
         resultado[:, :, 2] = np.clip(resultado[:, :, 2] * (1.0 - 0.062 * tooth_mask), 0, 255)
