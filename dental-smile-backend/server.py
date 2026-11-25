@@ -311,7 +311,7 @@ def construir_mascara_dentes(ai_rgb_np):
     hsv_ai = cv2.cvtColor(ai_rgb_np.astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
     tooth_raw = (
         (hsv_ai[:, :, 2] > 148) &
-        (hsv_ai[:, :, 1] < 90) &
+        (hsv_ai[:, :, 1] < 85) &
         (mouth_zone > 0.28)
     ).astype(np.float32)
     tooth_mask = cv2.GaussianBlur(tooth_raw * mouth_zone, (5, 5), 0)
@@ -319,33 +319,33 @@ def construir_mascara_dentes(ai_rgb_np):
 
 def aplicar_calibracao_e_preservar_pele(orig_rgb_np, ai_rgb_np, selected_color):
     """
-    Aplica a calibracao BL1-BL4 sobre a mascara dos dentes detectados preservando
-    a textura natural do esmalte (sem aspecto de plastico) e travando a regiao
-    abaixo do labio inferior / queixo para evitar manchas.
+    Aplica a calibracao BL1-BL4 escalonada com base nos logs reais (DS-199 a DS-202),
+    neutralizando o excesso creme/amarelado no BL1/BL2 sem perder a textura do esmalte
+    e preservando integralmente pele, labios e queixo.
     """
     ai_float = ai_rgb_np.astype(np.float32)
     orig_float = orig_rgb_np.astype(np.float32)
     tooth_mask = construir_mascara_dentes(ai_rgb_np)
 
     if selected_color == 'bl1':
-        # Dente 1 (0M1) - Branco limpo e natural, sem aspecto de plastico
-        r_gain, g_gain, b_gain = 1.025, 1.032, 1.045
-        saturation, brightness = 0.94, 1.015
+        # 100% - Dente 1 (0M1): branco limpo e frio, neutralizando o tom creme sem virar plastico
+        r_gain, g_gain, b_gain = 1.020, 1.042, 1.075
+        saturation, brightness = 0.85, 1.028
     elif selected_color == 'bl2':
-        # Dente 7 (2L1.5) - Branco nitido intermediario
-        r_gain, g_gain, b_gain = 1.02, 1.025, 1.035
-        saturation, brightness = 0.96, 1.01
+        # ~95% - Dente 7 (2L1.5): branco nitido um degrau abaixo do BL1
+        r_gain, g_gain, b_gain = 1.018, 1.030, 1.050
+        saturation, brightness = 0.90, 1.016
     elif selected_color == 'bl3':
-        # Dente 17 / 19 - Natural intermediario suave
-        r_gain, g_gain, b_gain = 1.015, 1.00, 0.98
-        saturation, brightness = 0.99, 1.005
+        # ~90% - Dente 17 / 19: natural intermediario equilibrado (base aprovada no DS-202)
+        r_gain, g_gain, b_gain = 1.015, 1.005, 0.995
+        saturation, brightness = 0.97, 1.002
     elif selected_color == 'bl4':
-        # Dente 27 / 29 - Marfim suave
-        r_gain, g_gain, b_gain = 1.025, 1.00, 0.95
-        saturation, brightness = 1.03, 1.00
+        # ~85% - Dente 27 / 29: marfim suave e discreto, contendo excesso de branco do AI_RAW
+        r_gain, g_gain, b_gain = 1.020, 0.992, 0.945
+        saturation, brightness = 1.06, 0.985
     else:
-        r_gain, g_gain, b_gain = 1.02, 1.025, 1.035
-        saturation, brightness = 0.96, 1.01
+        r_gain, g_gain, b_gain = 1.018, 1.030, 1.050
+        saturation, brightness = 0.90, 1.016
 
     calibrada = ai_float.copy()
     calibrada[:, :, 0] = np.clip(ai_float[:, :, 0] * (1.0 + (r_gain - 1.0) * tooth_mask), 0, 255)
