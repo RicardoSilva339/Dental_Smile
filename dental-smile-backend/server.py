@@ -299,17 +299,8 @@ def obter_dados_pagador(email, cpf_pagador, incluir_nome=True, email_override=No
 
     return payer
 
-def aplicar_calibracao_e_preservar_pele(orig_rgb_np, ai_rgb_np, selected_color):
-    """
-    Aplica a calibracao BL1-BL4 sobre a mascara dos dentes detectados preservando
-    a textura natural do esmalte (sem aspecto de plastico) e travando a regiao
-    abaixo do labio inferior / queixo para evitar manchas.
-    """
-    h, w, _ = orig_rgb_np.shape
-    ai_float = ai_rgb_np.astype(np.float32)
-    orig_float = orig_rgb_np.astype(np.float32)
-
-    # Regiao de busca centrada nos dentes para nao descer ao queixo
+def construir_mascara_dentes(ai_rgb_np):
+    h, w, _ = ai_rgb_np.shape
     y_grid, x_grid = np.mgrid[0:h, 0:w].astype(np.float32)
     cy, cx = h * 0.515, w * 0.50
     ry, rx = h * 0.125, w * 0.26
@@ -317,7 +308,6 @@ def aplicar_calibracao_e_preservar_pele(orig_rgb_np, ai_rgb_np, selected_color):
     mouth_zone = np.clip(1.0 - np.maximum(0.0, (dist_norm - 0.60) / 0.40), 0.0, 1.0)
     mouth_zone = cv2.GaussianBlur(mouth_zone, (13, 13), 0)
 
-    # Filtra apenas pixels claros/desaturados dos dentes, evitando brilho de pele no queixo
     hsv_ai = cv2.cvtColor(ai_rgb_np.astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
     tooth_raw = (
         (hsv_ai[:, :, 2] > 148) &
@@ -325,6 +315,17 @@ def aplicar_calibracao_e_preservar_pele(orig_rgb_np, ai_rgb_np, selected_color):
         (mouth_zone > 0.28)
     ).astype(np.float32)
     tooth_mask = cv2.GaussianBlur(tooth_raw * mouth_zone, (5, 5), 0)
+    return tooth_mask
+
+def aplicar_calibracao_e_preservar_pele(orig_rgb_np, ai_rgb_np, selected_color):
+    """
+    Aplica a calibracao BL1-BL4 sobre a mascara dos dentes detectados preservando
+    a textura natural do esmalte (sem aspecto de plastico) e travando a regiao
+    abaixo do labio inferior / queixo para evitar manchas.
+    """
+    ai_float = ai_rgb_np.astype(np.float32)
+    orig_float = orig_rgb_np.astype(np.float32)
+    tooth_mask = construir_mascara_dentes(ai_rgb_np)
 
     if selected_color == 'bl1':
         # Dente 1 (0M1) - Branco limpo e natural, sem aspecto de plastico
@@ -1195,6 +1196,7 @@ def process_smile():
             raise Exception("URL de rastreio do Replicate nao retornada.")
 
         image_url = None
+        poll_data = {}
         for _ in range(90):
             time.sleep(2)
             poll_resp = requests.get(get_url, headers=headers, timeout=30)
@@ -1224,6 +1226,29 @@ def process_smile():
         ai_np = np.array(ai_crop_restaurado)
 
         imagem_final_rgb = aplicar_calibracao_e_preservar_pele(orig_512_np, ai_np, selected_color)
+
+        # --- LOG DIAGNOSTICO REPLICATE + POS-PROCESSAMENTO ---
+        pred_id = poll_data.get("id")
+        pred_status = poll_data.get("status")
+        pred_metrics = poll_data.get("metrics", {})
+        mask_diag = construir_mascara_dentes(ai_np)
+        pixels_ativos = int(np.sum(mask_diag > 0.10))
+
+        hsv_orig = cv2.cvtColor(orig_512_np, cv2.COLOR_RGB2HSV).astype(np.float32)
+        hsv_ai_raw = cv2.cvtColor(ai_np, cv2.COLOR_RGB2HSV).astype(np.float32)
+        hsv_final = cv2.cvtColor(imagem_final_rgb, cv2.COLOR_RGB2HSV).astype(np.float32)
+
+        h_m, w_m, _ = orig_512_np.shape
+        y1, y2 = int(h_m * 0.44), int(h_m * 0.60)
+        x1, x2 = int(w_m * 0.30), int(w_m * 0.70)
+
+        print("-" * 60)
+        print(f"[DIAG] Cor={selected_color.upper()} | PredID={pred_id} | Status={pred_status} | Metrics={pred_metrics}")
+        print(f"[DIAG] MaskPixels(>0.10)={pixels_ativos} | Model={poll_data.get('model')} | Version={poll_data.get('version')}")
+        print(f"[DIAG] Boca ORIG   RGB=({orig_512_np[y1:y2, x1:x2, 0].mean():.1f}, {orig_512_np[y1:y2, x1:x2, 1].mean():.1f}, {orig_512_np[y1:y2, x1:x2, 2].mean():.1f}) | S={hsv_orig[y1:y2, x1:x2, 1].mean():.1f} V={hsv_orig[y1:y2, x1:x2, 2].mean():.1f}")
+        print(f"[DIAG] Boca AI_RAW RGB=({ai_np[y1:y2, x1:x2, 0].mean():.1f}, {ai_np[y1:y2, x1:x2, 1].mean():.1f}, {ai_np[y1:y2, x1:x2, 2].mean():.1f}) | S={hsv_ai_raw[y1:y2, x1:x2, 1].mean():.1f} V={hsv_ai_raw[y1:y2, x1:x2, 2].mean():.1f}")
+        print(f"[DIAG] Boca FINAL  RGB=({imagem_final_rgb[y1:y2, x1:x2, 0].mean():.1f}, {imagem_final_rgb[y1:y2, x1:x2, 1].mean():.1f}, {imagem_final_rgb[y1:y2, x1:x2, 2].mean():.1f}) | S={hsv_final[y1:y2, x1:x2, 1].mean():.1f} V={hsv_final[y1:y2, x1:x2, 2].mean():.1f}")
+        print("-" * 60)
 
         final_bgr = cv2.cvtColor(imagem_final_rgb, cv2.COLOR_RGB2BGR)
         _, buffer = cv2.imencode('.jpg', final_bgr, [cv2.IMWRITE_JPEG_QUALITY, 95])
