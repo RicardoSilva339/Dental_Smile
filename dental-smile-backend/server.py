@@ -302,8 +302,8 @@ def obter_dados_pagador(email, cpf_pagador, incluir_nome=True, email_override=No
 def construir_mascara_dentes(ai_rgb_np):
     h, w, _ = ai_rgb_np.shape
     y_grid, x_grid = np.mgrid[0:h, 0:w].astype(np.float32)
-    cy, cx = h * 0.515, w * 0.50
-    ry, rx = h * 0.125, w * 0.26
+    cy, cx = h * 0.505, w * 0.50
+    ry, rx = h * 0.115, w * 0.26
     dist_norm = np.sqrt(((y_grid - cy) / ry) ** 2 + ((x_grid - cx) / rx) ** 2)
     mouth_zone = np.clip(1.0 - np.maximum(0.0, (dist_norm - 0.60) / 0.40), 0.0, 1.0)
     mouth_zone = cv2.GaussianBlur(mouth_zone, (13, 13), 0)
@@ -311,7 +311,7 @@ def construir_mascara_dentes(ai_rgb_np):
     hsv_ai = cv2.cvtColor(ai_rgb_np.astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
     tooth_raw = (
         (hsv_ai[:, :, 2] > 148) &
-        (hsv_ai[:, :, 1] < 85) &
+        (hsv_ai[:, :, 1] < 78) &
         (mouth_zone > 0.28)
     ).astype(np.float32)
     tooth_mask = cv2.GaussianBlur(tooth_raw * mouth_zone, (5, 5), 0)
@@ -319,33 +319,37 @@ def construir_mascara_dentes(ai_rgb_np):
 
 def aplicar_calibracao_e_preservar_pele(orig_rgb_np, ai_rgb_np, selected_color):
     """
-    Aplica a calibracao BL1-BL4 escalonada com base nos logs reais (DS-199 a DS-202),
-    neutralizando o excesso creme/amarelado no BL1/BL2 sem perder a textura do esmalte
-    e preservando integralmente pele, labios e queixo.
+    Aplica a calibracao BL1-BL4 escalonada em cor e intensidade de mistura (alpha_ia)
+    com base nos logs reais (DS-203 a DS-205), preservando integralmente pele e labios.
     """
     ai_float = ai_rgb_np.astype(np.float32)
     orig_float = orig_rgb_np.astype(np.float32)
     tooth_mask = construir_mascara_dentes(ai_rgb_np)
 
     if selected_color == 'bl1':
-        # 100% - Dente 1 (0M1): branco limpo e frio, neutralizando o tom creme sem virar plastico
+        # 100% - Dente 1 (0M1): branco limpo e frio (aprovado nos logs DS-203/DS-204)
         r_gain, g_gain, b_gain = 1.020, 1.042, 1.075
         saturation, brightness = 0.85, 1.028
+        alpha_ia = 1.00
     elif selected_color == 'bl2':
         # ~95% - Dente 7 (2L1.5): branco nitido um degrau abaixo do BL1
-        r_gain, g_gain, b_gain = 1.018, 1.030, 1.050
-        saturation, brightness = 0.90, 1.016
+        r_gain, g_gain, b_gain = 1.018, 1.028, 1.045
+        saturation, brightness = 0.91, 1.014
+        alpha_ia = 0.86
     elif selected_color == 'bl3':
-        # ~90% - Dente 17 / 19: natural intermediario equilibrado (base aprovada no DS-202)
-        r_gain, g_gain, b_gain = 1.015, 1.005, 0.995
-        saturation, brightness = 0.97, 1.002
+        # ~90% - Dente 17 / 19: natural intermediario equilibrado
+        r_gain, g_gain, b_gain = 1.015, 1.002, 0.985
+        saturation, brightness = 0.99, 0.996
+        alpha_ia = 0.70
     elif selected_color == 'bl4':
-        # ~85% - Dente 27 / 29: marfim suave e discreto, contendo excesso de branco do AI_RAW
-        r_gain, g_gain, b_gain = 1.020, 0.992, 0.945
-        saturation, brightness = 1.06, 0.985
+        # ~85% - Dente 27 / 29: marfim suave e discreto, contendo o excesso de branco do AI_RAW
+        r_gain, g_gain, b_gain = 1.015, 0.985, 0.935
+        saturation, brightness = 1.08, 0.975
+        alpha_ia = 0.48
     else:
-        r_gain, g_gain, b_gain = 1.018, 1.030, 1.050
-        saturation, brightness = 0.90, 1.016
+        r_gain, g_gain, b_gain = 1.018, 1.028, 1.045
+        saturation, brightness = 0.91, 1.014
+        alpha_ia = 0.86
 
     calibrada = ai_float.copy()
     calibrada[:, :, 0] = np.clip(ai_float[:, :, 0] * (1.0 + (r_gain - 1.0) * tooth_mask), 0, 255)
@@ -357,7 +361,7 @@ def aplicar_calibracao_e_preservar_pele(orig_rgb_np, ai_rgb_np, selected_color):
     hsv_adj[:, :, 2] = np.clip(hsv_adj[:, :, 2] * (1.0 + (brightness - 1.0) * tooth_mask), 0, 255)
     calibrada = cv2.cvtColor(hsv_adj.astype(np.uint8), cv2.COLOR_HSV2RGB).astype(np.float32)
 
-    blend_mask = np.clip(tooth_mask * 1.0, 0.0, 1.0)
+    blend_mask = np.clip(tooth_mask * alpha_ia, 0.0, 1.0)
     blend_mask_3c = np.repeat(blend_mask[:, :, np.newaxis], 3, axis=2)
 
     resultado = calibrada * blend_mask_3c + orig_float * (1.0 - blend_mask_3c)
