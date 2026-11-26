@@ -320,7 +320,7 @@ def construir_mascara_dentes(ai_rgb_np):
 def aplicar_calibracao_e_preservar_pele(orig_rgb_np, ai_rgb_np, selected_color):
     """
     Aplica a calibracao BL1-BL4 fechada com base na escala VITA Bleachedguide (1 a 29):
-    - BL1: Dente 1 (0M1) - branco ultra intensificado e frio
+    - BL1: Dente 1 (0M1) - branco ultra equilibrado para nao estourar em luz externa/consultorio
     - BL2: Faixa 3 a 5 (0M3/1M1/1M2) - receita exata promovida do DS-212
     - BL3: Faixa 11 a 19 - creme claro natural aprovado no DS-214
     - BL4: Faixa 21 a 29 - marfim suave aprovado no DS-215
@@ -330,9 +330,9 @@ def aplicar_calibracao_e_preservar_pele(orig_rgb_np, ai_rgb_np, selected_color):
     tooth_mask = construir_mascara_dentes(ai_rgb_np)
 
     if selected_color == 'bl1':
-        # 100% - Dente 1 (0M1): branco ultra intensificado
-        r_gain, g_gain, b_gain = 1.045, 1.072, 1.115
-        saturation, brightness = 0.72, 1.068
+        # 100% - Dente 1 (0M1): branco ultra equilibrado sem estourar em luz forte/consultorio
+        r_gain, g_gain, b_gain = 1.032, 1.052, 1.085
+        saturation, brightness = 0.78, 1.042
         alpha_ia = 1.00
     elif selected_color == 'bl2':
         # ~95% - Faixa 3 a 5 (0M3 / 1M1 / 1M2): receita exata promovida do DS-212
