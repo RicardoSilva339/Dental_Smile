@@ -177,7 +177,7 @@ def init_db():
 
 init_db()
 
-print("Servidor iniciado com Virada de Ouro Flux 2 Pro (BL1-BL4) + Mercado Pago Pix e Cartao de Credito")
+print("Servidor iniciado com Virada de Ouro Flux 2 Pro (BL1-BL4 + Harmonizacao) + Mercado Pago")
 
 def enviar_email_codigo(destinatario, nome, codigo, assunto="Codigo de Verificacao - Dental Smile"):
     if not RESEND_API_KEY:
@@ -299,7 +299,7 @@ def obter_dados_pagador(email, cpf_pagador, incluir_nome=True, email_override=No
 
     return payer
 
-def construir_mascara_dentes(ai_rgb_np, max_pixels=9000):
+def construir_mascara_dentes(ai_rgb_np, max_pixels=9400):
     h, w, _ = ai_rgb_np.shape
     y_grid, x_grid = np.mgrid[0:h, 0:w].astype(np.float32)
     cy, cx = h * 0.505, w * 0.50
@@ -310,11 +310,15 @@ def construir_mascara_dentes(ai_rgb_np, max_pixels=9000):
 
     hsv_ai = cv2.cvtColor(ai_rgb_np.astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
     tooth_raw = (
-        (hsv_ai[:, :, 2] > 148) &
-        (hsv_ai[:, :, 1] < 78) &
+        (hsv_ai[:, :, 2] > 144) &
+        (hsv_ai[:, :, 1] < 82) &
         (mouth_zone > 0.28)
     ).astype(np.float32)
-    tooth_mask = cv2.GaussianBlur(tooth_raw * mouth_zone, (5, 5), 0)
+
+    # Fechamento morfologico horizontal leve para cobrir frestas de diastemas entre dentes vizinhos
+    close_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 5))
+    tooth_closed = cv2.morphologyEx(tooth_raw, cv2.MORPH_CLOSE, close_kernel)
+    tooth_mask = cv2.GaussianBlur(tooth_closed * mouth_zone, (5, 5), 0)
 
     # Contencao de area caso a mascara exceda o teto de pixels (evita vazamento em luz forte)
     ativos = int(np.sum(tooth_mask > 0.10))
@@ -328,12 +332,12 @@ def construir_mascara_dentes(ai_rgb_np, max_pixels=9000):
 
 def aplicar_calibracao_e_preservar_pele(orig_rgb_np, ai_rgb_np, selected_color):
     """
-    Aplica a calibracao BL1-BL4 com controle de brilho (V) e area da mascara
-    para manter estabilidade entre ambientes com luz mais forte ou mais suave.
+    Aplica a calibracao BL1-BL4 com controle de brilho (V), area da mascara
+    e preenchimento das frestas de diastema geradas pelo Flux 2 Pro.
     """
     ai_float = ai_rgb_np.astype(np.float32)
     orig_float = orig_rgb_np.astype(np.float32)
-    tooth_mask = construir_mascara_dentes(ai_rgb_np, max_pixels=9000)
+    tooth_mask = construir_mascara_dentes(ai_rgb_np, max_pixels=9400)
 
     if selected_color == 'bl1':
         r_gain, g_gain, b_gain = 1.032, 1.052, 1.085
@@ -348,12 +352,12 @@ def aplicar_calibracao_e_preservar_pele(orig_rgb_np, ai_rgb_np, selected_color):
     elif selected_color == 'bl3':
         r_gain, g_gain, b_gain = 1.024, 0.976, 0.875
         saturation, brightness = 1.18, 0.965
-        alpha_ia = 0.32
+        alpha_ia = 0.42
         teto_v = 185.0
     elif selected_color == 'bl4':
         r_gain, g_gain, b_gain = 1.024, 0.976, 0.875
         saturation, brightness = 1.18, 0.965
-        alpha_ia = 0.30
+        alpha_ia = 0.40
         teto_v = 186.0
     else:
         r_gain, g_gain, b_gain = 1.020, 1.042, 1.075
@@ -371,7 +375,14 @@ def aplicar_calibracao_e_preservar_pele(orig_rgb_np, ai_rgb_np, selected_color):
     hsv_adj[:, :, 2] = np.clip(hsv_adj[:, :, 2] * (1.0 + (brightness - 1.0) * tooth_mask), 0, 255)
     calibrada = cv2.cvtColor(hsv_adj.astype(np.uint8), cv2.COLOR_HSV2RGB).astype(np.float32)
 
-    blend_mask = np.clip(tooth_mask * alpha_ia, 0.0, 1.0)
+    # Nas regioes onde a foto original tinha diastema/sombra e a IA reconstruiu dente,
+    # garante peso maximo da IA para nao deixar a fresta escura vazar de volta
+    luma_orig = orig_float.mean(axis=2)
+    luma_ai = ai_float.mean(axis=2)
+    gap_preenchido = np.clip((luma_ai - luma_orig - 18.0) / 35.0, 0.0, 1.0) * tooth_mask
+
+    alpha_efetivo = np.maximum(tooth_mask * alpha_ia, gap_preenchido * 0.95)
+    blend_mask = np.clip(alpha_efetivo, 0.0, 1.0)
     blend_mask_3c = np.repeat(blend_mask[:, :, np.newaxis], 3, axis=2)
 
     resultado = calibrada * blend_mask_3c + orig_float * (1.0 - blend_mask_3c)
@@ -1199,7 +1210,8 @@ def process_smile():
         prompt_text = (
             "photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1> "
             "preserve original face, skin tone, nose, eyes and lips, "
-            "natural aligned white teeth, upper and lower teeth whitening, realistic enamel"
+            "aesthetic smile design, closed diastema, no gaps between teeth, "
+            "harmonious aligned white teeth, upper and lower veneers, natural realistic enamel"
         )
 
         payload = {
@@ -1267,7 +1279,7 @@ def process_smile():
         pred_id = poll_data.get("id")
         pred_status = poll_data.get("status")
         pred_metrics = poll_data.get("metrics", {})
-        mask_diag = construir_mascara_dentes(ai_np, max_pixels=9000)
+        mask_diag = construir_mascara_dentes(ai_np, max_pixels=9400)
         pixels_ativos = int(np.sum(mask_diag > 0.10))
 
         hsv_orig = cv2.cvtColor(orig_512_np, cv2.COLOR_RGB2HSV).astype(np.float32)
