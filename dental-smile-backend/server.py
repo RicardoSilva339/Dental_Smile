@@ -299,41 +299,49 @@ def obter_dados_pagador(email, cpf_pagador, incluir_nome=True, email_override=No
 
     return payer
 
-def construir_mascara_dentes(ai_rgb_np, max_pixels=10800):
+def construir_mascara_dentes(ai_rgb_np, max_pixels=11800):
     h, w, _ = ai_rgb_np.shape
     y_grid, x_grid = np.mgrid[0:h, 0:w].astype(np.float32)
-    cy, cx = h * 0.505, w * 0.50
-    # Largura lateral (rx=0.34) ampliada para cobrir pre-molares mesmo em fotos de galeria
-    ry, rx = h * 0.125, w * 0.34
+
+    # Centro e raios ajustados para cobrir margem cervical superior, pre-molares laterais e arcada inferior
+    cy, cx = h * 0.498, w * 0.50
+    ry, rx = h * 0.142, w * 0.34
     dist_norm = np.sqrt(((y_grid - cy) / ry) ** 2 + ((x_grid - cx) / rx) ** 2)
-    mouth_zone = np.clip(1.0 - np.maximum(0.0, (dist_norm - 0.65) / 0.35), 0.0, 1.0)
+    mouth_zone = np.clip(1.0 - np.maximum(0.0, (dist_norm - 0.68) / 0.32), 0.0, 1.0)
     mouth_zone = cv2.GaussianBlur(mouth_zone, (13, 13), 0)
 
     hsv_ai = cv2.cvtColor(ai_rgb_np.astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
 
-    # Limiar adaptativo ao brilho medio da boca para nao cortar pre-molares sombreados em fotos de galeria
-    y1, y2 = int(h * 0.44), int(h * 0.60)
+    # Limiar adaptativo ao brilho medio da boca para cobrir bordas escuras/laterais sem pegar pele
+    y1, y2 = int(h * 0.43), int(h * 0.61)
     x1, x2 = int(w * 0.25), int(w * 0.75)
     v_boca_ref = float(hsv_ai[y1:y2, x1:x2, 2].mean())
-    v_min = 118.0 if v_boca_ref < 172.0 else 142.0
-    s_max = 105.0 if v_boca_ref < 172.0 else 84.0
+    v_min = 114.0 if v_boca_ref < 172.0 else 138.0
+    s_max = 118.0 if v_boca_ref < 172.0 else 92.0
+
+    # Evita selecionar labios fortemente avermelhados (H em 0..14 ou 165..180 com saturação alta)
+    hue = hsv_ai[:, :, 0]
+    sat = hsv_ai[:, :, 1]
+    val = hsv_ai[:, :, 2]
+    nao_labio = ~(((hue < 14.0) | (hue > 165.0)) & (sat > 115.0))
 
     tooth_raw = (
-        (hsv_ai[:, :, 2] > v_min) &
-        (hsv_ai[:, :, 1] < s_max) &
-        (mouth_zone > 0.22)
+        (val > v_min) &
+        (sat < s_max) &
+        nao_labio &
+        (mouth_zone > 0.20)
     ).astype(np.float32)
 
-    # Fechamento morfologico horizontal leve para cobrir frestas de diastemas entre dentes vizinhos
-    close_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 5))
+    # Fechamento morfologico para conectar microdiastemas, bordas cervicais e dentes inferiores
+    close_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 6))
     tooth_closed = cv2.morphologyEx(tooth_raw, cv2.MORPH_CLOSE, close_kernel)
     tooth_mask = cv2.GaussianBlur(tooth_closed * mouth_zone, (5, 5), 0)
 
-    # Contencao de area caso a mascara exceda o teto de pixels (evita vazamento em luz forte)
+    # Contencao de area caso a mascara exceda o teto de pixels
     ativos = int(np.sum(tooth_mask > 0.10))
     if ativos > max_pixels:
         kernel = np.ones((3, 3), np.uint8)
-        iteracoes = min(3, max(1, (ativos - max_pixels) // 1300 + 1))
+        iteracoes = min(3, max(1, (ativos - max_pixels) // 1400 + 1))
         eroded = cv2.erode(tooth_mask, kernel, iterations=iteracoes)
         tooth_mask = cv2.GaussianBlur(eroded, (5, 5), 0)
 
@@ -341,12 +349,12 @@ def construir_mascara_dentes(ai_rgb_np, max_pixels=10800):
 
 def aplicar_calibracao_e_preservar_pele(orig_rgb_np, ai_rgb_np, selected_color):
     """
-    Aplica a calibracao BL1-BL4 com controle de brilho (V), area da mascara
-    e preenchimento das frestas de diastema geradas pelo Flux 2 Pro.
+    Aplica a calibracao BL1-BL4 com controle de brilho (V), area da mascara,
+    preservacao dos labios/pele e preenchimento de diastemas/arcada inferior.
     """
     ai_float = ai_rgb_np.astype(np.float32)
     orig_float = orig_rgb_np.astype(np.float32)
-    tooth_mask = construir_mascara_dentes(ai_rgb_np, max_pixels=10800)
+    tooth_mask = construir_mascara_dentes(ai_rgb_np, max_pixels=11800)
 
     if selected_color == 'bl1':
         r_gain, g_gain, b_gain = 1.032, 1.052, 1.085
@@ -384,13 +392,18 @@ def aplicar_calibracao_e_preservar_pele(orig_rgb_np, ai_rgb_np, selected_color):
     hsv_adj[:, :, 2] = np.clip(hsv_adj[:, :, 2] * (1.0 + (brightness - 1.0) * tooth_mask), 0, 255)
     calibrada = cv2.cvtColor(hsv_adj.astype(np.uint8), cv2.COLOR_HSV2RGB).astype(np.float32)
 
-    # Nas regioes onde a foto original tinha diastema/sombra e a IA reconstruiu dente,
-    # garante peso maximo da IA para nao deixar a fresta escura vazar de volta
+    # Nas regioes onde a foto original tinha diastema/sombra/falha e a IA reconstruiu dente,
+    # garante peso da IA restrito a dente real (nao labial) para nao manchar o labio inferior
+    hsv_ai_check = cv2.cvtColor(ai_rgb_np.astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
+    hue_ai = hsv_ai_check[:, :, 0]
+    sat_ai = hsv_ai_check[:, :, 1]
+    dente_ai_valido = (~(((hue_ai < 14.0) | (hue_ai > 165.0)) & (sat_ai > 110.0))).astype(np.float32)
+
     luma_orig = orig_float.mean(axis=2)
     luma_ai = ai_float.mean(axis=2)
-    gap_preenchido = np.clip((luma_ai - luma_orig - 18.0) / 35.0, 0.0, 1.0) * tooth_mask
+    gap_preenchido = np.clip((luma_ai - luma_orig - 24.0) / 38.0, 0.0, 1.0) * tooth_mask * dente_ai_valido
 
-    alpha_efetivo = np.maximum(tooth_mask * alpha_ia, gap_preenchido * 0.95)
+    alpha_efetivo = np.maximum(tooth_mask * alpha_ia, gap_preenchido * 0.90)
     blend_mask = np.clip(alpha_efetivo, 0.0, 1.0)
     blend_mask_3c = np.repeat(blend_mask[:, :, np.newaxis], 3, axis=2)
 
@@ -1219,8 +1232,10 @@ def process_smile():
         prompt_text = (
             "photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1> "
             "preserve original face, skin tone, nose, eyes and lips, "
-            "aesthetic smile design, closed diastema, no gaps between teeth, "
-            "harmonious aligned white teeth, upper and lower veneers, natural realistic enamel"
+            "aesthetic smile design, closed diastema and micro gaps, "
+            "smooth even incisal edges and crown proportions, "
+            "harmonious aligned white teeth, complete upper and lower teeth, "
+            "high sharpness, natural realistic enamel and porcelain sheen"
         )
 
         payload = {
@@ -1288,7 +1303,7 @@ def process_smile():
         pred_id = poll_data.get("id")
         pred_status = poll_data.get("status")
         pred_metrics = poll_data.get("metrics", {})
-        mask_diag = construir_mascara_dentes(ai_np, max_pixels=10800)
+        mask_diag = construir_mascara_dentes(ai_np, max_pixels=11800)
         pixels_ativos = int(np.sum(mask_diag > 0.10))
 
         hsv_orig = cv2.cvtColor(orig_512_np, cv2.COLOR_RGB2HSV).astype(np.float32)
