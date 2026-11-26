@@ -299,7 +299,7 @@ def obter_dados_pagador(email, cpf_pagador, incluir_nome=True, email_override=No
 
     return payer
 
-def construir_mascara_dentes(ai_rgb_np):
+def construir_mascara_dentes(ai_rgb_np, max_pixels=9000):
     h, w, _ = ai_rgb_np.shape
     y_grid, x_grid = np.mgrid[0:h, 0:w].astype(np.float32)
     cy, cx = h * 0.505, w * 0.50
@@ -315,44 +315,51 @@ def construir_mascara_dentes(ai_rgb_np):
         (mouth_zone > 0.28)
     ).astype(np.float32)
     tooth_mask = cv2.GaussianBlur(tooth_raw * mouth_zone, (5, 5), 0)
+
+    # Contencao de area caso a mascara exceda o teto de pixels (evita vazamento em luz forte)
+    ativos = int(np.sum(tooth_mask > 0.10))
+    if ativos > max_pixels:
+        kernel = np.ones((3, 3), np.uint8)
+        iteracoes = min(3, max(1, (ativos - max_pixels) // 1200 + 1))
+        eroded = cv2.erode(tooth_mask, kernel, iterations=iteracoes)
+        tooth_mask = cv2.GaussianBlur(eroded, (5, 5), 0)
+
     return tooth_mask
 
 def aplicar_calibracao_e_preservar_pele(orig_rgb_np, ai_rgb_np, selected_color):
     """
-    Aplica a calibracao BL1-BL4 fechada com base na escala VITA Bleachedguide (1 a 29):
-    - BL1: Dente 1 (0M1) - branco ultra equilibrado para nao estourar em luz externa/consultorio
-    - BL2: Faixa 3 a 5 (0M3/1M1/1M2) - receita exata promovida do DS-212
-    - BL3: Faixa 11 a 19 - creme claro natural aprovado no DS-214
-    - BL4: Faixa 21 a 29 - marfim suave aprovado no DS-215
+    Aplica a calibracao BL1-BL4 com controle de brilho (V) e area da mascara
+    para manter estabilidade entre ambientes com luz mais forte ou mais suave.
     """
     ai_float = ai_rgb_np.astype(np.float32)
     orig_float = orig_rgb_np.astype(np.float32)
-    tooth_mask = construir_mascara_dentes(ai_rgb_np)
+    tooth_mask = construir_mascara_dentes(ai_rgb_np, max_pixels=9000)
 
     if selected_color == 'bl1':
-        # 100% - Dente 1 (0M1): branco ultra equilibrado sem estourar em luz forte/consultorio
         r_gain, g_gain, b_gain = 1.032, 1.052, 1.085
         saturation, brightness = 0.78, 1.042
         alpha_ia = 1.00
+        teto_v = 186.0
     elif selected_color == 'bl2':
-        # ~95% - Faixa 3 a 5 (0M3 / 1M1 / 1M2): receita exata promovida do DS-212
         r_gain, g_gain, b_gain = 1.020, 1.042, 1.075
         saturation, brightness = 0.85, 1.028
         alpha_ia = 1.00
+        teto_v = 190.0
     elif selected_color == 'bl3':
-        # ~90% - Faixa 11 a 19: creme claro natural exato do DS-214
         r_gain, g_gain, b_gain = 1.024, 0.976, 0.875
         saturation, brightness = 1.18, 0.965
         alpha_ia = 0.32
+        teto_v = 185.0
     elif selected_color == 'bl4':
-        # ~85% - Faixa 21 a 29: base de uniformizacao antes do marfim suave aprovado no DS-215
         r_gain, g_gain, b_gain = 1.024, 0.976, 0.875
         saturation, brightness = 1.18, 0.965
         alpha_ia = 0.30
+        teto_v = 186.0
     else:
         r_gain, g_gain, b_gain = 1.020, 1.042, 1.075
         saturation, brightness = 0.85, 1.028
         alpha_ia = 1.00
+        teto_v = 190.0
 
     calibrada = ai_float.copy()
     calibrada[:, :, 0] = np.clip(ai_float[:, :, 0] * (1.0 + (r_gain - 1.0) * tooth_mask), 0, 255)
@@ -370,7 +377,6 @@ def aplicar_calibracao_e_preservar_pele(orig_rgb_np, ai_rgb_np, selected_color):
     resultado = calibrada * blend_mask_3c + orig_float * (1.0 - blend_mask_3c)
 
     if selected_color == 'bl4':
-        # Marfim creme suave pos-mistura aprovado no DS-215 (faixa 21-29)
         resultado[:, :, 0] = np.clip(resultado[:, :, 0] * (1.0 + 0.008 * tooth_mask), 0, 255)
         resultado[:, :, 1] = np.clip(resultado[:, :, 1] * (1.0 - 0.004 * tooth_mask), 0, 255)
         resultado[:, :, 2] = np.clip(resultado[:, :, 2] * (1.0 - 0.062 * tooth_mask), 0, 255)
@@ -379,6 +385,17 @@ def aplicar_calibracao_e_preservar_pele(orig_rgb_np, ai_rgb_np, selected_color):
         hsv_bl4[:, :, 1] = np.clip(hsv_bl4[:, :, 1] * (1.0 + 0.055 * tooth_mask), 0, 255)
         hsv_bl4[:, :, 2] = np.clip(hsv_bl4[:, :, 2] * (1.0 - 0.012 * tooth_mask), 0, 255)
         resultado = cv2.cvtColor(hsv_bl4.astype(np.uint8), cv2.COLOR_HSV2RGB).astype(np.float32)
+
+    # Contencao suave de brilho (V) na regiao da boca quando a iluminacao vier elevada
+    h_m, w_m, _ = resultado.shape
+    y1, y2 = int(h_m * 0.44), int(h_m * 0.60)
+    x1, x2 = int(w_m * 0.30), int(w_m * 0.70)
+    hsv_res = cv2.cvtColor(np.clip(resultado, 0, 255).astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
+    v_boca_atual = float(hsv_res[y1:y2, x1:x2, 2].mean())
+    if v_boca_atual > teto_v and v_boca_atual > 0:
+        fator_v = min(1.0, (teto_v / v_boca_atual) ** 0.65)
+        hsv_res[:, :, 2] = np.clip(hsv_res[:, :, 2] * (1.0 - (1.0 - fator_v) * tooth_mask), 0, 255)
+        resultado = cv2.cvtColor(hsv_res.astype(np.uint8), cv2.COLOR_HSV2RGB).astype(np.float32)
 
     return np.clip(resultado, 0, 255).astype(np.uint8)
 
@@ -1179,7 +1196,6 @@ def process_smile():
 
         print("[REPLICATE REST] Disparando Official Model Black Forest Labs Flux 2 Pro...")
 
-        # Prompt afirmativo enxuto (dentro dos 77 tokens) para preservar rosto/pele e clarear ambas as arcadas
         prompt_text = (
             "photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1> "
             "preserve original face, skin tone, nose, eyes and lips, "
@@ -1251,7 +1267,7 @@ def process_smile():
         pred_id = poll_data.get("id")
         pred_status = poll_data.get("status")
         pred_metrics = poll_data.get("metrics", {})
-        mask_diag = construir_mascara_dentes(ai_np)
+        mask_diag = construir_mascara_dentes(ai_np, max_pixels=9000)
         pixels_ativos = int(np.sum(mask_diag > 0.10))
 
         hsv_orig = cv2.cvtColor(orig_512_np, cv2.COLOR_RGB2HSV).astype(np.float32)
