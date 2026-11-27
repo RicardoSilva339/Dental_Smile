@@ -322,26 +322,22 @@ def gerar_mascara_inpainting_boca(rgb_np):
     v_min = 112 if v_ref < 170.0 else 135
     s_max = 115 if v_ref < 170.0 else 95
 
-    # Detecta dentes atuais dentro da regiao central da boca
     dentes_bin = (
         (hsv[:, :, 2] >= v_min) &
         (hsv[:, :, 1] <= s_max) &
         (mouth_roi > 0)
     ).astype(np.uint8) * 255
 
-    # Fecha pequenos diastemas entre dentes vizinhos sem invadir o espaco escuro entre arcadas
     kx = max(5, int(round(13 * escala)) | 1)
     ky = max(3, int(round(5 * escala)) | 1)
     kernel_diastema = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kx, ky))
     dentes_fechados = cv2.morphologyEx(dentes_bin, cv2.MORPH_CLOSE, kernel_diastema)
 
-    # Leve dilatacao nas bordas dos dentes para o Flux Fill Pro alinhar contorno
     kd = max(3, int(round(5 * escala)) | 1)
     kernel_borda = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kd, kd))
     mask_inpaint = cv2.dilate(dentes_fechados, kernel_borda, iterations=1)
     mask_inpaint = cv2.bitwise_and(mask_inpaint, mouth_roi * 255)
 
-    # Fallback seguro se poucos pixels forem detectados
     if int(np.sum(mask_inpaint > 0)) < int(1800 * (escala ** 2)):
         fallback_mask = np.zeros((h, w), dtype=np.uint8)
         cv2.ellipse(
@@ -363,16 +359,13 @@ def aplicar_tonalidade_vita_lab(orig_rgb_np, ai_rgb_np, mask_inpaint_u8, selecte
     h, w, _ = orig_rgb_np.shape
     escala = max(1.0, min(h, w) / 512.0)
 
-    # Suaviza a transicao da mascara para integracao invisivel com labios e gengiva
     blur_k = max(5, int(round(7 * escala)) | 1)
     mask_soft = cv2.GaussianBlur(mask_inpaint_u8.astype(np.float32) / 255.0, (blur_k, blur_k), 0)
 
-    # Refina dentro da mascara para atuar principalmente sobre a superficie dental (evita clarear fundo escuro)
     hsv_ai = cv2.cvtColor(ai_rgb_np, cv2.COLOR_RGB2HSV).astype(np.float32)
     fator_esmalte = np.clip((hsv_ai[:, :, 2] - 95.0) / 70.0, 0.0, 1.0)
     tooth_weight = mask_soft * fator_esmalte
 
-    # Ajuste em LAB: L = luminancia, b = eixo azul(-) <-> amarelo(+)
     lab = cv2.cvtColor(ai_rgb_np, cv2.COLOR_RGB2LAB).astype(np.float32)
 
     if selected_color == 'bl1':
@@ -1187,7 +1180,6 @@ def process_smile():
         b64_clean = base64.b64encode(buffered_orig.getvalue()).decode('utf-8')
         original_processed_b64 = b64_clean
 
-        # Gera a mascara binaria apenas nos dentes/diastemas para Inpainting
         mask_inpaint_u8 = gerar_mascara_inpainting_boca(orig_proc_np)
         mask_pil = Image.fromarray(mask_inpaint_u8, mode="L")
         buffered_mask = io.BytesIO()
@@ -1241,7 +1233,7 @@ def process_smile():
                 "steps": 32,
                 "guidance": 30,
                 "seed": 9283,
-                "output_format": "webp",
+                "output_format": "png",
                 "safety_tolerance": 2
             }
         }
