@@ -177,7 +177,7 @@ def init_db():
 
 init_db()
 
-print("Servidor iniciado com Flux Fill Pro Inpainting 1008x1008 (Cor Uniforme Cervical-Incisal + Tamanho Calibrado) + Mercado Pago")
+print("Servidor iniciado com Flux Fill Pro Inpainting 1008x1008 (BL3 Puro IA + BL1-BL4 Calibrado) + Mercado Pago")
 
 def enviar_email_codigo(destinatario, nome, codigo, assunto="Codigo de Verificacao - Dental Smile"):
     if not RESEND_API_KEY:
@@ -332,7 +332,6 @@ def gerar_mascara_inpainting_boca(rgb_np):
     kernel_diastema = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kx, ky))
     dentes_fechados = cv2.morphologyEx(dentes_bin, cv2.MORPH_CLOSE, kernel_diastema)
 
-    # Recua 1mm na altura (de 10 para 7) mantendo o ganho de largura e fechamento
     kd_w = max(5, int(round(7 * escala)) | 1)
     kd_h = max(5, int(round(7 * escala)) | 1)
     kernel_aumento = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kd_w, kd_h))
@@ -354,9 +353,12 @@ def gerar_mascara_inpainting_boca(rgb_np):
 
 def aplicar_tonalidade_vita_lab(orig_rgb_np, ai_rgb_np, mask_inpaint_u8, selected_color):
     """
-    Aplica a tonalidade BL1-BL4 de forma continua da cervical (topo dos dentes)
-    ate a borda incisal, eliminando a divisao amarelo/branco no terco superior.
+    Para BL3, deixa a IA trabalhar sozinha (retorna ai_rgb_np diretamente).
+    Para BL1, BL2 e BL4, aplica a calibracao uniforme da cervical ate a borda incisal.
     """
+    if selected_color == 'bl3':
+        return np.clip(ai_rgb_np, 0, 255).astype(np.uint8)
+
     h, w, _ = orig_rgb_np.shape
     escala = max(1.0, min(h, w) / 512.0)
 
@@ -367,7 +369,6 @@ def aplicar_tonalidade_vita_lab(orig_rgb_np, ai_rgb_np, mask_inpaint_u8, selecte
 
     hsv_ai = cv2.cvtColor(ai_rgb_np, cv2.COLOR_RGB2HSV).astype(np.float32)
 
-    # Cobre toda a coroa da IA (incluindo terco cervical com leve sombra)
     dente_ai = (
         zona_dentes &
         (hsv_ai[:, :, 2] >= 118.0) &
@@ -386,7 +387,6 @@ def aplicar_tonalidade_vita_lab(orig_rgb_np, ai_rgb_np, mask_inpaint_u8, selecte
 
     dente_peso = cv2.GaussianBlur(dente_mask_u8.astype(np.float32) / 255.0, (5, 5), 0)
 
-    # Permite clarear o terco cervical amarelado sem invadir labios/gengiva mais saturados
     nao_saturado = np.clip(1.0 - np.maximum(0.0, (hsv_ai[:, :, 1] - 102.0) / 45.0), 0.0, 1.0)
     dente_peso = np.clip(dente_peso * nao_saturado, 0.0, 1.0)
 
@@ -400,10 +400,6 @@ def aplicar_tonalidade_vita_lab(orig_rgb_np, ai_rgb_np, mask_inpaint_u8, selecte
         delta_l = 13.0
         delta_b = -10.5
         contraste_l = 1.03
-    elif selected_color == 'bl3':
-        delta_l = 5.0
-        delta_b = -4.0
-        contraste_l = 1.00
     elif selected_color == 'bl4':
         delta_l = 0.0
         delta_b = 0.0
