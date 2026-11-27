@@ -177,7 +177,7 @@ def init_db():
 
 init_db()
 
-print("Servidor iniciado com Flux Fill Pro Inpainting 1008x1008 (BL1-BL4 LAB) + Mercado Pago")
+print("Servidor iniciado com Flux Fill Pro Inpainting 1008x1008 (Dentes Ampliados + BL1-BL4 LAB) + Mercado Pago")
 
 def enviar_email_codigo(destinatario, nome, codigo, assunto="Codigo de Verificacao - Dental Smile"):
     if not RESEND_API_KEY:
@@ -301,26 +301,25 @@ def obter_dados_pagador(email, cpf_pagador, incluir_nome=True, email_override=No
 
 def gerar_mascara_inpainting_boca(rgb_np):
     """
-    Gera a mascara binaria (uint8 0 ou 255) cobrindo apenas os dentes e os
-    pequenos espacos/diastemas internos para o Flux Fill Pro reconstruir
-    sem tocar nos labios, gengiva externa, pele ou fundo da cavidade bucal.
+    Gera a mascara binaria (uint8 0 ou 255) focada na arcada dentaria para
+    permitir dentes bem proporcionados e sem vazamento para o labio inferior ou queixo.
     """
     h, w, _ = rgb_np.shape
     escala = max(1.0, min(h, w) / 512.0)
 
     y_grid, x_grid = np.mgrid[0:h, 0:w].astype(np.float32)
-    cy, cx = h * 0.505, w * 0.50
-    ry, rx = h * 0.115, w * 0.31
+    cy, cx = h * 0.502, w * 0.50
+    ry, rx = h * 0.095, w * 0.30
     dist_norm = np.sqrt(((y_grid - cy) / ry) ** 2 + ((x_grid - cx) / rx) ** 2)
     mouth_roi = (dist_norm <= 1.0).astype(np.uint8)
 
     hsv = cv2.cvtColor(rgb_np, cv2.COLOR_RGB2HSV)
-    y1, y2 = int(h * 0.44), int(h * 0.58)
+    y1, y2 = int(h * 0.44), int(h * 0.57)
     x1, x2 = int(w * 0.28), int(w * 0.72)
     v_ref = float(hsv[y1:y2, x1:x2, 2].mean())
 
-    v_min = 112 if v_ref < 170.0 else 135
-    s_max = 115 if v_ref < 170.0 else 95
+    v_min = 115 if v_ref < 170.0 else 138
+    s_max = 110 if v_ref < 170.0 else 92
 
     dentes_bin = (
         (hsv[:, :, 2] >= v_min) &
@@ -328,12 +327,13 @@ def gerar_mascara_inpainting_boca(rgb_np):
         (mouth_roi > 0)
     ).astype(np.uint8) * 255
 
-    kx = max(5, int(round(13 * escala)) | 1)
-    ky = max(3, int(round(5 * escala)) | 1)
+    # Fecha diastemas e expande levemente na vertical para permitir dentes maiores e mais presentes
+    kx = max(5, int(round(15 * escala)) | 1)
+    ky = max(5, int(round(9 * escala)) | 1)
     kernel_diastema = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kx, ky))
     dentes_fechados = cv2.morphologyEx(dentes_bin, cv2.MORPH_CLOSE, kernel_diastema)
 
-    kd = max(3, int(round(5 * escala)) | 1)
+    kd = max(5, int(round(7 * escala)) | 1)
     kernel_borda = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kd, kd))
     mask_inpaint = cv2.dilate(dentes_fechados, kernel_borda, iterations=1)
     mask_inpaint = cv2.bitwise_and(mask_inpaint, mouth_roi * 255)
@@ -342,8 +342,8 @@ def gerar_mascara_inpainting_boca(rgb_np):
         fallback_mask = np.zeros((h, w), dtype=np.uint8)
         cv2.ellipse(
             fallback_mask,
-            (int(w * 0.50), int(h * 0.505)),
-            (int(w * 0.22), int(h * 0.065)),
+            (int(w * 0.50), int(h * 0.502)),
+            (int(w * 0.22), int(h * 0.068)),
             0, 0, 360, 255, -1
         )
         mask_inpaint = fallback_mask
@@ -352,42 +352,58 @@ def gerar_mascara_inpainting_boca(rgb_np):
 
 def aplicar_tonalidade_vita_lab(orig_rgb_np, ai_rgb_np, mask_inpaint_u8, selected_color):
     """
-    Preserva 100% da saida natural do Flux Fill Pro fora da mascara e aplica
-    apenas ajuste controlado no espaco LAB dentro dos dentes para diferenciar
-    BL1, BL2, BL3 e BL4 sem estourar o branco nem apagar sulcos interdentais.
+    Aplica o ajuste da escala BL1-BL4 estritamente dentro da regiao dos dentes
+    gerados pela IA, mantendo os labios inferiores, queixo e pele 100% livres de
+    clareamento ou efeito esbranquicado.
     """
     h, w, _ = orig_rgb_np.shape
     escala = max(1.0, min(h, w) / 512.0)
 
-    blur_k = max(5, int(round(7 * escala)) | 1)
-    mask_soft = cv2.GaussianBlur(mask_inpaint_u8.astype(np.float32) / 255.0, (blur_k, blur_k), 0)
+    # Mascara restrita aos dentes claros/brancos dentro da zona bucal (nunca pega pele do queixo/labio)
+    y_grid, x_grid = np.mgrid[0:h, 0:w].astype(np.float32)
+    cy, cx = h * 0.502, w * 0.50
+    ry, rx = h * 0.082, w * 0.28
+    zona_dente_elipse = (((y_grid - cy) / ry) ** 2 + ((x_grid - cx) / rx) ** 2) <= 1.0
 
     hsv_ai = cv2.cvtColor(ai_rgb_np, cv2.COLOR_RGB2HSV).astype(np.float32)
-    fator_esmalte = np.clip((hsv_ai[:, :, 2] - 95.0) / 70.0, 0.0, 1.0)
-    tooth_weight = mask_soft * fator_esmalte
+    # Dentes tem luminancia alta e saturacao moderada/baixa no HSV
+    e_dente_ai = (
+        zona_dente_elipse &
+        (hsv_ai[:, :, 2] >= 125.0) &
+        (hsv_ai[:, :, 1] <= 125.0)
+    ).astype(np.float32)
+
+    mask_base = np.maximum(mask_inpaint_u8.astype(np.float32) / 255.0, e_dente_ai)
+    mask_base = mask_base * zona_dente_elipse.astype(np.float32)
+
+    blur_k = max(5, int(round(5 * escala)) | 1)
+    mask_soft = cv2.GaussianBlur(mask_base, (blur_k, blur_k), 0)
+
+    fator_esmalte = np.clip((hsv_ai[:, :, 2] - 115.0) / 55.0, 0.0, 1.0)
+    tooth_weight = np.clip(mask_soft * fator_esmalte, 0.0, 1.0)
 
     lab = cv2.cvtColor(ai_rgb_np, cv2.COLOR_RGB2LAB).astype(np.float32)
 
     if selected_color == 'bl1':
-        delta_l = 12.0
-        delta_b = -7.5
-        contraste_l = 1.04
+        delta_l = 16.0
+        delta_b = -10.0
+        contraste_l = 1.05
     elif selected_color == 'bl2':
-        delta_l = 7.5
-        delta_b = -5.0
-        contraste_l = 1.02
+        delta_l = 10.0
+        delta_b = -6.5
+        contraste_l = 1.03
     elif selected_color == 'bl3':
-        delta_l = 2.0
-        delta_b = -1.5
+        delta_l = 3.0
+        delta_b = -2.0
         contraste_l = 1.00
     elif selected_color == 'bl4':
         delta_l = 0.0
         delta_b = 0.0
         contraste_l = 1.00
     else:
-        delta_l = 7.5
-        delta_b = -5.0
-        contraste_l = 1.02
+        delta_l = 10.0
+        delta_b = -6.5
+        contraste_l = 1.03
 
     l_chan = lab[:, :, 0]
     b_chan = lab[:, :, 2]
@@ -401,6 +417,7 @@ def aplicar_tonalidade_vita_lab(orig_rgb_np, ai_rgb_np, mask_inpaint_u8, selecte
     ai_tonalizada = cv2.cvtColor(lab.astype(np.uint8), cv2.COLOR_LAB2RGB).astype(np.float32)
     orig_float = orig_rgb_np.astype(np.float32)
 
+    # Usa a saida da IA apenas onde ha dente/dentição reconstruida, preservando pele e labios originais
     blend_3c = np.repeat(mask_soft[:, :, np.newaxis], 3, axis=2)
     resultado = ai_tonalizada * blend_3c + orig_float * (1.0 - blend_3c)
     return np.clip(resultado, 0, 255).astype(np.uint8)
@@ -1219,10 +1236,10 @@ def process_smile():
         print("[REPLICATE REST] Disparando Official Model Black Forest Labs Flux Fill Pro...")
 
         prompt_text = (
-            "photorealistic porcelain veneers, natural enamel translucency at incisal edge, "
+            "photorealistic porcelain veneers, slightly fuller well-proportioned teeth, "
+            "aligned bright white teeth, natural enamel translucency at incisal edge, "
             "subtle vertical micro-texture, natural dark interdental embrasures, "
-            "realistic wet saliva reflection, aligned healthy natural teeth, no teeth gap, "
-            "matching original mouth lighting"
+            "realistic wet saliva reflection, no teeth gap, matching original mouth lighting"
         )
 
         payload = {
