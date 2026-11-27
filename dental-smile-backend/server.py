@@ -177,7 +177,7 @@ def init_db():
 
 init_db()
 
-print("Servidor iniciado com Flux 2 Pro Playground 1008x1008 (BL1-BL4 Calibrado) + Mercado Pago")
+print("Servidor iniciado com Flux Fill Pro Inpainting 1008x1008 (BL1-BL4 LAB) + Mercado Pago")
 
 def enviar_email_codigo(destinatario, nome, codigo, assunto="Codigo de Verificacao - Dental Smile"):
     if not RESEND_API_KEY:
@@ -299,117 +299,117 @@ def obter_dados_pagador(email, cpf_pagador, incluir_nome=True, email_override=No
 
     return payer
 
-def construir_mascara_dentes(ai_rgb_np, max_pixels=32000):
-    h, w, _ = ai_rgb_np.shape
+def gerar_mascara_inpainting_boca(rgb_np):
+    """
+    Gera a mascara binaria (uint8 0 ou 255) cobrindo apenas os dentes e os
+    pequenos espacos/diastemas internos para o Flux Fill Pro reconstruir
+    sem tocar nos labios, gengiva externa, pele ou fundo da cavidade bucal.
+    """
+    h, w, _ = rgb_np.shape
     escala = max(1.0, min(h, w) / 512.0)
 
     y_grid, x_grid = np.mgrid[0:h, 0:w].astype(np.float32)
     cy, cx = h * 0.505, w * 0.50
-    ry, rx = h * 0.125, w * 0.34
+    ry, rx = h * 0.115, w * 0.31
     dist_norm = np.sqrt(((y_grid - cy) / ry) ** 2 + ((x_grid - cx) / rx) ** 2)
-    mouth_zone = np.clip(1.0 - np.maximum(0.0, (dist_norm - 0.65) / 0.35), 0.0, 1.0)
+    mouth_roi = (dist_norm <= 1.0).astype(np.uint8)
 
-    blur_mouth = int(round(11 * escala)) | 1
-    mouth_zone = cv2.GaussianBlur(mouth_zone, (blur_mouth, blur_mouth), 0)
+    hsv = cv2.cvtColor(rgb_np, cv2.COLOR_RGB2HSV)
+    y1, y2 = int(h * 0.44), int(h * 0.58)
+    x1, x2 = int(w * 0.28), int(w * 0.72)
+    v_ref = float(hsv[y1:y2, x1:x2, 2].mean())
 
-    hsv_ai = cv2.cvtColor(ai_rgb_np.astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
+    v_min = 112 if v_ref < 170.0 else 135
+    s_max = 115 if v_ref < 170.0 else 95
 
-    y1, y2 = int(h * 0.44), int(h * 0.60)
-    x1, x2 = int(w * 0.25), int(w * 0.75)
-    v_boca_ref = float(hsv_ai[y1:y2, x1:x2, 2].mean())
-    v_min = 124.0 if v_boca_ref < 172.0 else 144.0
-    s_max = 98.0 if v_boca_ref < 172.0 else 82.0
+    # Detecta dentes atuais dentro da regiao central da boca
+    dentes_bin = (
+        (hsv[:, :, 2] >= v_min) &
+        (hsv[:, :, 1] <= s_max) &
+        (mouth_roi > 0)
+    ).astype(np.uint8) * 255
 
-    tooth_raw = (
-        (hsv_ai[:, :, 2] > v_min) &
-        (hsv_ai[:, :, 1] < s_max) &
-        (mouth_zone > 0.20)
-    ).astype(np.float32)
-
-    kx = max(3, int(round(7 * escala)) | 1)
+    # Fecha pequenos diastemas entre dentes vizinhos sem invadir o espaco escuro entre arcadas
+    kx = max(5, int(round(13 * escala)) | 1)
     ky = max(3, int(round(5 * escala)) | 1)
-    close_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kx, ky))
-    tooth_closed = cv2.morphologyEx(tooth_raw, cv2.MORPH_CLOSE, close_kernel)
+    kernel_diastema = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kx, ky))
+    dentes_fechados = cv2.morphologyEx(dentes_bin, cv2.MORPH_CLOSE, kernel_diastema)
 
-    blur_mask = int(round(5 * escala)) | 1
-    tooth_mask = cv2.GaussianBlur(tooth_closed * mouth_zone, (blur_mask, blur_mask), 0)
+    # Leve dilatacao nas bordas dos dentes para o Flux Fill Pro alinhar contorno
+    kd = max(3, int(round(5 * escala)) | 1)
+    kernel_borda = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kd, kd))
+    mask_inpaint = cv2.dilate(dentes_fechados, kernel_borda, iterations=1)
+    mask_inpaint = cv2.bitwise_and(mask_inpaint, mouth_roi * 255)
 
-    ativos = int(np.sum(tooth_mask > 0.10))
-    if ativos > max_pixels:
-        k_erode = max(3, int(round(3 * escala)) | 1)
-        kernel = np.ones((k_erode, k_erode), np.uint8)
-        passo = max(1300, int(round(1300 * (escala ** 2))))
-        iteracoes = min(3, max(1, (ativos - max_pixels) // passo + 1))
-        eroded = cv2.erode(tooth_mask, kernel, iterations=iteracoes)
-        tooth_mask = cv2.GaussianBlur(eroded, (blur_mask, blur_mask), 0)
+    # Fallback seguro se poucos pixels forem detectados
+    if int(np.sum(mask_inpaint > 0)) < int(1800 * (escala ** 2)):
+        fallback_mask = np.zeros((h, w), dtype=np.uint8)
+        cv2.ellipse(
+            fallback_mask,
+            (int(w * 0.50), int(h * 0.505)),
+            (int(w * 0.22), int(h * 0.065)),
+            0, 0, 360, 255, -1
+        )
+        mask_inpaint = fallback_mask
 
-    # Normaliza para garantir peso pleno (1.0) no centro dos dentes sem devolver cor original
-    pico = float(tooth_mask.max())
-    if pico > 0.05:
-        tooth_mask = np.clip(tooth_mask / pico, 0.0, 1.0)
-        tooth_mask = np.clip((tooth_mask - 0.12) / 0.88, 0.0, 1.0)
+    return mask_inpaint
 
-    return tooth_mask
-
-def aplicar_calibracao_e_preservar_pele(orig_rgb_np, ai_rgb_np, selected_color):
+def aplicar_tonalidade_vita_lab(orig_rgb_np, ai_rgb_np, mask_inpaint_u8, selected_color):
     """
-    Preserva a nitidez e o relevo gerados pelo Flux 2 Pro no padrao do
-    playground, aplicando clareamento e neutralizacao de amarelo no BL1-BL4
-    sem cortar o brilho com teto_v nem devolver o amarelado original nos dentes.
+    Preserva 100% da saida natural do Flux Fill Pro fora da mascara e aplica
+    apenas ajuste controlado no espaco LAB dentro dos dentes para diferenciar
+    BL1, BL2, BL3 e BL4 sem estourar o branco nem apagar sulcos interdentais.
     """
-    ai_float = ai_rgb_np.astype(np.float32)
-    orig_float = orig_rgb_np.astype(np.float32)
-    h_m, w_m, _ = orig_rgb_np.shape
-    escala = max(1.0, min(h_m, w_m) / 512.0)
+    h, w, _ = orig_rgb_np.shape
+    escala = max(1.0, min(h, w) / 512.0)
 
-    tooth_mask = construir_mascara_dentes(ai_rgb_np, max_pixels=int(round(8200 * (escala ** 2))))
+    # Suaviza a transicao da mascara para integracao invisivel com labios e gengiva
+    blur_k = max(5, int(round(7 * escala)) | 1)
+    mask_soft = cv2.GaussianBlur(mask_inpaint_u8.astype(np.float32) / 255.0, (blur_k, blur_k), 0)
+
+    # Refina dentro da mascara para atuar principalmente sobre a superficie dental (evita clarear fundo escuro)
+    hsv_ai = cv2.cvtColor(ai_rgb_np, cv2.COLOR_RGB2HSV).astype(np.float32)
+    fator_esmalte = np.clip((hsv_ai[:, :, 2] - 95.0) / 70.0, 0.0, 1.0)
+    tooth_weight = mask_soft * fator_esmalte
+
+    # Ajuste em LAB: L = luminancia, b = eixo azul(-) <-> amarelo(+)
+    lab = cv2.cvtColor(ai_rgb_np, cv2.COLOR_RGB2LAB).astype(np.float32)
 
     if selected_color == 'bl1':
-        r_gain, g_gain, b_gain = 1.028, 1.050, 1.088
-        saturation, brightness = 0.70, 1.055
-        alpha_ia = 1.00
+        delta_l = 12.0
+        delta_b = -7.5
+        contraste_l = 1.04
     elif selected_color == 'bl2':
-        r_gain, g_gain, b_gain = 1.020, 1.036, 1.064
-        saturation, brightness = 0.80, 1.035
-        alpha_ia = 1.00
+        delta_l = 7.5
+        delta_b = -5.0
+        contraste_l = 1.02
     elif selected_color == 'bl3':
-        r_gain, g_gain, b_gain = 1.020, 0.985, 0.915
-        saturation, brightness = 1.10, 0.985
-        alpha_ia = 0.72
+        delta_l = 2.0
+        delta_b = -1.5
+        contraste_l = 1.00
     elif selected_color == 'bl4':
-        r_gain, g_gain, b_gain = 1.024, 0.978, 0.885
-        saturation, brightness = 1.15, 0.975
-        alpha_ia = 0.62
+        delta_l = 0.0
+        delta_b = 0.0
+        contraste_l = 1.00
     else:
-        r_gain, g_gain, b_gain = 1.020, 1.036, 1.064
-        saturation, brightness = 0.80, 1.035
-        alpha_ia = 1.00
+        delta_l = 7.5
+        delta_b = -5.0
+        contraste_l = 1.02
 
-    calibrada = ai_float.copy()
-    calibrada[:, :, 0] = np.clip(ai_float[:, :, 0] * (1.0 + (r_gain - 1.0) * tooth_mask), 0, 255)
-    calibrada[:, :, 1] = np.clip(ai_float[:, :, 1] * (1.0 + (g_gain - 1.0) * tooth_mask), 0, 255)
-    calibrada[:, :, 2] = np.clip(ai_float[:, :, 2] * (1.0 + (b_gain - 1.0) * tooth_mask), 0, 255)
+    l_chan = lab[:, :, 0]
+    b_chan = lab[:, :, 2]
 
-    hsv_adj = cv2.cvtColor(np.clip(calibrada, 0, 255).astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
-    hsv_adj[:, :, 1] = np.clip(hsv_adj[:, :, 1] * (1.0 + (saturation - 1.0) * tooth_mask), 0, 255)
-    hsv_adj[:, :, 2] = np.clip(hsv_adj[:, :, 2] * (1.0 + (brightness - 1.0) * tooth_mask), 0, 255)
-    calibrada = cv2.cvtColor(hsv_adj.astype(np.uint8), cv2.COLOR_HSV2RGB).astype(np.float32)
+    l_ajustado = (l_chan - 128.0) * contraste_l + 128.0 + delta_l
+    b_ajustado = b_chan + delta_b
 
-    # Microcontraste leve nos dentes para manter bordas e sulcos definidos sem chapar
-    borrado_nitidez = cv2.GaussianBlur(calibrada, (0, 0), sigmaX=0.9 * escala)
-    nitida = np.clip(calibrada + (calibrada - borrado_nitidez) * 0.30, 0, 255)
-    mask_nitidez_3c = np.repeat((tooth_mask * 0.75)[:, :, np.newaxis], 3, axis=2)
-    calibrada = nitida * mask_nitidez_3c + calibrada * (1.0 - mask_nitidez_3c)
+    lab[:, :, 0] = np.clip(l_chan * (1.0 - tooth_weight) + l_ajustado * tooth_weight, 0, 255)
+    lab[:, :, 2] = np.clip(b_chan * (1.0 - tooth_weight) + b_ajustado * tooth_weight, 0, 255)
 
-    luma_orig = orig_float.mean(axis=2)
-    luma_ai = ai_float.mean(axis=2)
-    gap_preenchido = np.clip((luma_ai - luma_orig - 18.0) / 35.0, 0.0, 1.0) * tooth_mask
+    ai_tonalizada = cv2.cvtColor(lab.astype(np.uint8), cv2.COLOR_LAB2RGB).astype(np.float32)
+    orig_float = orig_rgb_np.astype(np.float32)
 
-    alpha_efetivo = np.maximum(tooth_mask * alpha_ia, gap_preenchido * 0.95)
-    blend_mask = np.clip(alpha_efetivo, 0.0, 1.0)
-    blend_mask_3c = np.repeat(blend_mask[:, :, np.newaxis], 3, axis=2)
-
-    resultado = calibrada * blend_mask_3c + orig_float * (1.0 - blend_mask_3c)
+    blend_3c = np.repeat(mask_soft[:, :, np.newaxis], 3, axis=2)
+    resultado = ai_tonalizada * blend_3c + orig_float * (1.0 - blend_3c)
     return np.clip(resultado, 0, 255).astype(np.uint8)
 
 @app.route('/register', methods=['POST'])
@@ -1187,50 +1187,67 @@ def process_smile():
         b64_clean = base64.b64encode(buffered_orig.getvalue()).decode('utf-8')
         original_processed_b64 = b64_clean
 
+        # Gera a mascara binaria apenas nos dentes/diastemas para Inpainting
+        mask_inpaint_u8 = gerar_mascara_inpainting_boca(orig_proc_np)
+        mask_pil = Image.fromarray(mask_inpaint_u8, mode="L")
+        buffered_mask = io.BytesIO()
+        mask_pil.save(buffered_mask, format="PNG")
+
         replicate_token = os.environ.get("REPLICATE_API_TOKEN")
         headers = {
             "Authorization": f"Bearer {replicate_token}",
             "Content-Type": "application/json"
         }
 
-        print("[REPLICATE] Enviando imagem para o repositorio de arquivos...")
+        print("[REPLICATE] Enviando imagem e mascara de inpainting para o Replicate...")
         file_resp = requests.post(
             "https://api.replicate.com/v1/files",
             headers={"Authorization": f"Bearer {replicate_token}"},
             files={"content": ("image.jpg", buffered_orig.getvalue(), "image/jpeg")},
             timeout=30
         )
-
         if file_resp.status_code not in [200, 201]:
-            raise Exception(f"Erro ao enviar arquivo para o Replicate: {file_resp.text}")
+            raise Exception(f"Erro ao enviar imagem para o Replicate: {file_resp.text}")
 
         file_data = file_resp.json()
         input_image_url = file_data.get("urls", {}).get("get") or file_data.get("url")
 
-        print("[REPLICATE REST] Disparando Official Model Black Forest Labs Flux 2 Pro...")
+        mask_resp = requests.post(
+            "https://api.replicate.com/v1/files",
+            headers={"Authorization": f"Bearer {replicate_token}"},
+            files={"content": ("mask.png", buffered_mask.getvalue(), "image/png")},
+            timeout=30
+        )
+        if mask_resp.status_code not in [200, 201]:
+            raise Exception(f"Erro ao enviar mascara para o Replicate: {mask_resp.text}")
+
+        mask_data = mask_resp.json()
+        input_mask_url = mask_data.get("urls", {}).get("get") or mask_data.get("url")
+
+        print("[REPLICATE REST] Disparando Official Model Black Forest Labs Flux Fill Pro...")
 
         prompt_text = (
-            "photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1> "
-            "upper teeth only, (Beautiful natural teeth), aligned white teeth, "
-            "human like teeth, (no teeth gap), celebrity-like teeth, "
-            "healthy teeth with a perfect smile, not big incisor, good proportion teeth"
+            "photorealistic porcelain veneers, natural enamel translucency at incisal edge, "
+            "subtle vertical micro-texture, natural dark interdental embrasures, "
+            "realistic wet saliva reflection, aligned healthy natural teeth, no teeth gap, "
+            "matching original mouth lighting"
         )
 
         payload = {
             "input": {
-                "input_images": [input_image_url],
+                "image": input_image_url,
+                "mask": input_mask_url,
                 "prompt": prompt_text,
+                "steps": 32,
+                "guidance": 30,
                 "seed": 9283,
-                "aspect_ratio": "1:1",
                 "output_format": "webp",
-                "output_quality": 85,
-                "resolution": "1 MP",
                 "safety_tolerance": 2
             }
         }
 
         response = requests.post(
-            "https://api.replicate.com/v1/models/black-forest-labs/flux-2-pro/predictions",
+            "https://api.replicate.com/v1/models/black-forest-labs/flux-fill-pro/predictions",
             json=payload,
             headers=headers,
             timeout=120
@@ -1259,7 +1276,7 @@ def process_smile():
                     image_url = output[0]
                 else:
                     image_url = output
-                print("[REPLICATE] Simulacao Flux 2 Pro recebida com sucesso!")
+                print("[REPLICATE] Simulacao Flux Fill Pro recebida com sucesso!")
                 break
             elif status == "failed":
                 raise Exception(f"Processamento da IA falhou: {poll_data.get('error')}")
@@ -1275,14 +1292,13 @@ def process_smile():
         ai_crop_restaurado = ai_image_raw.resize((1008, 1008), Image.Resampling.LANCZOS)
         ai_np = np.array(ai_crop_restaurado)
 
-        imagem_final_rgb = aplicar_calibracao_e_preservar_pele(orig_proc_np, ai_np, selected_color)
+        imagem_final_rgb = aplicar_tonalidade_vita_lab(orig_proc_np, ai_np, mask_inpaint_u8, selected_color)
 
         # --- LOG DIAGNOSTICO REPLICATE + POS-PROCESSAMENTO ---
         pred_id = poll_data.get("id")
         pred_status = poll_data.get("status")
         pred_metrics = poll_data.get("metrics", {})
-        mask_diag = construir_mascara_dentes(ai_np, max_pixels=32000)
-        pixels_ativos = int(np.sum(mask_diag > 0.10))
+        pixels_ativos = int(np.sum(mask_inpaint_u8 > 0))
 
         hsv_orig = cv2.cvtColor(orig_proc_np, cv2.COLOR_RGB2HSV).astype(np.float32)
         hsv_ai_raw = cv2.cvtColor(ai_np, cv2.COLOR_RGB2HSV).astype(np.float32)
@@ -1294,8 +1310,8 @@ def process_smile():
 
         print("-" * 60)
         print(f"[DIAG] Cor={selected_color.upper()} | PredID={pred_id} | Status={pred_status} | Metrics={pred_metrics}")
-        print(f"[DIAG] MaskPixels(>0.10)={pixels_ativos} | Model={poll_data.get('model')} | Version={poll_data.get('version')}")
-        print(f"[DIAG] PollKeys={list(poll_data.keys())} | InputEco={poll_data.get('input')}")
+        print(f"[DIAG] InpaintMaskPixels={pixels_ativos} | Model={poll_data.get('model')} | Version={poll_data.get('version')}")
+        print(f"[DIAG] InputEco={poll_data.get('input')}")
         if poll_data.get("logs"):
             print(f"[DIAG] ReplicateLogs={poll_data.get('logs')}")
         print(f"[DIAG] Boca ORIG   RGB=({orig_proc_np[y1:y2, x1:x2, 0].mean():.1f}, {orig_proc_np[y1:y2, x1:x2, 1].mean():.1f}, {orig_proc_np[y1:y2, x1:x2, 2].mean():.1f}) | S={hsv_orig[y1:y2, x1:x2, 1].mean():.1f} V={hsv_orig[y1:y2, x1:x2, 2].mean():.1f}")
@@ -1315,7 +1331,7 @@ def process_smile():
         conn.close()
 
         print("=" * 60)
-        print(f"[PYTHON REST] Simulacao 1008x1008 concluida com sucesso (Flux 2 Pro Calibrado - {selected_color.upper()})!")
+        print(f"[PYTHON REST] Simulacao 1008x1008 concluida com sucesso (Flux Fill Pro - {selected_color.upper()})!")
         print("=" * 60)
 
         return jsonify({
