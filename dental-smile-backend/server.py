@@ -177,7 +177,7 @@ def init_db():
 
 init_db()
 
-print("Servidor iniciado com Flux Fill Pro Inpainting 1008x1008 (Superiores Maiores + Labios Preservados) + Mercado Pago")
+print("Servidor iniciado com Flux Fill Pro Inpainting 1008x1008 (Base 19:12 Refeita) + Mercado Pago")
 
 def enviar_email_codigo(destinatario, nome, codigo, assunto="Codigo de Verificacao - Dental Smile"):
     if not RESEND_API_KEY:
@@ -301,26 +301,25 @@ def obter_dados_pagador(email, cpf_pagador, incluir_nome=True, email_override=No
 
 def gerar_mascara_inpainting_boca(rgb_np):
     """
-    Gera a mascara binaria (uint8 0 ou 255) com margem bucal util e
-    leve extensao vertical inferior para permitir que os dentes superiores
-    ganhem altura/descida sem invadir o labio inferior.
+    Gera a mascara binaria (uint8 0 ou 255) com margem ampla na zona bucal
+    para acomodar variacoes de enquadramento e fechar diastemas com definicao.
     """
     h, w, _ = rgb_np.shape
     escala = max(1.0, min(h, w) / 512.0)
 
     y_grid, x_grid = np.mgrid[0:h, 0:w].astype(np.float32)
-    cy, cx = h * 0.502, w * 0.50
-    ry, rx = h * 0.088, w * 0.255
+    cy, cx = h * 0.498, w * 0.50
+    ry, rx = h * 0.092, w * 0.275
     dist_norm = np.sqrt(((y_grid - cy) / ry) ** 2 + ((x_grid - cx) / rx) ** 2)
     mouth_roi = (dist_norm <= 1.0).astype(np.uint8)
 
     hsv = cv2.cvtColor(rgb_np, cv2.COLOR_RGB2HSV)
-    y1, y2 = int(h * 0.44), int(h * 0.56)
-    x1, x2 = int(w * 0.30), int(w * 0.70)
+    y1, y2 = int(h * 0.43), int(h * 0.57)
+    x1, x2 = int(w * 0.28), int(w * 0.72)
     v_ref = float(hsv[y1:y2, x1:x2, 2].mean())
 
     v_min = 115 if v_ref < 170.0 else 138
-    s_max = 105 if v_ref < 170.0 else 88
+    s_max = 108 if v_ref < 170.0 else 90
 
     dentes_bin = (
         (hsv[:, :, 2] >= v_min) &
@@ -328,8 +327,8 @@ def gerar_mascara_inpainting_boca(rgb_np):
         (mouth_roi > 0)
     ).astype(np.uint8) * 255
 
-    kx = max(5, int(round(13 * escala)) | 1)
-    ky = max(5, int(round(9 * escala)) | 1)
+    kx = max(5, int(round(14 * escala)) | 1)
+    ky = max(5, int(round(7 * escala)) | 1)
     kernel_diastema = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kx, ky))
     dentes_fechados = cv2.morphologyEx(dentes_bin, cv2.MORPH_CLOSE, kernel_diastema)
 
@@ -339,8 +338,8 @@ def gerar_mascara_inpainting_boca(rgb_np):
         fallback_mask = np.zeros((h, w), dtype=np.uint8)
         cv2.ellipse(
             fallback_mask,
-            (int(w * 0.50), int(h * 0.502)),
-            (int(w * 0.21), int(h * 0.068)),
+            (int(w * 0.50), int(h * 0.498)),
+            (int(w * 0.22), int(h * 0.068)),
             0, 0, 360, 255, -1
         )
         mask_inpaint = fallback_mask
@@ -349,49 +348,45 @@ def gerar_mascara_inpainting_boca(rgb_np):
 
 def aplicar_tonalidade_vita_lab(orig_rgb_np, ai_rgb_np, mask_inpaint_u8, selected_color):
     """
-    Aplica a simulacao e o tom BL1-BL4 estritamente sobre a denticao,
-    impedindo que a tonalidade branca da IA vaze para os labios ou pele ao redor.
+    Aplica a tonalidade BL1-BL4 mantendo boa definicao nos dentes e evitando
+    vazamento de cor/brilho na pele e nos labios ao redor.
     """
     h, w, _ = orig_rgb_np.shape
     escala = max(1.0, min(h, w) / 512.0)
 
     y_grid, x_grid = np.mgrid[0:h, 0:w].astype(np.float32)
-    cy, cx = h * 0.500, w * 0.50
-    ry, rx = h * 0.072, w * 0.235
-    zona_dentes = (((y_grid - cy) / ry) ** 2 + ((x_grid - cx) / rx) ** 2) <= 1.0
+    cy, cx = h * 0.498, w * 0.50
+    ry, rx = h * 0.088, w * 0.265
+    zona_bucal_ampla = (((y_grid - cy) / ry) ** 2 + ((x_grid - cx) / rx) ** 2) <= 1.0
 
     hsv_ai = cv2.cvtColor(ai_rgb_np, cv2.COLOR_RGB2HSV).astype(np.float32)
     hsv_orig = cv2.cvtColor(orig_rgb_np, cv2.COLOR_RGB2HSV).astype(np.float32)
 
-    # Dente real na IA: bem claro (V alto) e com baixa saturacao (nao e labio rosado/avermelhado)
     dente_ai = (
-        zona_dentes &
-        (hsv_ai[:, :, 2] >= 145.0) &
-        (hsv_ai[:, :, 1] <= 82.0)
-    )
+        zona_dentes := zona_bucal_ampla
+    ) & (hsv_ai[:, :, 2] >= 132.0) & (hsv_ai[:, :, 1] <= 98.0)
+
     dente_orig = (
         zona_dentes &
-        (hsv_orig[:, :, 2] >= 132.0) &
-        (hsv_orig[:, :, 1] <= 98.0)
+        (hsv_orig[:, :, 2] >= 122.0) &
+        (hsv_orig[:, :, 1] <= 108.0)
     )
 
-    dente_bin_u8 = ((dente_ai | dente_orig) & zona_dentes).astype(np.uint8) * 255
+    mascara_inpaint_bin = (mask_inpaint_u8 > 0) & zona_dentes
+    dente_mask_u8 = ((dente_ai | dente_orig | mascara_inpaint_bin) & zona_dentes).astype(np.uint8) * 255
 
-    # Fecha micro-espacos entre dentes sem espalhar para labios
-    k_close = max(3, int(round(5 * escala)) | 1)
-    dente_bin_u8 = cv2.morphologyEx(
-        dente_bin_u8,
-        cv2.MORPH_CLOSE,
-        cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k_close, k_close))
+    k_clean = max(3, int(round(3 * escala)) | 1)
+    dente_mask_u8 = cv2.morphologyEx(
+        dente_mask_u8,
+        cv2.MORPH_OPEN,
+        cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k_clean, k_clean))
     )
 
-    # Suavizacao curta para evitar borda serrilhada sem criar halo branco no labio
-    blur_k = 3
-    dente_peso = cv2.GaussianBlur(dente_bin_u8.astype(np.float32) / 255.0, (blur_k, blur_k), 0)
+    blur_k = 3 if escala < 1.5 else (int(round(3 * escala)) | 1)
+    dente_peso = cv2.GaussianBlur(dente_mask_u8.astype(np.float32) / 255.0, (blur_k, blur_k), 0)
 
-    # Reforco de seguranca contra pixels avermelhados/saturados (labios/mucosa)
-    sem_labio = np.clip(1.0 - np.maximum(0.0, (hsv_ai[:, :, 1] - 75.0) / 35.0), 0.0, 1.0)
-    dente_peso = np.clip(dente_peso * sem_labio, 0.0, 1.0)
+    nao_saturado = np.clip(1.0 - np.maximum(0.0, (hsv_ai[:, :, 1] - 92.0) / 50.0), 0.0, 1.0)
+    dente_peso = np.clip(dente_peso * nao_saturado, 0.0, 1.0)
 
     lab = cv2.cvtColor(ai_rgb_np, cv2.COLOR_RGB2LAB).astype(np.float32)
 
@@ -1246,8 +1241,8 @@ def process_smile():
         print("[REPLICATE REST] Disparando Official Model Black Forest Labs Flux Fill Pro...")
 
         prompt_text = (
-            "photorealistic porcelain dental veneers, larger fuller upper teeth with slightly "
-            "longer incisal edge, bright porcelain white teeth, natural enamel translucency, "
+            "photorealistic porcelain dental veneers, noticeably fuller well-proportioned teeth, "
+            "bright porcelain white teeth, natural enamel translucency at incisal edge, "
             "subtle vertical micro-texture, natural dark interdental embrasures, "
             "realistic wet saliva reflection, no teeth gap, matching original mouth lighting"
         )
