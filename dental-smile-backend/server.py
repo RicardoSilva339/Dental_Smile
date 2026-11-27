@@ -177,7 +177,7 @@ def init_db():
 
 init_db()
 
-print("Servidor iniciado com Flux Fill Pro Inpainting 1008x1008 (Alinhamento Fino + BL1 Limpo) + Mercado Pago")
+print("Servidor iniciado com Flux Fill Pro Inpainting 1008x1008 (Aumento Visivel de Dentes + BL1-BL4) + Mercado Pago")
 
 def enviar_email_codigo(destinatario, nome, codigo, assunto="Codigo de Verificacao - Dental Smile"):
     if not RESEND_API_KEY:
@@ -302,14 +302,14 @@ def obter_dados_pagador(email, cpf_pagador, incluir_nome=True, email_override=No
 def gerar_mascara_inpainting_boca(rgb_np):
     """
     Gera a mascara binaria (uint8 0 ou 255) com fechamento de diastemas
-    e margem util na zona bucal para permitir aumento de tamanho dos dentes.
+    e expansao controlada para aumentar o tamanho visivel dos dentes.
     """
     h, w, _ = rgb_np.shape
     escala = max(1.0, min(h, w) / 512.0)
 
     y_grid, x_grid = np.mgrid[0:h, 0:w].astype(np.float32)
-    cy, cx = h * 0.498, w * 0.50
-    ry, rx = h * 0.094, w * 0.275
+    cy, cx = h * 0.500, w * 0.50
+    ry, rx = h * 0.098, w * 0.280
     dist_norm = np.sqrt(((y_grid - cy) / ry) ** 2 + ((x_grid - cx) / rx) ** 2)
     mouth_roi = (dist_norm <= 1.0).astype(np.uint8)
 
@@ -318,8 +318,8 @@ def gerar_mascara_inpainting_boca(rgb_np):
     x1, x2 = int(w * 0.28), int(w * 0.72)
     v_ref = float(hsv[y1:y2, x1:x2, 2].mean())
 
-    v_min = 112 if v_ref < 170.0 else 135
-    s_max = 112 if v_ref < 170.0 else 94
+    v_min = 110 if v_ref < 170.0 else 132
+    s_max = 115 if v_ref < 170.0 else 96
 
     dentes_bin = (
         (hsv[:, :, 2] >= v_min) &
@@ -327,13 +327,15 @@ def gerar_mascara_inpainting_boca(rgb_np):
         (mouth_roi > 0)
     ).astype(np.uint8) * 255
 
-    kx = max(7, int(round(18 * escala)) | 1)
-    ky = max(5, int(round(9 * escala)) | 1)
+    kx = max(7, int(round(20 * escala)) | 1)
+    ky = max(7, int(round(12 * escala)) | 1)
     kernel_diastema = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kx, ky))
     dentes_fechados = cv2.morphologyEx(dentes_bin, cv2.MORPH_CLOSE, kernel_diastema)
 
-    kd = max(3, int(round(5 * escala)) | 1)
-    kernel_aumento = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kd, kd))
+    # Expansao extra para dar margem real de aumento de comprimento e largura aos dentes
+    kd_w = max(5, int(round(8 * escala)) | 1)
+    kd_h = max(5, int(round(10 * escala)) | 1)
+    kernel_aumento = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kd_w, kd_h))
     dentes_expandidos = cv2.dilate(dentes_fechados, kernel_aumento, iterations=1)
 
     mask_inpaint = cv2.bitwise_and(dentes_expandidos, mouth_roi * 255)
@@ -342,8 +344,8 @@ def gerar_mascara_inpainting_boca(rgb_np):
         fallback_mask = np.zeros((h, w), dtype=np.uint8)
         cv2.ellipse(
             fallback_mask,
-            (int(w * 0.50), int(h * 0.498)),
-            (int(w * 0.22), int(h * 0.068)),
+            (int(w * 0.50), int(h * 0.500)),
+            (int(w * 0.23), int(h * 0.074)),
             0, 0, 360, 255, -1
         )
         mask_inpaint = fallback_mask
@@ -352,40 +354,38 @@ def gerar_mascara_inpainting_boca(rgb_np):
 
 def aplicar_tonalidade_vita_lab(orig_rgb_np, ai_rgb_np, mask_inpaint_u8, selected_color):
     """
-    Aplica a tonalidade BL1-BL4 com alinhamento fino sobre a reconstrucao
-    da IA, reduzindo duplo contorno e tom amarelado residual.
+    Aplica a tonalidade BL1-BL4 acompanhando o aumento de tamanho gerado pela IA
+    e preservando o contorno limpo sem invadir labios ou pele.
     """
     h, w, _ = orig_rgb_np.shape
     escala = max(1.0, min(h, w) / 512.0)
 
     y_grid, x_grid = np.mgrid[0:h, 0:w].astype(np.float32)
-    cy, cx = h * 0.498, w * 0.50
-    ry, rx = h * 0.074, w * 0.240
+    cy, cx = h * 0.500, w * 0.50
+    ry, rx = h * 0.080, w * 0.250
     zona_dentes = (((y_grid - cy) / ry) ** 2 + ((x_grid - cx) / rx) ** 2) <= 1.0
 
     hsv_ai = cv2.cvtColor(ai_rgb_np, cv2.COLOR_RGB2HSV).astype(np.float32)
 
-    # Prioriza o esmalte reconstruido pela IA para evitar duplo contorno com a borda antiga
     dente_ai = (
         zona_dentes &
-        (hsv_ai[:, :, 2] >= 136.0) &
-        (hsv_ai[:, :, 1] <= 90.0)
+        (hsv_ai[:, :, 2] >= 134.0) &
+        (hsv_ai[:, :, 1] <= 92.0)
     )
     mascara_inpaint_bin = (mask_inpaint_u8 > 0) & zona_dentes
 
-    dente_mask_u8 = (dente_ai | (mascara_inpaint_bin & (hsv_ai[:, :, 2] >= 125.0))).astype(np.uint8) * 255
+    dente_mask_u8 = (dente_ai | (mascara_inpaint_bin & (hsv_ai[:, :, 2] >= 124.0))).astype(np.uint8) * 255
 
-    k_close = max(3, int(round(5 * escala)) | 1)
+    k_close = max(5, int(round(7 * escala)) | 1)
     dente_mask_u8 = cv2.morphologyEx(
         dente_mask_u8,
         cv2.MORPH_CLOSE,
         cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k_close, k_close))
     )
 
-    # Suavizacao curta para manter nitidez de esquadro sem borrar bordas
     dente_peso = cv2.GaussianBlur(dente_mask_u8.astype(np.float32) / 255.0, (3, 3), 0)
 
-    nao_saturado = np.clip(1.0 - np.maximum(0.0, (hsv_ai[:, :, 1] - 82.0) / 40.0), 0.0, 1.0)
+    nao_saturado = np.clip(1.0 - np.maximum(0.0, (hsv_ai[:, :, 1] - 84.0) / 42.0), 0.0, 1.0)
     dente_peso = np.clip(dente_peso * nao_saturado, 0.0, 1.0)
 
     lab = cv2.cvtColor(ai_rgb_np, cv2.COLOR_RGB2LAB).astype(np.float32)
@@ -1241,11 +1241,11 @@ def process_smile():
         print("[REPLICATE REST] Disparando Official Model Black Forest Labs Flux Fill Pro...")
 
         prompt_text = (
-            "photorealistic porcelain dental veneers, visibly larger wider well-proportioned teeth, "
-            "closed interdental gaps no teeth gap, bright porcelain white teeth, "
-            "natural enamel translucency at incisal edge, subtle vertical micro-texture, "
-            "natural dark interdental embrasures, realistic wet saliva reflection, "
-            "matching original mouth lighting"
+            "photorealistic porcelain dental veneers, noticeably larger fuller longer teeth, "
+            "wider crowns with elongated incisal edges, closed interdental gaps no teeth gap, "
+            "bright porcelain white teeth, natural enamel translucency at incisal edge, "
+            "subtle vertical micro-texture, natural dark interdental embrasures, "
+            "realistic wet saliva reflection, matching original mouth lighting"
         )
 
         payload = {
