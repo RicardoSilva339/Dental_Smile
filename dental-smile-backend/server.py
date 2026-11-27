@@ -177,7 +177,7 @@ def init_db():
 
 init_db()
 
-print("Servidor iniciado com Flux Fill Pro Inpainting 1008x1008 (Mascara Elevada Sem Borda Labial) + Mercado Pago")
+print("Servidor iniciado com Flux Fill Pro Inpainting 1008x1008 (Margem Bucal + Isolamento Denticao) + Mercado Pago")
 
 def enviar_email_codigo(destinatario, nome, codigo, assunto="Codigo de Verificacao - Dental Smile"):
     if not RESEND_API_KEY:
@@ -301,25 +301,26 @@ def obter_dados_pagador(email, cpf_pagador, incluir_nome=True, email_override=No
 
 def gerar_mascara_inpainting_boca(rgb_np):
     """
-    Gera a mascara binaria (uint8 0 ou 255) elevada e mais fechada para
-    cobrir os dentes e diastemas sem encostar na borda inferior do labio.
+    Gera a mascara binaria (uint8 0 ou 255) com margem ampla na zona bucal
+    para acomodar variacoes de enquadramento sem deixar a composicao final
+    invadir labios, bochechas ou queixo.
     """
     h, w, _ = rgb_np.shape
     escala = max(1.0, min(h, w) / 512.0)
 
     y_grid, x_grid = np.mgrid[0:h, 0:w].astype(np.float32)
-    cy, cx = h * 0.492, w * 0.50
-    ry, rx = h * 0.062, w * 0.215
+    cy, cx = h * 0.498, w * 0.50
+    ry, rx = h * 0.092, w * 0.275
     dist_norm = np.sqrt(((y_grid - cy) / ry) ** 2 + ((x_grid - cx) / rx) ** 2)
     mouth_roi = (dist_norm <= 1.0).astype(np.uint8)
 
     hsv = cv2.cvtColor(rgb_np, cv2.COLOR_RGB2HSV)
-    y1, y2 = int(h * 0.44), int(h * 0.55)
-    x1, x2 = int(w * 0.30), int(w * 0.70)
+    y1, y2 = int(h * 0.43), int(h * 0.57)
+    x1, x2 = int(w * 0.28), int(w * 0.72)
     v_ref = float(hsv[y1:y2, x1:x2, 2].mean())
 
-    v_min = 120 if v_ref < 170.0 else 142
-    s_max = 100 if v_ref < 170.0 else 85
+    v_min = 115 if v_ref < 170.0 else 138
+    s_max = 108 if v_ref < 170.0 else 90
 
     dentes_bin = (
         (hsv[:, :, 2] >= v_min) &
@@ -327,19 +328,19 @@ def gerar_mascara_inpainting_boca(rgb_np):
         (mouth_roi > 0)
     ).astype(np.uint8) * 255
 
-    kx = max(5, int(round(11 * escala)) | 1)
-    ky = max(3, int(round(5 * escala)) | 1)
+    kx = max(5, int(round(14 * escala)) | 1)
+    ky = max(5, int(round(7 * escala)) | 1)
     kernel_diastema = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kx, ky))
     dentes_fechados = cv2.morphologyEx(dentes_bin, cv2.MORPH_CLOSE, kernel_diastema)
 
     mask_inpaint = cv2.bitwise_and(dentes_fechados, mouth_roi * 255)
 
-    if int(np.sum(mask_inpaint > 0)) < int(1400 * (escala ** 2)):
+    if int(np.sum(mask_inpaint > 0)) < int(1500 * (escala ** 2)):
         fallback_mask = np.zeros((h, w), dtype=np.uint8)
         cv2.ellipse(
             fallback_mask,
-            (int(w * 0.50), int(h * 0.492)),
-            (int(w * 0.175), int(h * 0.050)),
+            (int(w * 0.50), int(h * 0.498)),
+            (int(w * 0.22), int(h * 0.068)),
             0, 0, 360, 255, -1
         )
         mask_inpaint = fallback_mask
@@ -348,30 +349,51 @@ def gerar_mascara_inpainting_boca(rgb_np):
 
 def aplicar_tonalidade_vita_lab(orig_rgb_np, ai_rgb_np, mask_inpaint_u8, selected_color):
     """
-    Aplica o ajuste porcelanado da escala BL1-BL4 apenas sobre os dentes,
-    evitando que pixels claros vazem para a borda do labio inferior ou queixo.
+    Isola a aplicacao da IA e da escala BL1-BL4 estritamente na denticao,
+    preservando labios, bochechas e queixo da foto original sem halos brancos.
     """
     h, w, _ = orig_rgb_np.shape
     escala = max(1.0, min(h, w) / 512.0)
 
     y_grid, x_grid = np.mgrid[0:h, 0:w].astype(np.float32)
-    cy, cx = h * 0.492, w * 0.50
-    ry, rx = h * 0.058, w * 0.21
-    zona_dente_elipse = (((y_grid - cy) / ry) ** 2 + ((x_grid - cx) / rx) ** 2) <= 1.0
+    cy, cx = h * 0.498, w * 0.50
+    ry, rx = h * 0.088, w * 0.265
+    zona_bucal_ampla = (((y_grid - cy) / ry) ** 2 + ((x_grid - cx) / rx) ** 2) <= 1.0
 
     hsv_ai = cv2.cvtColor(ai_rgb_np, cv2.COLOR_RGB2HSV).astype(np.float32)
-    # Exclui regioes muito avermelhadas/saturadas (labio/mucosa) e pega apenas esmalte claro
-    nao_labio = (hsv_ai[:, :, 1] <= 95.0) & (hsv_ai[:, :, 2] >= 138.0)
-    e_dente_ai = (zona_dente_elipse & nao_labio).astype(np.float32)
+    hsv_orig = cv2.cvtColor(orig_rgb_np, cv2.COLOR_RGB2HSV).astype(np.float32)
 
-    mask_orig_zona = ((mask_inpaint_u8.astype(np.float32) / 255.0) * zona_dente_elipse.astype(np.float32))
-    mask_base = np.maximum(mask_orig_zona * 0.75, e_dente_ai)
+    # Identifica pixels que correspondem a esmalte/dente (claro e com baixa saturacao)
+    # e exclui pele/labios (maior saturacao ou fora da faixa clara de dente)
+    dente_ai = (
+        zona_bucal_ampla &
+        (hsv_ai[:, :, 2] >= 135.0) &
+        (hsv_ai[:, :, 1] <= 95.0)
+    )
+    dente_orig = (
+        zona_bucal_ampla &
+        (hsv_orig[:, :, 2] >= 125.0) &
+        (hsv_orig[:, :, 1] <= 105.0)
+    )
+    mascara_inpaint_bin = (mask_inpaint_u8 > 0) & zona_bucal_ampla
+
+    # Regiao final de dente: uniao controlada dentro da faixa bucal
+    dente_mask_u8 = ((dente_ai | dente_orig | mascara_inpaint_bin) & zona_bucal_ampla).astype(np.uint8) * 255
+
+    # Refina bordas para nao vazar em labios ou bochechas
+    k_clean = max(3, int(round(3 * escala)) | 1)
+    dente_mask_u8 = cv2.morphologyEx(
+        dente_mask_u8,
+        cv2.MORPH_OPEN,
+        cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k_clean, k_clean))
+    )
 
     blur_k = 3 if escala < 1.5 else (int(round(3 * escala)) | 1)
-    mask_soft = cv2.GaussianBlur(mask_base, (blur_k, blur_k), 0)
+    dente_peso = cv2.GaussianBlur(dente_mask_u8.astype(np.float32) / 255.0, (blur_k, blur_k), 0)
 
-    fator_esmalte = np.clip((hsv_ai[:, :, 2] - 128.0) / 45.0, 0.0, 1.0)
-    tooth_weight = np.clip(mask_soft * fator_esmalte, 0.0, 1.0)
+    # Garante que pixels com alta saturacao (labio/pele saturada) nao recebam clareamento artificial
+    nao_saturado = np.clip(1.0 - np.maximum(0.0, (hsv_ai[:, :, 1] - 90.0) / 50.0), 0.0, 1.0)
+    dente_peso = np.clip(dente_peso * nao_saturado, 0.0, 1.0)
 
     lab = cv2.cvtColor(ai_rgb_np, cv2.COLOR_RGB2LAB).astype(np.float32)
 
@@ -402,13 +424,13 @@ def aplicar_tonalidade_vita_lab(orig_rgb_np, ai_rgb_np, mask_inpaint_u8, selecte
     l_ajustado = (l_chan - 128.0) * contraste_l + 128.0 + delta_l
     b_ajustado = b_chan + delta_b
 
-    lab[:, :, 0] = np.clip(l_chan * (1.0 - tooth_weight) + l_ajustado * tooth_weight, 0, 255)
-    lab[:, :, 2] = np.clip(b_chan * (1.0 - tooth_weight) + b_ajustado * tooth_weight, 0, 255)
+    lab[:, :, 0] = np.clip(l_chan * (1.0 - dente_peso) + l_ajustado * dente_peso, 0, 255)
+    lab[:, :, 2] = np.clip(b_chan * (1.0 - dente_peso) + b_ajustado * dente_peso, 0, 255)
 
     ai_tonalizada = cv2.cvtColor(lab.astype(np.uint8), cv2.COLOR_LAB2RGB).astype(np.float32)
     orig_float = orig_rgb_np.astype(np.float32)
 
-    blend_3c = np.repeat(mask_soft[:, :, np.newaxis], 3, axis=2)
+    blend_3c = np.repeat(dente_peso[:, :, np.newaxis], 3, axis=2)
     resultado = ai_tonalizada * blend_3c + orig_float * (1.0 - blend_3c)
     return np.clip(resultado, 0, 255).astype(np.uint8)
 
