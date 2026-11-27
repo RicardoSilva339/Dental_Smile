@@ -177,7 +177,7 @@ def init_db():
 
 init_db()
 
-print("Servidor iniciado com Flux 2 Pro Playground 1008x1008 (BL1-BL4) + Mercado Pago")
+print("Servidor iniciado com Flux 2 Pro Playground 1008x1008 (BL1-BL4 Calibrado) + Mercado Pago")
 
 def enviar_email_codigo(destinatario, nome, codigo, assunto="Codigo de Verificacao - Dental Smile"):
     if not RESEND_API_KEY:
@@ -299,7 +299,7 @@ def obter_dados_pagador(email, cpf_pagador, incluir_nome=True, email_override=No
 
     return payer
 
-def construir_mascara_dentes(ai_rgb_np, max_pixels=42000):
+def construir_mascara_dentes(ai_rgb_np, max_pixels=32000):
     h, w, _ = ai_rgb_np.shape
     escala = max(1.0, min(h, w) / 512.0)
 
@@ -309,7 +309,7 @@ def construir_mascara_dentes(ai_rgb_np, max_pixels=42000):
     dist_norm = np.sqrt(((y_grid - cy) / ry) ** 2 + ((x_grid - cx) / rx) ** 2)
     mouth_zone = np.clip(1.0 - np.maximum(0.0, (dist_norm - 0.65) / 0.35), 0.0, 1.0)
 
-    blur_mouth = int(round(13 * escala)) | 1
+    blur_mouth = int(round(11 * escala)) | 1
     mouth_zone = cv2.GaussianBlur(mouth_zone, (blur_mouth, blur_mouth), 0)
 
     hsv_ai = cv2.cvtColor(ai_rgb_np.astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
@@ -317,13 +317,13 @@ def construir_mascara_dentes(ai_rgb_np, max_pixels=42000):
     y1, y2 = int(h * 0.44), int(h * 0.60)
     x1, x2 = int(w * 0.25), int(w * 0.75)
     v_boca_ref = float(hsv_ai[y1:y2, x1:x2, 2].mean())
-    v_min = 118.0 if v_boca_ref < 172.0 else 142.0
-    s_max = 105.0 if v_boca_ref < 172.0 else 84.0
+    v_min = 124.0 if v_boca_ref < 172.0 else 144.0
+    s_max = 98.0 if v_boca_ref < 172.0 else 82.0
 
     tooth_raw = (
         (hsv_ai[:, :, 2] > v_min) &
         (hsv_ai[:, :, 1] < s_max) &
-        (mouth_zone > 0.22)
+        (mouth_zone > 0.20)
     ).astype(np.float32)
 
     kx = max(3, int(round(7 * escala)) | 1)
@@ -343,40 +343,46 @@ def construir_mascara_dentes(ai_rgb_np, max_pixels=42000):
         eroded = cv2.erode(tooth_mask, kernel, iterations=iteracoes)
         tooth_mask = cv2.GaussianBlur(eroded, (blur_mask, blur_mask), 0)
 
+    # Normaliza para garantir peso pleno (1.0) no centro dos dentes sem devolver cor original
+    pico = float(tooth_mask.max())
+    if pico > 0.05:
+        tooth_mask = np.clip(tooth_mask / pico, 0.0, 1.0)
+        tooth_mask = np.clip((tooth_mask - 0.12) / 0.88, 0.0, 1.0)
+
     return tooth_mask
 
 def aplicar_calibracao_e_preservar_pele(orig_rgb_np, ai_rgb_np, selected_color):
     """
-    Preserva a nitidez e o relevo natural gerados pelo Flux 2 Pro no padrao do
-    playground, aplicando apenas ajuste leve de tonalidade entre BL1 e BL4 sem
-    cortar o brilho nem deixar o branco chapado.
+    Preserva a nitidez e o relevo gerados pelo Flux 2 Pro no padrao do
+    playground, aplicando clareamento e neutralizacao de amarelo no BL1-BL4
+    sem cortar o brilho com teto_v nem devolver o amarelado original nos dentes.
     """
     ai_float = ai_rgb_np.astype(np.float32)
     orig_float = orig_rgb_np.astype(np.float32)
     h_m, w_m, _ = orig_rgb_np.shape
     escala = max(1.0, min(h_m, w_m) / 512.0)
 
-    tooth_mask = construir_mascara_dentes(ai_rgb_np, max_pixels=int(round(10800 * (escala ** 2))))
+    tooth_mask = construir_mascara_dentes(ai_rgb_np, max_pixels=int(round(8200 * (escala ** 2))))
 
     if selected_color == 'bl1':
-        r_gain, g_gain, b_gain = 1.012, 1.024, 1.042
-        saturation, brightness = 0.88, 1.020
+        r_gain, g_gain, b_gain = 1.028, 1.050, 1.088
+        saturation, brightness = 0.70, 1.055
         alpha_ia = 1.00
     elif selected_color == 'bl2':
-        r_gain, g_gain, b_gain = 1.010, 1.018, 1.030
-        saturation, brightness = 0.92, 1.010
+        r_gain, g_gain, b_gain = 1.020, 1.036, 1.064
+        saturation, brightness = 0.80, 1.035
         alpha_ia = 1.00
     elif selected_color == 'bl3':
-        r_gain, g_gain, b_gain = 1.018, 0.985, 0.915
-        saturation, brightness = 1.12, 0.985
-        alpha_ia = 0.65
+        r_gain, g_gain, b_gain = 1.020, 0.985, 0.915
+        saturation, brightness = 1.10, 0.985
+        alpha_ia = 0.72
     elif selected_color == 'bl4':
-        r_gain, g_gain, b_gain = 1.022, 0.978, 0.885
-        saturation, brightness = 1.16, 0.975
-        alpha_ia = 0.55
+        r_gain, g_gain, b_gain = 1.024, 0.978, 0.885
+        saturation, brightness = 1.15, 0.975
+        alpha_ia = 0.62
     else:
-        r_gain, g_gain, b_gain = 1.010, 1.018, 1.030
-        saturation, brightness = 0.92, 1.010
+        r_gain, g_gain, b_gain = 1.020, 1.036, 1.064
+        saturation, brightness = 0.80, 1.035
         alpha_ia = 1.00
 
     calibrada = ai_float.copy()
@@ -388,6 +394,12 @@ def aplicar_calibracao_e_preservar_pele(orig_rgb_np, ai_rgb_np, selected_color):
     hsv_adj[:, :, 1] = np.clip(hsv_adj[:, :, 1] * (1.0 + (saturation - 1.0) * tooth_mask), 0, 255)
     hsv_adj[:, :, 2] = np.clip(hsv_adj[:, :, 2] * (1.0 + (brightness - 1.0) * tooth_mask), 0, 255)
     calibrada = cv2.cvtColor(hsv_adj.astype(np.uint8), cv2.COLOR_HSV2RGB).astype(np.float32)
+
+    # Microcontraste leve nos dentes para manter bordas e sulcos definidos sem chapar
+    borrado_nitidez = cv2.GaussianBlur(calibrada, (0, 0), sigmaX=0.9 * escala)
+    nitida = np.clip(calibrada + (calibrada - borrado_nitidez) * 0.30, 0, 255)
+    mask_nitidez_3c = np.repeat((tooth_mask * 0.75)[:, :, np.newaxis], 3, axis=2)
+    calibrada = nitida * mask_nitidez_3c + calibrada * (1.0 - mask_nitidez_3c)
 
     luma_orig = orig_float.mean(axis=2)
     luma_ai = ai_float.mean(axis=2)
@@ -1269,7 +1281,7 @@ def process_smile():
         pred_id = poll_data.get("id")
         pred_status = poll_data.get("status")
         pred_metrics = poll_data.get("metrics", {})
-        mask_diag = construir_mascara_dentes(ai_np, max_pixels=42000)
+        mask_diag = construir_mascara_dentes(ai_np, max_pixels=32000)
         pixels_ativos = int(np.sum(mask_diag > 0.10))
 
         hsv_orig = cv2.cvtColor(orig_proc_np, cv2.COLOR_RGB2HSV).astype(np.float32)
@@ -1303,7 +1315,7 @@ def process_smile():
         conn.close()
 
         print("=" * 60)
-        print(f"[PYTHON REST] Simulacao 1008x1008 concluida com sucesso (Flux 2 Pro Playground - {selected_color.upper()})!")
+        print(f"[PYTHON REST] Simulacao 1008x1008 concluida com sucesso (Flux 2 Pro Calibrado - {selected_color.upper()})!")
         print("=" * 60)
 
         return jsonify({
