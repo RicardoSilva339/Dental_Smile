@@ -177,7 +177,7 @@ def init_db():
 
 init_db()
 
-print("Servidor iniciado com Flux Fill Pro Inpainting 1008x1008 (Diastemas + Aumento + BL1-BL4 Alinhado) + Mercado Pago")
+print("Servidor iniciado com Flux Fill Pro Inpainting 1008x1008 (Alinhamento Fino + BL1 Limpo) + Mercado Pago")
 
 def enviar_email_codigo(destinatario, nome, codigo, assunto="Codigo de Verificacao - Dental Smile"):
     if not RESEND_API_KEY:
@@ -301,7 +301,7 @@ def obter_dados_pagador(email, cpf_pagador, incluir_nome=True, email_override=No
 
 def gerar_mascara_inpainting_boca(rgb_np):
     """
-    Gera a mascara binaria (uint8 0 ou 255) com fechamento mais forte de diastemas
+    Gera a mascara binaria (uint8 0 ou 255) com fechamento de diastemas
     e margem util na zona bucal para permitir aumento de tamanho dos dentes.
     """
     h, w, _ = rgb_np.shape
@@ -327,7 +327,6 @@ def gerar_mascara_inpainting_boca(rgb_np):
         (mouth_roi > 0)
     ).astype(np.uint8) * 255
 
-    # Fechamento horizontal e vertical mais amplo para fechar diastemas e dar espaco de aumento
     kx = max(7, int(round(18 * escala)) | 1)
     ky = max(5, int(round(9 * escala)) | 1)
     kernel_diastema = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kx, ky))
@@ -353,69 +352,63 @@ def gerar_mascara_inpainting_boca(rgb_np):
 
 def aplicar_tonalidade_vita_lab(orig_rgb_np, ai_rgb_np, mask_inpaint_u8, selected_color):
     """
-    Aplica a tonalidade BL1-BL4 de forma alinhada aos dentes reconstruidos,
-    evitando que o clareamento fique fora da dentição ou espalhe para a borda externa.
+    Aplica a tonalidade BL1-BL4 com alinhamento fino sobre a reconstrucao
+    da IA, reduzindo duplo contorno e tom amarelado residual.
     """
     h, w, _ = orig_rgb_np.shape
     escala = max(1.0, min(h, w) / 512.0)
 
     y_grid, x_grid = np.mgrid[0:h, 0:w].astype(np.float32)
     cy, cx = h * 0.498, w * 0.50
-    ry, rx = h * 0.078, w * 0.245
+    ry, rx = h * 0.074, w * 0.240
     zona_dentes = (((y_grid - cy) / ry) ** 2 + ((x_grid - cx) / rx) ** 2) <= 1.0
 
     hsv_ai = cv2.cvtColor(ai_rgb_np, cv2.COLOR_RGB2HSV).astype(np.float32)
-    hsv_orig = cv2.cvtColor(orig_rgb_np, cv2.COLOR_RGB2HSV).astype(np.float32)
 
-    # Prioriza os dentes reconstruidos na IA (claro e com baixa saturacao) dentro da faixa dos dentes
+    # Prioriza o esmalte reconstruido pela IA para evitar duplo contorno com a borda antiga
     dente_ai = (
         zona_dentes &
-        (hsv_ai[:, :, 2] >= 135.0) &
-        (hsv_ai[:, :, 1] <= 95.0)
+        (hsv_ai[:, :, 2] >= 136.0) &
+        (hsv_ai[:, :, 1] <= 90.0)
     )
-    dente_orig = (
-        zona_dentes &
-        (hsv_orig[:, :, 2] >= 125.0) &
-        (hsv_orig[:, :, 1] <= 105.0)
-    )
+    mascara_inpaint_bin = (mask_inpaint_u8 > 0) & zona_dentes
 
-    dente_mask_u8 = ((dente_ai | dente_orig) & zona_dentes).astype(np.uint8) * 255
+    dente_mask_u8 = (dente_ai | (mascara_inpaint_bin & (hsv_ai[:, :, 2] >= 125.0))).astype(np.uint8) * 255
 
-    k_close = max(5, int(round(7 * escala)) | 1)
+    k_close = max(3, int(round(5 * escala)) | 1)
     dente_mask_u8 = cv2.morphologyEx(
         dente_mask_u8,
         cv2.MORPH_CLOSE,
         cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k_close, k_close))
     )
 
-    blur_k = 3 if escala < 1.5 else (int(round(3 * escala)) | 1)
-    dente_peso = cv2.GaussianBlur(dente_mask_u8.astype(np.float32) / 255.0, (blur_k, blur_k), 0)
+    # Suavizacao curta para manter nitidez de esquadro sem borrar bordas
+    dente_peso = cv2.GaussianBlur(dente_mask_u8.astype(np.float32) / 255.0, (3, 3), 0)
 
-    # Impede que regioes mais saturadas (labios/pele) recebam clareamento fora dos dentes
-    nao_saturado = np.clip(1.0 - np.maximum(0.0, (hsv_ai[:, :, 1] - 88.0) / 45.0), 0.0, 1.0)
+    nao_saturado = np.clip(1.0 - np.maximum(0.0, (hsv_ai[:, :, 1] - 82.0) / 40.0), 0.0, 1.0)
     dente_peso = np.clip(dente_peso * nao_saturado, 0.0, 1.0)
 
     lab = cv2.cvtColor(ai_rgb_np, cv2.COLOR_RGB2LAB).astype(np.float32)
 
     if selected_color == 'bl1':
-        delta_l = 18.0
-        delta_b = -12.0
-        contraste_l = 1.04
+        delta_l = 21.0
+        delta_b = -16.5
+        contraste_l = 1.05
     elif selected_color == 'bl2':
-        delta_l = 12.0
-        delta_b = -8.0
+        delta_l = 13.0
+        delta_b = -10.5
         contraste_l = 1.03
     elif selected_color == 'bl3':
-        delta_l = 4.0
-        delta_b = -2.5
+        delta_l = 5.0
+        delta_b = -4.0
         contraste_l = 1.00
     elif selected_color == 'bl4':
         delta_l = 0.0
         delta_b = 0.0
         contraste_l = 1.00
     else:
-        delta_l = 12.0
-        delta_b = -8.0
+        delta_l = 13.0
+        delta_b = -10.5
         contraste_l = 1.03
 
     l_chan = lab[:, :, 0]
