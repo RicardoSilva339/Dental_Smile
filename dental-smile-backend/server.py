@@ -303,7 +303,6 @@ def construir_mascara_dentes(ai_rgb_np, max_pixels=10800):
     h, w, _ = ai_rgb_np.shape
     y_grid, x_grid = np.mgrid[0:h, 0:w].astype(np.float32)
     cy, cx = h * 0.505, w * 0.50
-    # Largura lateral (rx=0.34) ampliada para cobrir pre-molares mesmo em fotos de galeria
     ry, rx = h * 0.125, w * 0.34
     dist_norm = np.sqrt(((y_grid - cy) / ry) ** 2 + ((x_grid - cx) / rx) ** 2)
     mouth_zone = np.clip(1.0 - np.maximum(0.0, (dist_norm - 0.65) / 0.35), 0.0, 1.0)
@@ -311,7 +310,6 @@ def construir_mascara_dentes(ai_rgb_np, max_pixels=10800):
 
     hsv_ai = cv2.cvtColor(ai_rgb_np.astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
 
-    # Limiar adaptativo ao brilho medio da boca para nao cortar pre-molares sombreados em fotos de galeria
     y1, y2 = int(h * 0.44), int(h * 0.60)
     x1, x2 = int(w * 0.25), int(w * 0.75)
     v_boca_ref = float(hsv_ai[y1:y2, x1:x2, 2].mean())
@@ -324,12 +322,10 @@ def construir_mascara_dentes(ai_rgb_np, max_pixels=10800):
         (mouth_zone > 0.22)
     ).astype(np.float32)
 
-    # Fechamento morfologico horizontal leve para cobrir frestas de diastemas entre dentes vizinhos
     close_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 5))
     tooth_closed = cv2.morphologyEx(tooth_raw, cv2.MORPH_CLOSE, close_kernel)
     tooth_mask = cv2.GaussianBlur(tooth_closed * mouth_zone, (5, 5), 0)
 
-    # Contencao de area caso a mascara exceda o teto de pixels (evita vazamento em luz forte)
     ativos = int(np.sum(tooth_mask > 0.10))
     if ativos > max_pixels:
         kernel = np.ones((3, 3), np.uint8)
@@ -341,38 +337,44 @@ def construir_mascara_dentes(ai_rgb_np, max_pixels=10800):
 
 def aplicar_calibracao_e_preservar_pele(orig_rgb_np, ai_rgb_np, selected_color):
     """
-    Aplica a calibracao BL1-BL4 com controle de brilho (V), area da mascara,
-    preenchimento das frestas de diastema e brilho sutil de porcelana.
+    Aplica a calibracao BL1-BL4 com nitidez de esmalte, brilho de porcelana
+    (sem branco chapado), uniformidade entre os lados e preservacao dos labios.
     """
     ai_float = ai_rgb_np.astype(np.float32)
     orig_float = orig_rgb_np.astype(np.float32)
     tooth_mask = construir_mascara_dentes(ai_rgb_np, max_pixels=10800)
 
     if selected_color == 'bl1':
-        r_gain, g_gain, b_gain = 1.032, 1.052, 1.085
-        saturation, brightness = 0.78, 1.048
-        alpha_ia = 1.00
-        teto_v = 188.0
+        # BL1 com branco equilibrado (menos chapado) e brilho/nitidez de porcelana
+        r_gain, g_gain, b_gain = 1.018, 1.034, 1.058
+        saturation, brightness = 0.84, 1.015
+        alpha_ia = 0.94
+        teto_v = 198.0
+        brilho_porcelana = 0.085
     elif selected_color == 'bl2':
         r_gain, g_gain, b_gain = 1.022, 1.045, 1.078
         saturation, brightness = 0.85, 1.038
         alpha_ia = 1.00
         teto_v = 192.0
+        brilho_porcelana = 0.055
     elif selected_color == 'bl3':
         r_gain, g_gain, b_gain = 1.024, 0.976, 0.875
         saturation, brightness = 1.18, 0.970
         alpha_ia = 0.42
         teto_v = 186.0
+        brilho_porcelana = 0.030
     elif selected_color == 'bl4':
         r_gain, g_gain, b_gain = 1.024, 0.976, 0.875
         saturation, brightness = 1.18, 0.970
         alpha_ia = 0.40
         teto_v = 187.0
+        brilho_porcelana = 0.025
     else:
         r_gain, g_gain, b_gain = 1.022, 1.045, 1.078
         saturation, brightness = 0.85, 1.038
         alpha_ia = 1.00
         teto_v = 192.0
+        brilho_porcelana = 0.055
 
     calibrada = ai_float.copy()
     calibrada[:, :, 0] = np.clip(ai_float[:, :, 0] * (1.0 + (r_gain - 1.0) * tooth_mask), 0, 255)
@@ -384,12 +386,18 @@ def aplicar_calibracao_e_preservar_pele(orig_rgb_np, ai_rgb_np, selected_color):
     hsv_adj[:, :, 2] = np.clip(hsv_adj[:, :, 2] * (1.0 + (brightness - 1.0) * tooth_mask), 0, 255)
     calibrada = cv2.cvtColor(hsv_adj.astype(np.uint8), cv2.COLOR_HSV2RGB).astype(np.float32)
 
-    # Brilho sutil de porcelana preservando contrastes suaves da anatomia dos dentes
+    # Realce localizado de brilho de porcelana/esmalte nas areas mais claras do dente
     hsv_gloss = cv2.cvtColor(np.clip(calibrada, 0, 255).astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
     v_canal = hsv_gloss[:, :, 2]
-    realce_esmalte = np.clip((v_canal - 145.0) / 85.0, 0.0, 1.0) * tooth_mask * 0.045
-    hsv_gloss[:, :, 2] = np.clip(v_canal * (1.0 + realce_esmalte), 0, 255)
+    destaque_esmalte = np.clip((v_canal - 150.0) / 75.0, 0.0, 1.0) * tooth_mask * brilho_porcelana
+    hsv_gloss[:, :, 2] = np.clip(v_canal * (1.0 + destaque_esmalte), 0, 255)
     calibrada = cv2.cvtColor(hsv_gloss.astype(np.uint8), cv2.COLOR_HSV2RGB).astype(np.float32)
+
+    # Nitidez sutil nos dentes para evitar aspecto embaçado/lavado
+    borrado_nitidez = cv2.GaussianBlur(calibrada, (0, 0), sigmaX=1.0)
+    nitida = np.clip(calibrada + (calibrada - borrado_nitidez) * 0.45, 0, 255)
+    mask_nitidez_3c = np.repeat((tooth_mask * 0.85)[:, :, np.newaxis], 3, axis=2)
+    calibrada = nitida * mask_nitidez_3c + calibrada * (1.0 - mask_nitidez_3c)
 
     # Nas regioes onde a foto original tinha diastema/sombra e a IA reconstruiu dente,
     # garante peso maximo da IA para nao deixar a fresta escura vazar de volta
@@ -413,7 +421,7 @@ def aplicar_calibracao_e_preservar_pele(orig_rgb_np, ai_rgb_np, selected_color):
         hsv_bl4[:, :, 2] = np.clip(hsv_bl4[:, :, 2] * (1.0 - 0.012 * tooth_mask), 0, 255)
         resultado = cv2.cvtColor(hsv_bl4.astype(np.uint8), cv2.COLOR_HSV2RGB).astype(np.float32)
 
-    # Contencao suave de brilho (V) na regiao da boca para evitar branco chapado/estourado
+    # Contencao suave de brilho (V) na regiao da boca para evitar estourar
     h_m, w_m, _ = resultado.shape
     y1, y2 = int(h_m * 0.44), int(h_m * 0.60)
     x1, x2 = int(w_m * 0.30), int(w_m * 0.70)
@@ -1225,11 +1233,10 @@ def process_smile():
 
         prompt_text = (
             "photo of perfectsmile smile <lora:lora_perfectsmile_v1_from_v1_160:1> "
-            "preserve original face, skin tone, nose, eyes and lips, "
-            "aesthetic smile design, closed diastema, no gaps between teeth, "
-            "slightly longer upper and lower teeth, increased crown height, "
-            "harmonious aligned white teeth, upper and lower veneers, "
-            "subtle glossy porcelain highlights, realistic enamel sheen"
+            "preserve face, skin, nose, eyes and lips, "
+            "symmetric even teeth left and right, closed gaps, "
+            "slightly longer upper and lower teeth, "
+            "sharp crisp tooth edges, glossy porcelain sheen"
         )
 
         payload = {
@@ -1239,7 +1246,7 @@ def process_smile():
                 "seed": 9283,
                 "aspect_ratio": "1:1",
                 "output_format": "webp",
-                "output_quality": 80,
+                "output_quality": 85,
                 "resolution": "1 MP",
                 "safety_tolerance": 2
             }
