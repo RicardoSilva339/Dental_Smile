@@ -177,7 +177,7 @@ def init_db():
 
 init_db()
 
-print("Servidor iniciado com Flux 2 Pro 2MP (1424x1424 BL2 Calibrado + Diastema Fechado) + Mercado Pago")
+print("Servidor iniciado com Flux 2 Pro 2MP (1424x1424 Base Limpa Sem Barba/Sardas) + Mercado Pago")
 
 def enviar_email_codigo(destinatario, nome, codigo, assunto="Codigo de Verificacao - Dental Smile"):
     if not RESEND_API_KEY:
@@ -301,34 +301,19 @@ def obter_dados_pagador(email, cpf_pagador, incluir_nome=True, email_override=No
 
 def montar_prompt_por_cor(selected_color):
     descricao_cor = {
-        'bl1': (
-            "ultra-bright Hollywood bleach shade BL1 (0M1) pure crisp white porcelain teeth, "
-            "maximum bright white luminosity without yellow tint"
-        ),
-        'bl2': (
-            "bright luminous bleach shade BL2 (0M2-1M1) distinctly white porcelain veneers, "
-            "clean bright white enamel removing yellow stains while keeping natural porcelain depth"
-        ),
-        'bl3': (
-            "soft natural white shade BL3 (1M2-2M1) realistic healthy whitened teeth, "
-            "clean natural white enamel with subtle warm tooth tone"
-        ),
-        'bl4': (
-            "very natural ivory tooth shade BL4 (3M2-3R1.5) realistic conservative dental restoration, "
-            "natural healthy enamel tone"
-        )
+        'bl1': "ultra-bright bleach shade BL1 (0M1) porcelain white teeth, crisp clean white enamel",
+        'bl2': "bright luminous bleach shade BL2 (0M2-1M1) clean bright white porcelain teeth, natural porcelain gloss",
+        'bl3': "soft natural white shade BL3 (1M2-2M1) realistic healthy teeth whitening, subtle natural warmth",
+        'bl4': "very natural ivory tooth shade BL4 (3M2-3R1.5) realistic conservative dental restoration, natural enamel tone"
     }.get(
         selected_color,
-        "bright luminous bleach shade BL2 (0M2-1M1) distinctly white porcelain veneers, clean bright white enamel removing yellow stains while keeping natural porcelain depth"
+        "bright luminous bleach shade BL2 (0M2-1M1) clean bright white porcelain teeth, natural porcelain gloss"
     )
 
     return (
         "Keep the exact original face, identity, cheeks, chin, nose, eyes, glasses, hair, "
         "lip shape, lip color and background exactly as in the input image, with no added facial hair and no added spots. "
         "Only update the patient's teeth with photorealistic porcelain dental veneers: "
-        "completely closed midline diastema with central incisors touching seamlessly, zero gap between front teeth, "
-        "closed interdental gaps across the arch, moderately taller and fuller teeth crowns with cohesive tooth width, "
-        "harmoniously aligned upper and lower dental arches, "
         f"{descricao_cor}, "
         "natural enamel translucency at the incisal edge, subtle vertical micro-texture, "
         "natural interdental embrasures, realistic wet saliva reflection matching the original mouth lighting."
