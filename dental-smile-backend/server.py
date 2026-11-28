@@ -71,9 +71,9 @@ SHADE_MAP = {
 
 ESCALA_BL_REFERENCIA = {
     'bl1': {'indices': [1], 'tons': [SHADE_MAP[1]]},
-    'bl2': {'indices': [4, 5], 'tons': [SHADE_MAP[4], SHADE_MAP[5]]},
-    'bl3': {'indices': [17, 19], 'tons': [SHADE_MAP[17], SHADE_MAP[19]]},
-    'bl4': {'indices': [27, 29], 'tons': [SHADE_MAP[27], SHADE_MAP[29]]},
+    'bl2': {'indices': [2, 4], 'tons': [SHADE_MAP[2], SHADE_MAP[4]]},
+    'bl3': {'indices': [5, 9], 'tons': [SHADE_MAP[5], SHADE_MAP[9]]},
+    'bl4': {'indices': [17, 19], 'tons': [SHADE_MAP[17], SHADE_MAP[19]]},
 }
 
 # Tabela oficial Mercado Pago (Taxa base vendedora: 4.98% | Acrescimos parcelado comprador 2x a 10x)
@@ -177,7 +177,7 @@ def init_db():
 
 init_db()
 
-print("Servidor iniciado com Flux 2 Pro 2MP (1424x1424 Sem Barba/Sardas) + Mercado Pago")
+print("Servidor iniciado com Flux 2 Pro 2MP (1424x1424 BL2 Calibrado + Diastema Fechado) + Mercado Pago")
 
 def enviar_email_codigo(destinatario, nome, codigo, assunto="Codigo de Verificacao - Dental Smile"):
     if not RESEND_API_KEY:
@@ -301,18 +301,33 @@ def obter_dados_pagador(email, cpf_pagador, incluir_nome=True, email_override=No
 
 def montar_prompt_por_cor(selected_color):
     descricao_cor = {
-        'bl1': "ultra-bright bleach shade BL1 (0M1) porcelain white teeth, crisp clean white enamel",
-        'bl2': "bright natural bleach shade BL2 (1M1-1M2) luminous porcelain white teeth, natural bright enamel",
-        'bl3': "soft natural white shade BL3 (3M2-3R1.5) realistic healthy teeth whitening, subtle natural warmth",
-        'bl4': "very natural ivory tooth shade BL4 (4R2.5-5M3) realistic conservative dental restoration, natural enamel tone"
-    }.get(selected_color, "bright natural bleach shade BL2 (1M1-1M2) luminous porcelain white teeth")
+        'bl1': (
+            "ultra-bright Hollywood bleach shade BL1 (0M1) pure crisp white porcelain teeth, "
+            "maximum bright white luminosity without yellow tint"
+        ),
+        'bl2': (
+            "bright luminous bleach shade BL2 (0M2-1M1) distinctly white porcelain veneers, "
+            "clean bright white enamel removing yellow stains while keeping natural porcelain depth"
+        ),
+        'bl3': (
+            "soft natural white shade BL3 (1M2-2M1) realistic healthy whitened teeth, "
+            "clean natural white enamel with subtle warm tooth tone"
+        ),
+        'bl4': (
+            "very natural ivory tooth shade BL4 (3M2-3R1.5) realistic conservative dental restoration, "
+            "natural healthy enamel tone"
+        )
+    }.get(
+        selected_color,
+        "bright luminous bleach shade BL2 (0M2-1M1) distinctly white porcelain veneers, clean bright white enamel removing yellow stains while keeping natural porcelain depth"
+    )
 
     return (
         "Keep the exact original face, identity, cheeks, chin, nose, eyes, glasses, hair, "
         "lip shape, lip color and background exactly as in the input image, with no added facial hair and no added spots. "
         "Only update the patient's teeth with photorealistic porcelain dental veneers: "
-        "closed interdental gaps and diastema with no gaps between teeth, "
-        "slightly fuller and well-proportioned teeth with gently increased crown height, "
+        "completely closed midline diastema with central incisors touching seamlessly, zero gap between front teeth, "
+        "closed interdental gaps across the arch, moderately taller and fuller teeth crowns with cohesive tooth width, "
         "harmoniously aligned upper and lower dental arches, "
         f"{descricao_cor}, "
         "natural enamel translucency at the incisal edge, subtle vertical micro-texture, "
