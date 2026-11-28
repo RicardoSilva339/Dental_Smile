@@ -177,7 +177,7 @@ def init_db():
 
 init_db()
 
-print("Servidor iniciado com Flux 2 Pro 2MP (1424x1424 Teste Comparativo) + Mercado Pago")
+print("Servidor iniciado com Flux 2 Pro 2MP (1424x1424 Sem Barba/Sardas) + Mercado Pago")
 
 def enviar_email_codigo(destinatario, nome, codigo, assunto="Codigo de Verificacao - Dental Smile"):
     if not RESEND_API_KEY:
@@ -301,16 +301,16 @@ def obter_dados_pagador(email, cpf_pagador, incluir_nome=True, email_override=No
 
 def montar_prompt_por_cor(selected_color):
     descricao_cor = {
-        'bl1': "ultra-bright bleach shade BL1 (0M1) Hollywood porcelain white teeth, crisp clean white enamel",
+        'bl1': "ultra-bright bleach shade BL1 (0M1) porcelain white teeth, crisp clean white enamel",
         'bl2': "bright natural bleach shade BL2 (1M1-1M2) luminous porcelain white teeth, natural bright enamel",
         'bl3': "soft natural white shade BL3 (3M2-3R1.5) realistic healthy teeth whitening, subtle natural warmth",
         'bl4': "very natural ivory tooth shade BL4 (4R2.5-5M3) realistic conservative dental restoration, natural enamel tone"
     }.get(selected_color, "bright natural bleach shade BL2 (1M1-1M2) luminous porcelain white teeth")
 
     return (
-        "Preserve the exact original face, identity, skin texture, pores, freckles, beard, nose, eyes, glasses, hair, "
-        "lip shape, lip color and background without any mask border or halo around the mouth. "
-        "Only enhance the patient's teeth with photorealistic porcelain dental veneers: "
+        "Keep the exact original face, identity, cheeks, chin, nose, eyes, glasses, hair, "
+        "lip shape, lip color and background exactly as in the input image, with no added facial hair and no added spots. "
+        "Only update the patient's teeth with photorealistic porcelain dental veneers: "
         "closed interdental gaps and diastema with no gaps between teeth, "
         "slightly fuller and well-proportioned teeth with gently increased crown height, "
         "harmoniously aligned upper and lower dental arches, "
