@@ -177,7 +177,7 @@ def init_db():
 
 init_db()
 
-print("Servidor iniciado com Flux Fill Pro Inpainting 1424x1424 (2MP Teste Controlado) + Mercado Pago")
+print("Servidor iniciado com Flux 2 Pro 2MP (1424x1424 Teste Comparativo) + Mercado Pago")
 
 def enviar_email_codigo(destinatario, nome, codigo, assunto="Codigo de Verificacao - Dental Smile"):
     if not RESEND_API_KEY:
@@ -299,136 +299,25 @@ def obter_dados_pagador(email, cpf_pagador, incluir_nome=True, email_override=No
 
     return payer
 
-def gerar_mascara_inpainting_boca(rgb_np):
-    """
-    Gera a mascara binaria (uint8 0 ou 255) proporcional a resolucao (1424x1424),
-    com fechamento de diastemas e aumento moderado sem exagerar no comprimento.
-    """
-    h, w, _ = rgb_np.shape
-    escala = max(1.0, min(h, w) / 512.0)
+def montar_prompt_por_cor(selected_color):
+    descricao_cor = {
+        'bl1': "ultra-bright bleach shade BL1 (0M1) Hollywood porcelain white teeth, crisp clean white enamel",
+        'bl2': "bright natural bleach shade BL2 (1M1-1M2) luminous porcelain white teeth, natural bright enamel",
+        'bl3': "soft natural white shade BL3 (3M2-3R1.5) realistic healthy teeth whitening, subtle natural warmth",
+        'bl4': "very natural ivory tooth shade BL4 (4R2.5-5M3) realistic conservative dental restoration, natural enamel tone"
+    }.get(selected_color, "bright natural bleach shade BL2 (1M1-1M2) luminous porcelain white teeth")
 
-    y_grid, x_grid = np.mgrid[0:h, 0:w].astype(np.float32)
-    cy, cx = h * 0.495, w * 0.50
-    ry, rx = h * 0.095, w * 0.285
-    dist_norm = np.sqrt(((y_grid - cy) / ry) ** 2 + ((x_grid - cx) / rx) ** 2)
-    janela_boca = (dist_norm <= 1.0).astype(np.uint8)
-
-    hsv = cv2.cvtColor(rgb_np, cv2.COLOR_RGB2HSV).astype(np.float32)
-    y1, y2 = int(h * 0.43), int(h * 0.57)
-    x1, x2 = int(w * 0.28), int(w * 0.72)
-    v_ref = float(hsv[y1:y2, x1:x2, 2].mean())
-
-    v_min = 110.0 if v_ref < 170.0 else 130.0
-    s_max = 114.0 if v_ref < 170.0 else 96.0
-
-    dentes_bin = (
-        (janela_boca > 0) &
-        (hsv[:, :, 2] >= v_min) &
-        (hsv[:, :, 1] <= s_max)
-    ).astype(np.uint8) * 255
-
-    kx = max(7, int(round(16 * escala)) | 1)
-    ky = max(5, int(round(8 * escala)) | 1)
-    kernel_diastema = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kx, ky))
-    dentes_fechados = cv2.morphologyEx(dentes_bin, cv2.MORPH_CLOSE, kernel_diastema)
-
-    kd_w = max(5, int(round(5 * escala)) | 1)
-    kd_h = max(3, int(round(4 * escala)) | 1)
-    kernel_aumento = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kd_w, kd_h))
-    dentes_expandidos = cv2.dilate(dentes_fechados, kernel_aumento, iterations=1)
-
-    mask_inpaint = cv2.bitwise_and(dentes_expandidos, janela_boca * 255)
-
-    if int(np.sum(mask_inpaint > 0)) < int(1200 * (escala ** 2)):
-        fallback_mask = np.zeros((h, w), dtype=np.uint8)
-        cv2.ellipse(
-            fallback_mask,
-            (int(w * 0.50), int(h * 0.495)),
-            (int(w * 0.22), int(h * 0.064)),
-            0, 0, 360, 255, -1
-        )
-        mask_inpaint = fallback_mask
-
-    return mask_inpaint
-
-def blindar_pele_e_labios(orig_rgb_np, ai_rgb_np, mask_inpaint_u8, selected_color):
-    """
-    Para BL3, deixa a IA trabalhar sozinha.
-    Para BL1, BL2 e BL4, aplica a tonalidade nos dentes com transicao suave
-    e preserva pixels com alta saturacao de labios/pele.
-    """
-    if selected_color == 'bl3':
-        return np.clip(ai_rgb_np, 0, 255).astype(np.uint8)
-
-    h, w, _ = orig_rgb_np.shape
-    escala = max(1.0, min(h, w) / 512.0)
-
-    y_grid, x_grid = np.mgrid[0:h, 0:w].astype(np.float32)
-    cy, cx = h * 0.495, w * 0.50
-    ry, rx = h * 0.092, w * 0.275
-    zona_dentes = (((y_grid - cy) / ry) ** 2 + ((x_grid - cx) / rx) ** 2) <= 1.0
-
-    hsv_orig = cv2.cvtColor(orig_rgb_np, cv2.COLOR_RGB2HSV).astype(np.float32)
-    hsv_ai = cv2.cvtColor(ai_rgb_np, cv2.COLOR_RGB2HSV).astype(np.float32)
-
-    escudo_pele_labio = (
-        (hsv_orig[:, :, 1] > 125.0) |
-        (hsv_ai[:, :, 1] > 115.0) |
-        (hsv_ai[:, :, 2] < 114.0)
+    return (
+        "Preserve the exact original face, identity, skin texture, pores, freckles, beard, nose, eyes, glasses, hair, "
+        "lip shape, lip color and background without any mask border or halo around the mouth. "
+        "Only enhance the patient's teeth with photorealistic porcelain dental veneers: "
+        "closed interdental gaps and diastema with no gaps between teeth, "
+        "slightly fuller and well-proportioned teeth with gently increased crown height, "
+        "harmoniously aligned upper and lower dental arches, "
+        f"{descricao_cor}, "
+        "natural enamel translucency at the incisal edge, subtle vertical micro-texture, "
+        "natural interdental embrasures, realistic wet saliva reflection matching the original mouth lighting."
     )
-
-    dente_valido = zona_dentes & (~escudo_pele_labio) & (
-        (mask_inpaint_u8 > 0) | (hsv_ai[:, :, 2] >= 124.0)
-    )
-
-    dente_mask_u8 = dente_valido.astype(np.uint8) * 255
-    k_close = max(5, int(round(7 * escala)) | 1)
-    dente_mask_u8 = cv2.morphologyEx(
-        dente_mask_u8,
-        cv2.MORPH_CLOSE,
-        cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k_close, k_close))
-    )
-
-    blur_k = max(5, int(round(5 * escala)) | 1)
-    peso_suave = cv2.GaussianBlur(dente_mask_u8.astype(np.float32) / 255.0, (blur_k, blur_k), 0.9)
-    peso_suave = np.where(escudo_pele_labio, 0.0, peso_suave)
-    peso_suave = np.where(peso_suave < 0.05, 0.0, peso_suave)
-    dente_peso = np.clip(peso_suave, 0.0, 1.0)
-
-    lab = cv2.cvtColor(ai_rgb_np, cv2.COLOR_RGB2LAB).astype(np.float32)
-
-    if selected_color == 'bl1':
-        delta_l = 17.5
-        delta_b = -14.5
-        contraste_l = 1.03
-    elif selected_color == 'bl2':
-        delta_l = 11.5
-        delta_b = -9.5
-        contraste_l = 1.02
-    elif selected_color == 'bl4':
-        delta_l = 0.0
-        delta_b = 0.0
-        contraste_l = 1.00
-    else:
-        delta_l = 11.5
-        delta_b = -9.5
-        contraste_l = 1.02
-
-    l_chan = lab[:, :, 0]
-    b_chan = lab[:, :, 2]
-
-    l_ajustado = (l_chan - 128.0) * contraste_l + 128.0 + delta_l
-    b_ajustado = b_chan + delta_b
-
-    lab[:, :, 0] = np.clip(l_chan * (1.0 - dente_peso) + l_ajustado * dente_peso, 0, 255)
-    lab[:, :, 2] = np.clip(b_chan * (1.0 - dente_peso) + b_ajustado * dente_peso, 0, 255)
-
-    ai_tonalizada = cv2.cvtColor(lab.astype(np.uint8), cv2.COLOR_LAB2RGB).astype(np.float32)
-    orig_float = orig_rgb_np.astype(np.float32)
-
-    blend_3c = np.repeat(dente_peso[:, :, np.newaxis], 3, axis=2)
-    resultado = ai_tonalizada * blend_3c + orig_float * (1.0 - blend_3c)
-    return np.clip(resultado, 0, 255).astype(np.uint8)
 
 @app.route('/register', methods=['POST'])
 def register():
@@ -1205,18 +1094,13 @@ def process_smile():
         b64_clean = base64.b64encode(buffered_orig.getvalue()).decode('utf-8')
         original_processed_b64 = b64_clean
 
-        mask_inpaint_u8 = gerar_mascara_inpainting_boca(orig_proc_np)
-        mask_pil = Image.fromarray(mask_inpaint_u8, mode="L")
-        buffered_mask = io.BytesIO()
-        mask_pil.save(buffered_mask, format="PNG")
-
         replicate_token = os.environ.get("REPLICATE_API_TOKEN")
         headers = {
             "Authorization": f"Bearer {replicate_token}",
             "Content-Type": "application/json"
         }
 
-        print("[REPLICATE] Enviando imagem e mascara de inpainting para o Replicate...")
+        print("[REPLICATE] Enviando imagem de entrada para o Replicate (Flux 2 Pro 2MP)...")
         file_resp = requests.post(
             "https://api.replicate.com/v1/files",
             headers={"Authorization": f"Bearer {replicate_token}"},
@@ -1229,35 +1113,16 @@ def process_smile():
         file_data = file_resp.json()
         input_image_url = file_data.get("urls", {}).get("get") or file_data.get("url")
 
-        mask_resp = requests.post(
-            "https://api.replicate.com/v1/files",
-            headers={"Authorization": f"Bearer {replicate_token}"},
-            files={"content": ("mask.png", buffered_mask.getvalue(), "image/png")},
-            timeout=30
-        )
-        if mask_resp.status_code not in [200, 201]:
-            raise Exception(f"Erro ao enviar mascara para o Replicate: {mask_resp.text}")
+        print("[REPLICATE REST] Disparando Official Model Black Forest Labs Flux 2 Pro (2 MP)...")
 
-        mask_data = mask_resp.json()
-        input_mask_url = mask_data.get("urls", {}).get("get") or mask_data.get("url")
-
-        print("[REPLICATE REST] Disparando Official Model Black Forest Labs Flux Fill Pro...")
-
-        prompt_text = (
-            "photorealistic porcelain dental veneers, slightly fuller and slightly longer "
-            "well-proportioned teeth, harmoniously aligned smile with closed interdental gaps "
-            "no teeth gap, uniform porcelain shade, natural enamel translucency at incisal edge, "
-            "subtle vertical micro-texture, natural dark interdental embrasures, "
-            "realistic wet saliva reflection, matching original mouth lighting"
-        )
+        prompt_text = montar_prompt_por_cor(selected_color)
 
         payload = {
             "input": {
-                "image": input_image_url,
-                "mask": input_mask_url,
                 "prompt": prompt_text,
-                "steps": 32,
-                "guidance": 30,
+                "input_images": [input_image_url],
+                "aspect_ratio": "1:1",
+                "resolution": "2 MP",
                 "seed": 9283,
                 "output_format": "png",
                 "safety_tolerance": 2
@@ -1265,7 +1130,7 @@ def process_smile():
         }
 
         response = requests.post(
-            "https://api.replicate.com/v1/models/black-forest-labs/flux-fill-pro/predictions",
+            "https://api.replicate.com/v1/models/black-forest-labs/flux-2-pro/predictions",
             json=payload,
             headers=headers,
             timeout=120
@@ -1294,7 +1159,7 @@ def process_smile():
                     image_url = output[0]
                 else:
                     image_url = output
-                print("[REPLICATE] Simulacao Flux Fill Pro recebida com sucesso!")
+                print("[REPLICATE] Simulacao Flux 2 Pro 2MP recebida com sucesso!")
                 break
             elif status == "failed":
                 raise Exception(f"Processamento da IA falhou: {poll_data.get('error')}")
@@ -1308,18 +1173,14 @@ def process_smile():
 
         ai_image_raw = Image.open(io.BytesIO(img_download.content)).convert("RGB")
         ai_crop_restaurado = ai_image_raw.resize((1424, 1424), Image.Resampling.LANCZOS)
-        ai_np = np.array(ai_crop_restaurado)
+        imagem_final_rgb = np.array(ai_crop_restaurado)
 
-        imagem_final_rgb = blindar_pele_e_labios(orig_proc_np, ai_np, mask_inpaint_u8, selected_color)
-
-        # --- LOG DIAGNOSTICO REPLICATE + POS-PROCESSAMENTO ---
+        # --- LOG DIAGNOSTICO REPLICATE ---
         pred_id = poll_data.get("id")
         pred_status = poll_data.get("status")
         pred_metrics = poll_data.get("metrics", {})
-        pixels_ativos = int(np.sum(mask_inpaint_u8 > 0))
 
         hsv_orig = cv2.cvtColor(orig_proc_np, cv2.COLOR_RGB2HSV).astype(np.float32)
-        hsv_ai_raw = cv2.cvtColor(ai_np, cv2.COLOR_RGB2HSV).astype(np.float32)
         hsv_final = cv2.cvtColor(imagem_final_rgb, cv2.COLOR_RGB2HSV).astype(np.float32)
 
         h_m, w_m, _ = orig_proc_np.shape
@@ -1328,13 +1189,12 @@ def process_smile():
 
         print("-" * 60)
         print(f"[DIAG] Cor={selected_color.upper()} | PredID={pred_id} | Status={pred_status} | Metrics={pred_metrics}")
-        print(f"[DIAG] InpaintMaskPixels={pixels_ativos} | Model={poll_data.get('model')} | Version={poll_data.get('version')}")
+        print(f"[DIAG] Model={poll_data.get('model')} | Version={poll_data.get('version')}")
         print(f"[DIAG] InputEco={poll_data.get('input')}")
         if poll_data.get("logs"):
             print(f"[DIAG] ReplicateLogs={poll_data.get('logs')}")
-        print(f"[DIAG] Boca ORIG   RGB=({orig_proc_np[y1:y2, x1:x2, 0].mean():.1f}, {orig_proc_np[y1:y2, x1:x2, 1].mean():.1f}, {orig_proc_np[y1:y2, x1:x2, 2].mean():.1f}) | S={hsv_orig[y1:y2, x1:x2, 1].mean():.1f} V={hsv_orig[y1:y2, x1:x2, 2].mean():.1f}")
-        print(f"[DIAG] Boca AI_RAW RGB=({ai_np[y1:y2, x1:x2, 0].mean():.1f}, {ai_np[y1:y2, x1:x2, 1].mean():.1f}, {ai_np[y1:y2, x1:x2, 2].mean():.1f}) | S={hsv_ai_raw[y1:y2, x1:x2, 1].mean():.1f} V={hsv_ai_raw[y1:y2, x1:x2, 2].mean():.1f}")
-        print(f"[DIAG] Boca FINAL  RGB=({imagem_final_rgb[y1:y2, x1:x2, 0].mean():.1f}, {imagem_final_rgb[y1:y2, x1:x2, 1].mean():.1f}, {imagem_final_rgb[y1:y2, x1:x2, 2].mean():.1f}) | S={hsv_final[y1:y2, x1:x2, 1].mean():.1f} V={hsv_final[y1:y2, x1:x2, 2].mean():.1f}")
+        print(f"[DIAG] Boca ORIG  RGB=({orig_proc_np[y1:y2, x1:x2, 0].mean():.1f}, {orig_proc_np[y1:y2, x1:x2, 1].mean():.1f}, {orig_proc_np[y1:y2, x1:x2, 2].mean():.1f}) | S={hsv_orig[y1:y2, x1:x2, 1].mean():.1f} V={hsv_orig[y1:y2, x1:x2, 2].mean():.1f}")
+        print(f"[DIAG] Boca FINAL RGB=({imagem_final_rgb[y1:y2, x1:x2, 0].mean():.1f}, {imagem_final_rgb[y1:y2, x1:x2, 1].mean():.1f}, {imagem_final_rgb[y1:y2, x1:x2, 2].mean():.1f}) | S={hsv_final[y1:y2, x1:x2, 1].mean():.1f} V={hsv_final[y1:y2, x1:x2, 2].mean():.1f}")
         print("-" * 60)
 
         final_bgr = cv2.cvtColor(imagem_final_rgb, cv2.COLOR_RGB2BGR)
@@ -1349,7 +1209,7 @@ def process_smile():
         conn.close()
 
         print("=" * 60)
-        print(f"[PYTHON REST] Simulacao 1424x1424 concluida com sucesso (Flux Fill Pro - {selected_color.upper()})!")
+        print(f"[PYTHON REST] Simulacao 1424x1424 concluida com sucesso (Flux 2 Pro 2MP - {selected_color.upper()})!")
         print("=" * 60)
 
         return jsonify({
